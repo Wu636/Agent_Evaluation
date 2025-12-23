@@ -11,16 +11,29 @@ from txt_to_json_converter import parse_txt_dialogue
 
 # Add scripts directory to sys.path to import agent code
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir)
-scripts_dir = os.path.join(project_root, 'scripts')
-sys.path.append(scripts_dir)
+
+# Try multiple possible locations for scripts directory
+# 1. Docker: /app/scripts (same level as main.py)
+# 2. Local: ../scripts (parent directory)
+possible_scripts_dirs = [
+    os.path.join(current_dir, 'scripts'),  # Docker: /app/scripts
+    os.path.join(os.path.dirname(current_dir), 'scripts'),  # Local: ../scripts
+]
+
+found_scripts_dir = None
+for scripts_dir in possible_scripts_dirs:
+    if os.path.exists(scripts_dir):
+        sys.path.insert(0, scripts_dir)
+        found_scripts_dir = scripts_dir
+        print(f"✓ 找到 scripts 目录: {scripts_dir}")
+        break
 
 try:
     from llm_evaluation_agent import LLMEvaluationAgent, EvaluationReport, DimensionScore
+    print("✓ 成功导入 LLMEvaluationAgent")
 except ImportError as e:
     print(f"Error importing modules: {e}")
-    # Fallback/Mock for development if needed, but intended to run in-situ
-    pass
+    LLMEvaluationAgent = None
 
 app = FastAPI(title="LLM Evaluation API")
 
@@ -88,7 +101,9 @@ async def evaluate(
         # Let's instantiate the agent
         # We might need to adjust CWD so imports inside agent (if any) or .env loading works
         original_cwd = os.getcwd()
-        os.chdir(project_root)
+        # Use parent of scripts_dir (project root) or current_dir for Docker
+        env_dir = os.path.dirname(found_scripts_dir) if found_scripts_dir else current_dir
+        os.chdir(env_dir)
         
         try:
             agent = LLMEvaluationAgent(

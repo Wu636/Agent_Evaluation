@@ -8,15 +8,24 @@ import { SettingsModal } from '@/components/SettingsModal';
 import { HistoryView } from '@/components/HistoryView';
 import { evaluateFiles, EvaluationReport } from '@/lib/api';
 
-export function EvaluationInterface() {
+interface EvaluationInterfaceProps {
+    currentView?: 'main' | 'history';
+    onViewChange?: (view: 'main' | 'history') => void;
+}
+
+export function EvaluationInterface({ currentView: externalView, onViewChange }: EvaluationInterfaceProps) {
     const [teacherDoc, setTeacherDoc] = useState<File | null>(null);
     const [dialogueRecord, setDialogueRecord] = useState<File | null>(null);
     const [report, setReport] = useState<EvaluationReport | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [step, setStep] = useState<'upload' | 'processing' | 'results'>('upload');
-    const [currentView, setCurrentView] = useState<'main' | 'history'>('main');
+    const [internalView, setInternalView] = useState<'main' | 'history'>('main');
     const [showSettings, setShowSettings] = useState(false);
+
+    // Use external view if provided, otherwise use internal state
+    const currentView = externalView ?? internalView;
+    const setCurrentView = onViewChange ?? setInternalView;
 
     const handleStartEvaluation = async () => {
         if (!teacherDoc || !dialogueRecord) return;
@@ -57,6 +66,7 @@ export function EvaluationInterface() {
             </div>
         );
     }
+
 
     // Render Main View
     return (

@@ -1,16 +1,19 @@
 import sys
 import os
 import shutil
+import json
 from typing import Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from history_manager import HistoryManager
+from txt_to_json_converter import parse_txt_dialogue
 
-# Add parent directory to sys.path to import existing agent code
+# Add scripts directory to sys.path to import agent code
 current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(os.path.dirname(current_dir))
-sys.path.append(parent_dir)
+project_root = os.path.dirname(current_dir)
+scripts_dir = os.path.join(project_root, 'scripts')
+sys.path.append(scripts_dir)
 
 try:
     from llm_evaluation_agent import LLMEvaluationAgent, EvaluationReport, DimensionScore
@@ -58,6 +61,19 @@ async def evaluate(
             
         with open(temp_dialogue_path, "wb") as buffer:
             shutil.copyfileobj(dialogue_record.file, buffer)
+        
+        # Convert TXT to JSON if needed
+        if temp_dialogue_path.lower().endswith('.txt'):
+            with open(temp_dialogue_path, 'r', encoding='utf-8') as f:
+                txt_content = f.read()
+            json_data = parse_txt_dialogue(txt_content)
+            # Save as JSON file
+            json_dialogue_path = temp_dialogue_path.rsplit('.', 1)[0] + '.json'
+            with open(json_dialogue_path, 'w', encoding='utf-8') as f:
+                json.dump(json_data, f, ensure_ascii=False, indent=2)
+            # Update path to use the converted JSON
+            temp_dialogue_path = json_dialogue_path
+            print(f"✓ 已将 TXT 对话记录转换为 JSON: {json_dialogue_path}")
             
         # Initialize Agent
         # Note: LLMEvaluationAgent expects to find .env in working dir or passed explicitly.
@@ -72,7 +88,7 @@ async def evaluate(
         # Let's instantiate the agent
         # We might need to adjust CWD so imports inside agent (if any) or .env loading works
         original_cwd = os.getcwd()
-        os.chdir(parent_dir)
+        os.chdir(project_root)
         
         try:
             agent = LLMEvaluationAgent(
@@ -148,6 +164,10 @@ async def evaluate(
             os.remove(temp_teacher_path)
         if os.path.exists(temp_dialogue_path):
             os.remove(temp_dialogue_path)
+        # Also cleanup original TXT file if it was converted
+        original_txt_path = f"temp_{dialogue_record.filename}"
+        if original_txt_path != temp_dialogue_path and os.path.exists(original_txt_path):
+            os.remove(original_txt_path)
 
 @app.get("/api/models")
 def get_models():

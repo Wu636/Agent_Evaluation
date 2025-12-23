@@ -1,0 +1,42 @@
+# Git 忽略文件
+
+# 环境文件
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+
+# Node.js
+node_modules/
+.next/
+.vercel/
+*.log
+
+# 运行时数据
+data/
+*.json
+!package.json
+!package-lock.json
+!components.json
+!tsconfig.json
+
+# 临时文件
+temp_*
+*.tmp
+*.bak
+*.backup
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp

@@ -105,13 +105,29 @@ async def evaluate(
         env_dir = os.path.dirname(found_scripts_dir) if found_scripts_dir else current_dir
         os.chdir(env_dir)
         
+        # Map frontend IDs to API model names (required by the proxy service)
+        MODEL_NAME_MAPPING = {
+            "gpt-4.1": "gpt-4.1",
+            "gpt-4.1-mini": "gpt-4.1-mini",
+            "gpt-4.1-nano": "gpt-4.1-nano",
+            "gemini-2.5-pro": "gemini-2.5-pro",
+            "gemini-2.5-flash": "gemini-2.5-flash",
+            "claude-sonnet-4.5": "Claude Sonnet 4.5",
+            "claude-haiku-4.5": "Claude Haiku 4.5",
+            "claude-opus-4": "Claude Opus 4",
+            "grok-4": "grok-4"
+        }
+        
+        # Use mapped name if available, otherwise use original ID (e.g. gpt-4o)
+        api_model_name = MODEL_NAME_MAPPING.get(model, model)
+        
         try:
             agent = LLMEvaluationAgent(
                 teacher_doc_path=os.path.join(current_dir, temp_teacher_path),
                 dialogue_json_path=os.path.join(current_dir, temp_dialogue_path),
                 llm_api_key=api_key,
                 llm_base_url=api_url,
-                llm_model=model or "gpt-4o"
+                llm_model=api_model_name or "gpt-4o"
             )
             
             report = agent.evaluate()
@@ -196,18 +212,8 @@ def get_models():
             {"id": "gpt-4.1", "name": "GPT-4.1", "description": "Latest GPT-4 version"},
             {"id": "gpt-4.1-mini", "name": "GPT-4.1 Mini", "description": "Compact GPT-4.1"},
             {"id": "gpt-4.1-nano", "name": "GPT-4.1 Nano", "description": "Ultra-compact"},
-            {"id": "gpt-o4-mini", "name": "GPT-o4 Mini", "description": "Optimized model"},
-            {"id": "gpt-5", "name": "GPT-5", "description": "Next generation"},
-            {"id": "o3", "name": "O3", "description": "OpenAI O3 model"},
-            {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo", "description": "Legacy, fast"},
-            {"id": "gpt-3.5-turbo-16k", "name": "GPT-3.5 Turbo 16K", "description": "Extended context"},
             {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "description": "Google's flagship"},
             {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "description": "Fast Gemini"},
-            {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "description": "Previous gen"},
-            {"id": "claude-3.5-haiku", "name": "Claude 3.5 Haiku", "description": "Anthropic compact"},
-            {"id": "claude-3.5-sonnet", "name": "Claude 3.5 Sonnet", "description": "Balanced Claude"},
-            {"id": "claude-3.7-sonnet", "name": "Claude 3.7 Sonnet", "description": "Enhanced Sonnet"},
-            {"id": "claude-sonnet-4", "name": "Claude Sonnet 4", "description": "Latest Sonnet"},
             {"id": "claude-sonnet-4.5", "name": "Claude Sonnet 4.5", "description": "Newest Sonnet"},
             {"id": "claude-haiku-4.5", "name": "Claude Haiku 4.5", "description": "Latest Haiku"},
             {"id": "claude-opus-4", "name": "Claude Opus 4", "description": "Most capable Claude"},

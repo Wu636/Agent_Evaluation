@@ -242,7 +242,7 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                     {/* Radar Chart */}
                     <div className="h-[380px] w-full relative -my-4 px-8">
                         <ResponsiveContainer width="100%" height="100%">
-                            <RadarChart cx="50%" cy="50%" outerRadius="50%" data={radarData}>
+                            <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
                                 <defs>
                                     <linearGradient id="radarFill" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="#6366f1" stopOpacity={0.6} />
@@ -260,8 +260,8 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                                         const isBottom = y > cy;
 
                                         let dy = 5;
-                                        if (isTop) dy = -10;    // 上方标签上移
-                                        if (isBottom) dy = 20;  // 下方标签下移
+                                        if (isTop) dy = -5;     // 上方标签微调上移
+                                        if (isBottom) dy = 15;  // 下方标签微调下移
 
                                         return (
                                             <g transform={`translate(${x},${y})`}>
@@ -271,7 +271,7 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                                                     dy={dy}
                                                     textAnchor="middle"
                                                     fill="#475569"
-                                                    fontSize={12}
+                                                    fontSize={13}
                                                     fontWeight={600}
                                                 >
                                                     {payload.value}

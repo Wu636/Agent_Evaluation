@@ -58,6 +58,30 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
         setError(null);
     };
 
+    const [progress, setProgress] = useState(0);
+
+    // Simulate progress
+    React.useEffect(() => {
+        if (step === 'processing') {
+            setProgress(0);
+            const timer = setInterval(() => {
+                setProgress((oldProgress) => {
+                    if (oldProgress === 100) return 100;
+                    // Fast initial progress
+                    if (oldProgress < 30) return oldProgress + 2;
+                    // Slower middle progress
+                    if (oldProgress < 70) return oldProgress + 0.5;
+                    // Very slow end progress until complete
+                    if (oldProgress < 95) return oldProgress + 0.1;
+                    return oldProgress;
+                });
+            }, 100);
+            return () => clearInterval(timer);
+        } else if (step === 'results') {
+            setProgress(100);
+        }
+    }, [step]);
+
     // Render History View
     if (currentView === 'history') {
         return (
@@ -207,19 +231,58 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
 
             {step === 'processing' && (
                 <div className="flex flex-col items-center justify-center py-32 space-y-8 animate-in fade-in duration-700">
-                    <div className="relative">
-                        <div className="absolute inset-0 bg-indigo-500 blur-3xl opacity-20 rounded-full animate-pulse"></div>
-                        <Loader2 className="w-20 h-20 text-indigo-600 animate-spin relative z-10" />
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-indigo-600 font-bold text-xs uppercase tracking-widest">AI</span>
+                    <div className="relative w-32 h-32">
+                        {/* Circular Progress Bar */}
+                        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                            {/* Background Circle */}
+                            <circle
+                                cx="50"
+                                cy="50"
+                                r="40"
+                                fill="none"
+                                stroke="#e2e8f0"
+                                strokeWidth="8"
+                            />
+                            {/* Progress Circle */}
+                            <circle
+                                cx="50"
+                                cy="50"
+                                r="40"
+                                fill="none"
+                                stroke="url(#progressGradient)"
+                                strokeWidth="8"
+                                strokeLinecap="round"
+                                strokeDasharray={251.2} // 2 * PI * 40
+                                strokeDashoffset={251.2 - (251.2 * progress) / 100}
+                                className="transition-all duration-300 ease-linear"
+                            />
+                            <defs>
+                                <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" stopColor="#4f46e5" />
+                                    <stop offset="100%" stopColor="#7c3aed" />
+                                </linearGradient>
+                            </defs>
+                        </svg>
+
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-2xl font-black text-indigo-600">
+                                {Math.round(progress)}<span className="text-sm">%</span>
+                            </span>
                         </div>
                     </div>
+
                     <div className="text-center space-y-2">
                         <h2 className="text-2xl font-bold text-slate-800">正在进行评估</h2>
                         <div className="flex flex-col gap-2 items-center text-slate-500 text-lg">
-                            <p className="animate-pulse">正在读取教师指导文档...</p>
-                            <p className="animate-[pulse_1.5s_ease-in-out_0.5s_infinite]">正在评估对话上下文...</p>
-                            <p className="animate-[pulse_1.5s_ease-in-out_1s_infinite]">正在计算维度得分...</p>
+                            <p className={progress < 30 ? "text-indigo-600 font-medium transition-colors" : "transition-colors"}>
+                                正在读取教师指导文档...
+                            </p>
+                            <p className={progress >= 30 && progress < 70 ? "text-indigo-600 font-medium transition-colors" : "transition-colors"}>
+                                正在评估对话上下文...
+                            </p>
+                            <p className={progress >= 70 ? "text-indigo-600 font-medium transition-colors" : "transition-colors"}>
+                                正在计算维度得分...
+                            </p>
                         </div>
                     </div>
                 </div>

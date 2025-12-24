@@ -117,6 +117,12 @@ docker-compose build --no-cache
 docker-compose up -d
 ```
 
+**直接使用脚本重构**
+./rebuild.sh        # 重建所有服务（前端+后端）
+./rebuild.sh -f     # 只重建前端
+./rebuild.sh -b     # 只重建后端
+./rebuild.sh -c     # 清理缓存后完全重建
+
 ## 📚 文档
 
 - [快速开始指南](docs/QUICK_START.md)

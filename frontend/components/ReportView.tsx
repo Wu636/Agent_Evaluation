@@ -6,10 +6,185 @@ import {
 } from 'recharts';
 import {
     AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
-    Lightbulb, RotateCcw, Download, Sparkles
+    Lightbulb, RotateCcw, Download, Sparkles, ChevronLeft
 } from 'lucide-react';
 import clsx from 'clsx';
 import { EvaluationReport } from '@/lib/api';
+
+// --- Helper Functions & Components ---
+
+/**
+ * 分组解析函数：将 "【维度】内容" 格式的字符串数组，
+ * 解析为 { "维度": ["内容1", "内容2"], "其他": [...] }
+ */
+function groupItemsByDimension(items: string[]): Record<string, string[]> {
+    const groups: Record<string, string[]> = {};
+    const defaultKey = '通用';
+
+    items.forEach(item => {
+        // 尝试匹配 【维度】内容
+        // 也可以适应带有优先级的旧格式，因为后端已经清理过格式了，这里再做一次防御
+        const match = item.match(/^【(.*?)】(.*)/);
+        if (match) {
+            const dimName = match[1].trim();
+            const content = match[2].trim();
+            if (!groups[dimName]) {
+                groups[dimName] = [];
+            }
+            if (content) {
+                groups[dimName].push(content);
+            }
+        } else {
+            if (!groups[defaultKey]) {
+                groups[defaultKey] = [];
+            }
+            groups[defaultKey].push(item);
+        }
+    });
+
+    return groups;
+}
+
+/**
+ * 分页卡片组件
+ */
+interface PagedCardViewProps {
+    title: string;
+    icon: React.ReactNode;
+    items: string[];
+    colorTheme: 'red' | 'emerald';
+}
+
+function PagedCardView({ title, icon, items, colorTheme }: PagedCardViewProps) {
+    const [currentIndex, setCurrentIndex] = useState(0);
+
+    // 分组数据
+    const grouped = groupItemsByDimension(items);
+    const dimensions = Object.keys(grouped);
+
+    if (dimensions.length === 0) {
+        return (
+            <div className={clsx(
+                "rounded-3xl border shadow-sm overflow-hidden",
+                colorTheme === 'red' ? "border-red-100 bg-white" : "border-emerald-100 bg-white"
+            )}>
+                <div className={clsx(
+                    "p-4 border-b flex items-center gap-3",
+                    colorTheme === 'red' ? "bg-red-50 border-red-100" : "bg-emerald-50 border-emerald-100"
+                )}>
+                    {icon}
+                    <h3 className={clsx("font-bold", colorTheme === 'red' ? "text-red-900" : "text-emerald-900")}>
+                        {title}
+                    </h3>
+                </div>
+                <div className="p-8 text-center text-slate-400 text-sm">
+                    暂无相关内容
+                </div>
+            </div>
+        );
+    }
+
+    // 当前显示的维度
+    const currentDim = dimensions[currentIndex];
+    const currentItems = grouped[currentDim] || [];
+
+    const handlePrev = () => {
+        setCurrentIndex(prev => (prev === 0 ? dimensions.length - 1 : prev - 1));
+    };
+
+    const handleNext = () => {
+        setCurrentIndex(prev => (prev === dimensions.length - 1 ? 0 : prev + 1));
+    };
+
+    const isRed = colorTheme === 'red';
+
+    return (
+        <div className={clsx(
+            "rounded-3xl border shadow-sm overflow-hidden flex flex-col h-[400px]", // 固定高度以保持对齐
+            isRed ? "border-red-100 bg-white" : "border-emerald-100 bg-white"
+        )}>
+            {/* Header */}
+            <div className={clsx(
+                "p-4 border-b flex items-center justify-between flex-shrink-0",
+                isRed ? "bg-red-50 border-red-100" : "bg-emerald-50 border-emerald-100"
+            )}>
+                <div className="flex items-center gap-3">
+                    {icon}
+                    <h3 className={clsx("font-bold", isRed ? "text-red-900" : "text-emerald-900")}>
+                        {title}
+                    </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className={clsx("text-xs font-bold px-2 py-1 rounded-full", isRed ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700")}>
+                        {currentIndex + 1} / {dimensions.length}
+                    </span>
+                    <div className="flex gap-1">
+                        <button
+                            onClick={handlePrev}
+                            className={clsx("p-1 rounded-full transition-colors", isRed ? "hover:bg-red-100 text-red-400 hover:text-red-700" : "hover:bg-emerald-100 text-emerald-400 hover:text-emerald-700")}
+                        >
+                            <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        <button
+                            onClick={handleNext}
+                            className={clsx("p-1 rounded-full transition-colors", isRed ? "hover:bg-red-100 text-red-400 hover:text-red-700" : "hover:bg-emerald-100 text-emerald-400 hover:text-emerald-700")}
+                        >
+                            <ChevronRight className="w-5 h-5" />
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                <div className="mb-3">
+                    <span className={clsx(
+                        "inline-block px-3 py-1 rounded-lg text-xs font-bold mb-2",
+                        isRed ? "bg-red-50 text-red-600 border border-red-100" : "bg-emerald-50 text-emerald-600 border border-emerald-100"
+                    )}>
+                        {currentDim}
+                    </span>
+                </div>
+                <div className="space-y-3">
+                    {currentItems.map((item, idx) => (
+                        <div key={idx} className={clsx(
+                            "flex gap-3 text-slate-600 text-sm p-3 rounded-xl border transition-all",
+                            isRed
+                                ? "bg-red-50/30 border-red-50 hover:border-red-100 hover:shadow-sm"
+                                : "bg-emerald-50/30 border-emerald-50 hover:border-emerald-100 hover:shadow-sm"
+                        )}>
+                            <span className={clsx(
+                                "flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold mt-0.5",
+                                isRed ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600"
+                            )}>
+                                {isRed ? idx + 1 : <CheckCircle2 className="w-3.5 h-3.5" />}
+                            </span>
+                            <span className="leading-relaxed">{item}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Dots Indicator */}
+            <div className="p-3 flex justify-center gap-1.5 flex-shrink-0">
+                {dimensions.map((_, idx) => (
+                    <button
+                        key={idx}
+                        onClick={() => setCurrentIndex(idx)}
+                        className={clsx(
+                            "w-1.5 h-1.5 rounded-full transition-all",
+                            idx === currentIndex
+                                ? (isRed ? "bg-red-400 w-3" : "bg-emerald-400 w-3")
+                                : (isRed ? "bg-red-100" : "bg-emerald-100")
+                        )}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// --- Main Component ---
 
 interface ReportViewProps {
     report: EvaluationReport;
@@ -65,39 +240,74 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                     </div>
 
                     {/* Radar Chart */}
-                    <div className="h-[300px] w-full relative">
+                    <div className="h-[380px] w-full relative -my-4 px-8">
                         <ResponsiveContainer width="100%" height="100%">
-                            <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
-                                <PolarGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-                                <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }} />
+                            <RadarChart cx="50%" cy="50%" outerRadius="50%" data={radarData}>
+                                <defs>
+                                    <linearGradient id="radarFill" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.6} />
+                                        <stop offset="95%" stopColor="#818cf8" stopOpacity={0.1} />
+                                    </linearGradient>
+                                </defs>
+                                <PolarGrid gridType="polygon" stroke="#e2e8f0" />
+                                <PolarAngleAxis
+                                    dataKey="subject"
+                                    tick={(props) => {
+                                        const { x, y, cx, cy, payload } = props;
+
+                                        // 垂直偏移逻辑
+                                        const isTop = y < cy;
+                                        const isBottom = y > cy;
+
+                                        let dy = 5;
+                                        if (isTop) dy = -10;    // 上方标签上移
+                                        if (isBottom) dy = 20;  // 下方标签下移
+
+                                        return (
+                                            <g transform={`translate(${x},${y})`}>
+                                                <text
+                                                    x={0}
+                                                    y={0}
+                                                    dy={dy}
+                                                    textAnchor="middle"
+                                                    fill="#475569"
+                                                    fontSize={12}
+                                                    fontWeight={600}
+                                                >
+                                                    {payload.value}
+                                                </text>
+                                            </g>
+                                        );
+                                    }}
+                                />
                                 <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
                                 <Radar
                                     name="Score"
                                     dataKey="A"
                                     stroke="#4f46e5"
                                     strokeWidth={3}
-                                    fill="#6366f1"
-                                    fillOpacity={0.2}
+                                    fill="url(#radarFill)"
+                                    fillOpacity={1}
                                 />
                             </RadarChart>
                         </ResponsiveContainer>
                     </div>
 
-                    {/* Quick Stats */}
+                    {/* Quick Stats Summary (Count Only) */}
                     <div className="space-y-4">
-                        <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-                            <div className="flex items-center gap-3 mb-2">
+                        <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
                                 <AlertCircle className="w-5 h-5 text-amber-500" />
                                 <span className="font-bold text-slate-700">发现的问题</span>
                             </div>
-                            <span className="text-3xl font-black text-slate-800">{report.issues?.length || 0}</span>
+                            <span className="text-2xl font-black text-slate-800">{report.issues?.length || 0}</span>
                         </div>
-                        <div className="bg-indigo-50 rounded-2xl p-5 border border-indigo-100">
-                            <div className="flex items-center gap-3 mb-2">
+                        <div className="bg-indigo-50 rounded-2xl p-5 border border-indigo-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
                                 <Lightbulb className="w-5 h-5 text-indigo-500" />
                                 <span className="font-bold text-indigo-900">改进建议</span>
                             </div>
-                            <span className="text-3xl font-black text-indigo-900">{report.suggestions?.length || 0}</span>
+                            <span className="text-2xl font-black text-indigo-900">{report.suggestions?.length || 0}</span>
                         </div>
                     </div>
                 </div>
@@ -162,42 +372,24 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                     </div>
                 </div>
 
-                {/* Right Col: Action Items */}
+                {/* Right Col: Action Items (Paged Cards) */}
                 <div className="lg:col-span-4 space-y-8">
 
-                    {/* Issues */}
-                    <div className="bg-white rounded-3xl border border-red-100 shadow-sm overflow-hidden">
-                        <div className="bg-red-50 p-4 border-b border-red-100 flex items-center gap-3">
-                            <AlertCircle className="w-5 h-5 text-red-500" />
-                            <h3 className="font-bold text-red-900">关键问题</h3>
-                        </div>
-                        <div className="p-4 space-y-3">
-                            {(report.issues || []).map((issue, idx) => (
-                                <div key={idx} className="flex gap-3 text-slate-600 text-sm p-3 bg-white rounded-xl border border-slate-100 hover:border-red-100 hover:shadow-sm transition-all">
-                                    <span className="flex-shrink-0 w-6 h-6 bg-red-100 text-red-600 rounded-full flex items-center justify-center text-xs font-bold">
-                                        {idx + 1}
-                                    </span>
-                                    {issue}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
+                    {/* Issues Card */}
+                    <PagedCardView
+                        title="关键问题"
+                        icon={<AlertCircle className="w-5 h-5 text-red-500" />}
+                        items={report.issues || []}
+                        colorTheme="red"
+                    />
 
-                    {/* Suggestions */}
-                    <div className="bg-white rounded-3xl border border-emerald-100 shadow-sm overflow-hidden">
-                        <div className="bg-emerald-50 p-4 border-b border-emerald-100 flex items-center gap-3">
-                            <Lightbulb className="w-5 h-5 text-emerald-600" />
-                            <h3 className="font-bold text-emerald-900">优化建议</h3>
-                        </div>
-                        <div className="p-4 space-y-3">
-                            {(report.suggestions || []).map((suggestion, idx) => (
-                                <div key={idx} className="flex gap-3 text-slate-600 text-sm p-3 bg-white rounded-xl border border-slate-100 hover:border-emerald-100 hover:shadow-sm transition-all">
-                                    <CheckCircle2 className="flex-shrink-0 w-5 h-5 text-emerald-500 mt-0.5" />
-                                    {suggestion}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
+                    {/* Suggestions Card */}
+                    <PagedCardView
+                        title="优化建议"
+                        icon={<Lightbulb className="w-5 h-5 text-emerald-600" />}
+                        items={report.suggestions || []}
+                        colorTheme="emerald"
+                    />
 
                     <button
                         onClick={onReset}

@@ -737,18 +737,34 @@ class LLMEvaluationAgent:
     def _parse_llm_response(self, response: str) -> Dict:
         """解析LLM返回的JSON"""
         try:
-            # 清理可能的markdown代码块
-            response = response.strip()
-            if response.startswith('```json'):
-                response = response[7:]
-            if response.startswith('```'):
-                response = response[3:]
-            if response.endswith('```'):
-                response = response[:-3]
+            # 清理可能的markdown代码块和额外文本
             response = response.strip()
             
+            # 尝试多种提取方法
+            json_text = None
+            
+            # 方法1: 移除thinking标签 (Claude可能使用)
+            import re
+            response = re.sub(r'<thinking>.*?</thinking>', '', response, flags=re.DOTALL)
+            response = response.strip()
+            
+            # 方法2: 提取markdown代码块中的JSON
+            # 匹配 ```json ... ``` 或 ``` ... ```
+            code_block_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', response, re.DOTALL)
+            if code_block_match:
+                json_text = code_block_match.group(1).strip()
+            else:
+                # 方法3: 查找第一个 { 和最后一个 }
+                first_brace = response.find('{')
+                last_brace = response.rfind('}')
+                if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+                    json_text = response[first_brace:last_brace + 1]
+                else:
+                    # 方法4: 直接尝试原始响应
+                    json_text = response
+            
             # 解析JSON
-            result = json.loads(response)
+            result = json.loads(json_text)
             
             # 验证必要字段
             required_fields = ['score', 'level', 'analysis', 'evidence', 'issues', 'suggestions']
@@ -766,6 +782,17 @@ class LLMEvaluationAgent:
                 'score': 50,
                 'level': '合格',
                 'analysis': f'JSON解析失败,使用默认分数。错误: {str(e)}',
+                'evidence': [],
+                'issues': ['LLM返回格式错误'],
+                'suggestions': ['需要修复LLM提示词或响应解析']
+            }
+        except Exception as e:
+            print(f"⚠️ 解析异常: {e}")
+            print(f"原始响应: {response[:500]}...")
+            return {
+                'score': 50,
+                'level': '合格',
+                'analysis': f'解析异常: {str(e)}',
                 'evidence': [],
                 'issues': ['LLM返回格式错误'],
                 'suggestions': ['需要修复LLM提示词或响应解析']

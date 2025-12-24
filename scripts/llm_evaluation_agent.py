@@ -55,36 +55,38 @@ class EvaluationReport:
 class LLMEvaluationAgent:
     """基于LLM的评测Agent"""
     
+    MAX_DIALOGUE_LENGTH = 15000  # 最大对话字符数限制
+    
     # 评测维度配置(按你的要求重新设计)
     DIMENSIONS = {
         "teaching_goal_completion": {
-            "name": "教学目标与任务完成度",
+            "name": "目标达成度",
             "weight": 0.40,  # 最高权重
             "is_veto": True,  # 一票否决项
             "veto_threshold": 60  # 低于60分直接不合格
         },
         "teaching_strategy": {
-            "name": "教学策略与引导质量",
+            "name": "策略引导力",
             "weight": 0.20,
             "is_veto": False
         },
         "workflow_consistency": {
-            "name": "对话流程一致性与工作流遵循度",
+            "name": "流程遵循度",
             "weight": 0.15,
             "is_veto": False
         },
         "interaction_experience": {
-            "name": "语言与交互体验",
+            "name": "交互体验感",
             "weight": 0.10,
             "is_veto": False
         },
         "hallucination_control": {
-            "name": "幻觉与不当输出控制",
+            "name": "幻觉控制力",
             "weight": 0.10,
             "is_veto": False
         },
         "robustness": {
-            "name": "鲁棒性与异常处理能力",
+            "name": "异常处理力",
             "weight": 0.05,
             "is_veto": False
         }
@@ -863,7 +865,6 @@ class LLMEvaluationAgent:
             emoji = "✅" if dim.score >= 80 else "⚠️" if dim.score >= 60 else "❌"
             lines.append(
                 f"{emoji} **{dim.dimension}**: {dim.weighted_score:.1f}/{dim.weight*100:.0f} "
-                f"(原始{dim.score:.1f}/100 - {dim.level})"
             )
         
         lines.append("")
@@ -871,11 +872,11 @@ class LLMEvaluationAgent:
         
         # 最高分维度
         best_dim = max(dimensions, key=lambda d: d.score)
-        lines.append(f"- ✨ **优势**: {best_dim.dimension}表现最好({best_dim.score:.1f}分)")
+        lines.append(f"- ✨ **优势**: {best_dim.dimension}表现最好")
         
         # 最低分维度
         worst_dim = min(dimensions, key=lambda d: d.score)
-        lines.append(f"- 🔧 **待改进**: {worst_dim.dimension}需要重点优化({worst_dim.score:.1f}分)")
+        lines.append(f"- 🔧 **待改进**: {worst_dim.dimension}需要重点优化")
         
         return "\n".join(lines)
     
@@ -901,8 +902,17 @@ class LLMEvaluationAgent:
         
         for dim in sorted_dims:
             if dim.suggestions:
-                suggestions.append(f"【{dim.dimension} - 优先级{4-len(suggestions)//3}】")
-                suggestions.extend([f"  {i+1}. {s}" for i, s in enumerate(dim.suggestions[:3])])
+                # 为每条建议添加维度标签，最多取前3条
+                for suggestion in dim.suggestions[:3]:
+                    # 清理建议文本，移除多余的空格和编号
+                    clean_suggestion = suggestion.strip()
+                    # 如果建议已经以数字开头（如"1."），则移除它
+                    if clean_suggestion and clean_suggestion[0].isdigit():
+                        parts = clean_suggestion.split('.', 1)
+                        if len(parts) > 1:
+                            clean_suggestion = parts[1].strip()
+                    if clean_suggestion:
+                        suggestions.append(f"【{dim.dimension}】{clean_suggestion}")
         
         return suggestions
     
@@ -941,7 +951,7 @@ class LLMEvaluationAgent:
         for dim in report.dimensions:
             lines.extend([
                 f"### {dim.dimension}",
-                f"**得分**: {dim.weighted_score:.1f}/{dim.weight*100:.0f} (原始{dim.score:.1f}/100)",
+                f"**得分**: {dim.weighted_score:.1f}/{dim.weight*100:.0f} ",
                 f"**等级**: {dim.level}",
                 "",
                 f"**分析**:",

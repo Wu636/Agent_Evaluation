@@ -244,18 +244,37 @@ export function ReportView({ report, onReset }: ReportViewProps) {
 
         setIsGeneratingPdf(true);
 
+        // 临时添加 CSS 样式来覆盖不支持的颜色函数
+        const styleId = 'pdf-fix-style';
+
         try {
             // 等待一小段时间确保所有图表都渲染完成
             await new Promise(resolve => setTimeout(resolve, 500));
+
+            // 创建并添加临时样式
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = `
+                /* 强制使用兼容的颜色格式 */
+                * {
+                    background-color: #ffffff !important;
+                    color: #1e293b !important;
+                    border-color: #e2e8f0 !important;
+                }
+                /* 保留一些关键的渐变色 */
+                .bg-gradient-to-r {
+                    background: linear-gradient(to right, rgb(99, 102, 241), rgb(147, 51, 234)) !important;
+                }
+            `;
+            document.head.appendChild(style);
 
             // 截取报告内容
             const canvas = await html2canvas(reportRef.current, {
                 scale: 2, // 提高清晰度
                 useCORS: true,
-                logging: true, // 开启日志以便调试
-                backgroundColor: '#f8fafc',
+                logging: false,
+                backgroundColor: '#ffffff',
                 allowTaint: true,
-                // 修复 SVG 渲染问题
                 foreignObjectRendering: false,
             });
 
@@ -346,6 +365,12 @@ export function ReportView({ report, onReset }: ReportViewProps) {
 
             alert(errorMsg);
         } finally {
+            // 清理临时样式
+            const tempStyle = document.getElementById(styleId);
+            if (tempStyle) {
+                tempStyle.remove();
+            }
+
             setIsGeneratingPdf(false);
         }
     };

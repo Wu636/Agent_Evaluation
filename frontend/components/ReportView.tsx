@@ -237,22 +237,39 @@ export function ReportView({ report, onReset }: ReportViewProps) {
 
     // PDF 生成函数 - 使用 html2canvas 截图
     const generatePdfReport = async () => {
-        if (!reportRef.current) return;
+        if (!reportRef.current) {
+            alert('报告内容未加载完成，请稍后重试');
+            return;
+        }
 
         setIsGeneratingPdf(true);
 
         try {
+            // 等待一小段时间确保所有图表都渲染完成
+            await new Promise(resolve => setTimeout(resolve, 500));
+
             // 截取报告内容
             const canvas = await html2canvas(reportRef.current, {
                 scale: 2, // 提高清晰度
                 useCORS: true,
-                logging: false,
+                logging: true, // 开启日志以便调试
                 backgroundColor: '#f8fafc',
+                allowTaint: true,
+                // 修复 SVG 渲染问题
+                foreignObjectRendering: false,
             });
 
-            const imgData = canvas.toDataURL('image/png');
+            if (!canvas) {
+                throw new Error('Canvas 生成失败');
+            }
+
+            const imgData = canvas.toDataURL('image/png', 1.0);
             const imgWidth = canvas.width;
             const imgHeight = canvas.height;
+
+            if (!imgData || imgWidth === 0 || imgHeight === 0) {
+                throw new Error('图片数据生成失败');
+            }
 
             // 创建 PDF (A4 尺寸)
             const pdf = new jsPDF({
@@ -310,9 +327,24 @@ export function ReportView({ report, onReset }: ReportViewProps) {
             // 下载
             const timestamp = new Date().toISOString().slice(0, 10);
             pdf.save(`评估报告-${timestamp}.pdf`);
+
+            console.log('PDF 生成成功');
         } catch (error) {
             console.error('PDF 生成失败:', error);
-            alert('PDF 生成失败，请重试');
+
+            // 更详细的错误提示
+            let errorMsg = 'PDF 生成失败，请重试';
+            if (error instanceof Error) {
+                if (error.message.includes('Canvas')) {
+                    errorMsg = '截图失败，请确保页面完全加载后再试';
+                } else if (error.message.includes('memory') || error.message.includes('Memory')) {
+                    errorMsg = '内存不足，请尝试关闭其他标签页后重试';
+                } else {
+                    errorMsg = `PDF 生成失败: ${error.message}`;
+                }
+            }
+
+            alert(errorMsg);
         } finally {
             setIsGeneratingPdf(false);
         }

@@ -1,6 +1,7 @@
 /**
  * 历史记录管理器
  * 使用 JSON 文件存储评估历史
+ * 支持 Vercel serverless 环境（只读文件系统）
  */
 
 import { promises as fs } from 'fs';
@@ -30,8 +31,18 @@ export interface HistorySummary {
 
 const HISTORY_FILE = process.env.HISTORY_FILE || 'evaluations_history.json';
 
+// 检测是否在 Vercel 环境中
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
+
+// 内存缓存作为后备（Vercel 函数实例可能会被复用）
+let memoryCache: HistoryEntry[] = [];
+
 async function getHistoryFilePath(): Promise<string> {
-    // In production, use a data directory
+    // 在 Vercel 环境中，只有 /tmp 目录可写
+    if (isVercel) {
+        return path.join('/tmp', HISTORY_FILE);
+    }
+    // 本地开发或其他环境使用 DATA_DIR 或当前目录
     const dataDir = process.env.DATA_DIR || process.cwd();
     return path.join(dataDir, HISTORY_FILE);
 }
@@ -41,30 +52,45 @@ async function ensureFileExists(): Promise<void> {
     try {
         await fs.access(filePath);
     } catch {
-        await fs.writeFile(filePath, '[]', 'utf-8');
+        try {
+            await fs.writeFile(filePath, '[]', 'utf-8');
+        } catch (writeError) {
+            // 在 Vercel 中可能会失败，使用内存缓存
+            console.warn('无法创建历史文件，将使用内存缓存:', writeError);
+        }
     }
 }
 
 async function readHistory(): Promise<HistoryEntry[]> {
-    await ensureFileExists();
     const filePath = await getHistoryFilePath();
     try {
+        await ensureFileExists();
         const content = await fs.readFile(filePath, 'utf-8');
-        return JSON.parse(content);
+        const history = JSON.parse(content);
+        // 同步到内存缓存
+        memoryCache = history;
+        return history;
     } catch (error) {
-        console.error('Error reading history:', error);
-        return [];
+        console.warn('读取历史文件失败，使用内存缓存:', error);
+        // 返回内存缓存
+        return memoryCache;
     }
 }
 
 async function writeHistory(history: HistoryEntry[]): Promise<void> {
+    // 始终更新内存缓存
+    memoryCache = history;
+
     const filePath = await getHistoryFilePath();
     try {
         await fs.writeFile(filePath, JSON.stringify(history, null, 2), 'utf-8');
     } catch (error) {
-        console.error('Error writing history:', error);
+        console.warn('写入历史文件失败，数据已保存到内存缓存:', error);
+        // 在 Vercel 中写入可能失败，但数据已在内存缓存中
+        // 注意：内存缓存在函数冷启动后会丢失
     }
 }
+
 
 /**
  * 保存评估到历史记录

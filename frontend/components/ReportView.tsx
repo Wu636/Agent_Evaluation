@@ -11,6 +11,21 @@ import {
 import clsx from 'clsx';
 import { EvaluationReport } from '@/lib/api';
 
+// 维度名称映射：英文 key -> 中文显示名称
+const DIMENSION_NAMES: Record<string, string> = {
+    teaching_goal_completion: '目标达成度',
+    teaching_strategy: '策略引导力',
+    workflow_consistency: '流程遵循度',
+    interaction_experience: '交互体验感',
+    hallucination_control: '幻觉控制力',
+    robustness: '异常处理力',
+};
+
+// 获取维度中文名称
+const getDimensionName = (key: string): string => {
+    return DIMENSION_NAMES[key] || key;
+};
+
 // --- Helper Functions & Components ---
 
 /**
@@ -142,7 +157,7 @@ function PagedCardView({ title, icon, items, colorTheme }: PagedCardViewProps) {
                         "inline-block px-3 py-1 rounded-lg text-xs font-bold mb-2",
                         isRed ? "bg-red-50 text-red-600 border border-red-100" : "bg-emerald-50 text-emerald-600 border border-emerald-100"
                     )}>
-                        {currentDim}
+                        {getDimensionName(currentDim)}
                     </span>
                 </div>
                 <div className="space-y-3">
@@ -195,7 +210,7 @@ export function ReportView({ report, onReset }: ReportViewProps) {
     const [expandedDim, setExpandedDim] = useState<string | null>(null);
 
     const radarData = Object.entries(report.dimensions).map(([key, value]) => ({
-        subject: key,
+        subject: getDimensionName(key), // 使用中文名称
         A: value.score,
         fullMark: 100,
     }));
@@ -208,10 +223,10 @@ export function ReportView({ report, onReset }: ReportViewProps) {
     };
 
     const getScoreLabel = (score: number) => {
-        if (score >= 90) return 'Excellent';
-        if (score >= 75) return 'Good';
-        if (score >= 60) return 'Fair';
-        return 'Needs Improvement';
+        if (score >= 90) return '优秀';
+        if (score >= 75) return '良好';
+        if (score >= 60) return '合格';
+        return '需改进';
     };
 
     return (
@@ -344,7 +359,7 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                                             {data.score}
                                         </div>
                                         <div className="text-left">
-                                            <h4 className="font-bold text-slate-700 text-lg">{dim}</h4>
+                                            <h4 className="font-bold text-slate-700 text-lg">{getDimensionName(dim)}</h4>
                                             <div className="flex items-center gap-2 mt-1">
                                                 <div className="h-1.5 w-24 bg-slate-100 rounded-full overflow-hidden">
                                                     <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${data.score}%` }} />

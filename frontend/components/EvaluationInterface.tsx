@@ -167,7 +167,7 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
 
                             <div className="space-y-6">
                                 <div>
-                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 ml-1">1. 教师指导文档</h4>
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 ml-1">教师指导文档</h4>
                                     <FileUpload
                                         label="上传教师手册"
                                         accept=".docx,.md"
@@ -183,7 +183,7 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                                 </div>
 
                                 <div>
-                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 ml-1">2. 对话记录</h4>
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 ml-1">对话记录</h4>
                                     <FileUpload
                                         label="上传对话记录"
                                         accept=".json,.txt"

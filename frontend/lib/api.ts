@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://127.0.0.1:8000';
+// API 客户端 - 使用相对路径指向 Next.js API Routes
 
 export interface EvaluationReport {
     total_score: number;
@@ -6,6 +6,9 @@ export interface EvaluationReport {
     analysis: string;
     issues: string[];
     suggestions: string[];
+    final_level?: string;
+    pass_criteria_met?: boolean;
+    veto_reasons?: string[];
     history_id?: string;
 }
 
@@ -45,7 +48,7 @@ export async function evaluateFiles(
     if (apiConfig.apiUrl) formData.append('api_url', apiConfig.apiUrl);
     if (apiConfig.model) formData.append('model', apiConfig.model);
 
-    const response = await fetch(`${API_BASE_URL}/api/evaluate`, {
+    const response = await fetch('/api/evaluate', {
         method: 'POST',
         body: formData,
     });
@@ -59,25 +62,25 @@ export async function evaluateFiles(
 }
 
 export async function getModels(): Promise<{ models: ModelInfo[] }> {
-    const response = await fetch(`${API_BASE_URL}/api/models`);
+    const response = await fetch('/api/models');
     if (!response.ok) throw new Error('Failed to fetch models');
     return response.json();
 }
 
 export async function getHistory(): Promise<{ history: HistoryItem[] }> {
-    const response = await fetch(`${API_BASE_URL}/api/history`);
+    const response = await fetch('/api/history');
     if (!response.ok) throw new Error('Failed to fetch history');
     return response.json();
 }
 
 export async function getHistoryById(id: string): Promise<{ report: EvaluationReport }> {
-    const response = await fetch(`${API_BASE_URL}/api/history/${id}`);
+    const response = await fetch(`/api/history/${id}`);
     if (!response.ok) throw new Error('Failed to fetch history item');
     return response.json();
 }
 
 export async function deleteHistory(id: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/history/${id}`, {
+    const response = await fetch(`/api/history/${id}`, {
         method: 'DELETE'
     });
     if (!response.ok) throw new Error('Failed to delete history item');

@@ -6,37 +6,43 @@
 
 ```
 Agent_Evaluation/
-├── frontend/          # Next.js 前端应用
-├── backend/           # FastAPI 后端服务
-├── docs/              # 项目文档
-├── scripts/           # 工具脚本（命令行版评测、配置向导）
-├── data/              # 运行时数据（gitignore）
-├── .env.template      # 环境变量模板
-└── README.md          # 本文件
+├── frontend/          # Next.js 全栈应用（包含前端和 API）
+│   ├── app/          # Next.js App Router
+│   │   └── api/      # API 路由
+│   ├── lib/          # 核心逻辑库
+│   │   ├── llm/      # LLM 评测模块
+│   │   ├── converters/ # 文件转换器
+│   │   └── *.ts      # 工具函数
+│   └── components/   # React 组件
+├── scripts/          # Python 命令行工具（可选）
+├── data/             # 运行时数据（gitignore）
+└── README.md         # 本文件
 ```
 
 ## 🚀 快速开始
 
-### 1. 配置环境变量
-
-```bash
-cp .env.template .env
-# 编辑 .env 填写你的 API 密钥
-```
-
-### 2. 启动后端
-
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-```
-
-### 3. 启动前端
+### 1. 安装依赖
 
 ```bash
 cd frontend
 npm install
+```
+
+### 2. 配置环境变量
+
+```bash
+cp .env.example .env.local
+# 编辑 .env.local 填写你的 API 密钥
+```
+
+必需的环境变量：
+- `LLM_API_KEY` - LLM 服务 API 密钥
+- `LLM_BASE_URL` - LLM API 地址（默认已配置）
+- `LLM_MODEL` - 默认模型（默认: gpt-4o）
+
+### 3. 启动开发服务器
+
+```bash
 npm run dev
 ```
 
@@ -44,93 +50,110 @@ npm run dev
 
 ## 🐳 Docker 部署
 
-### 前置条件
-
-- 安装 [Docker](https://www.docker.com/get-started)
-- 安装 [Docker Compose](https://docs.docker.com/compose/install/)
-
-### 启动服务
+### 使用 Docker Compose（推荐）
 
 ```bash
-# 首次构建并启动（后台运行）
+# 1. 配置环境变量
+cp .env.template .env
+# 编辑 .env 填写你的 LLM_API_KEY
+
+# 2. 构建并启动
 docker-compose up -d --build
 
-# 仅启动服务（不重新构建）
-docker-compose up -d
-
-# 查看构建和启动日志
-docker-compose up --build
-```
-
-### 查看服务状态和日志
-
-```bash
-# 查看所有容器状态
-docker-compose ps
-
-# 查看实时日志
+# 3. 查看日志
 docker-compose logs -f
 
-# 只查看前端日志
-docker-compose logs -f frontend
-
-# 只查看后端日志
-docker-compose logs -f backend
-```
-
-### 关闭服务
-
-```bash
-# 停止并删除容器（保留镜像和网络）
+# 4. 关闭服务
 docker-compose down
-
-# 停止并删除容器，同时删除镜像
-docker-compose down --rmi all
-
-# 停止并删除容器、镜像、卷（清理所有数据）
-docker-compose down -v
 ```
 
-### 服务地址
+### 手动 Docker 部署
 
-| 服务 | 地址 |
-|------|------|
-| 前端界面 | http://localhost:3000 |
-| 后端 API | http://localhost:8000 |
-| API 文档 | http://localhost:8000/docs |
-
-### 常见问题
-
-**端口被占用？**
 ```bash
-# 查看占用端口的进程
-lsof -i :3000
-lsof -i :8000
+# 1. 构建镜像
+cd frontend
+docker build -t agent-evaluation .
 
-# 或使用 docker-compose 跳过特定服务
-docker-compose up -d backend  # 只启动后端
+# 2. 运行容器
+docker run -d \
+  --name agent-evaluation \
+  -p 3000:3000 \
+  -e LLM_API_KEY=your_key_here \
+  -e LLM_BASE_URL=http://llm-service.polymas.com/api/openai/v1/chat/completions \
+  -e LLM_MODEL=gpt-4o \
+  -v $(pwd)/data:/app/data \
+  agent-evaluation
 ```
 
-**重新构建镜像？**
+## 📦 生产部署
+
+### Vercel 部署
+
+1. Fork 本项目到你的 GitHub
+2. 在 [Vercel](https://vercel.com) 导入项目
+3. 配置环境变量：
+   - `LLM_API_KEY`
+   - `LLM_BASE_URL`
+   - `LLM_MODEL`
+4. 部署
+
+### 自建服务器部署
+
 ```bash
-docker-compose build --no-cache
-docker-compose up -d
+# 构建生产版本
+cd frontend
+npm run build
+
+# 启动生产服务器
+npm start
 ```
 
-**直接使用脚本重构**
+使用 PM2 保持服务运行：
+
 ```bash
-./rebuild.sh        # 重建所有服务（前端+后端）
-./rebuild.sh -f     # 只重建前端
-./rebuild.sh -b     # 只重建后端
-./rebuild.sh -c     # 清理缓存后完全重建
+npm install -g pm2
+pm2 start npm --name "agent-evaluation" -- start
+pm2 save
+pm2 startup
 ```
 
-## 📚 文档
+## 🔧 API 端点
 
-- [快速开始指南](docs/QUICK_START.md)
-- [LLM 评测指南](docs/LLM_EVALUATION_GUIDE.md)
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/evaluate` | POST | 上传文件并执行评测 |
+| `/api/models` | GET | 获取可用模型列表 |
+| `/api/history` | GET | 获取评测历史记录 |
+| `/api/history/[id]` | GET | 获取指定评测详情 |
+| `/api/history/[id]` | DELETE | 删除指定评测记录 |
+
+> **注意**：所有 API 端点由 Next.js API Routes 提供，无需单独的后端服务。
+
+## 📚 评测维度
+
+系统从 6 个维度评估 LLM 智能体：
+
+1. **目标达成度** (40%) - 一票否决项，阈值 60 分
+2. **策略引导力** (20%)
+3. **流程遵循度** (15%)
+4. **交互体验感** (10%)
+5. **幻觉控制力** (10%)
+6. **异常处理力** (5%)
 
 ## 🛠 技术栈
 
-- **前端**: Next.js 16 + React 19 + TypeScript + Tailwind CSS
-- **后端**: Python FastAPI + Uvicorn
+- **框架**: Next.js 16 + React 19 + TypeScript
+- **样式**: Tailwind CSS 4
+- **文件处理**: mammoth (DOCX → Markdown)
+- **LLM 调用**: 原生 fetch API
+- **数据存储**: JSON 文件
+
+## 📚 更多文档
+
+- **[📖 完整部署指南](./DEPLOYMENT.md)** - Docker 部署、本地开发、故障排除、数据管理
+- **[快速开始指南](./docs/QUICK_START.md)** - 5 分钟快速上手
+- **[LLM 评测指南](./docs/LLM_EVALUATION_GUIDE.md)** - 评测维度详解
+
+## 📝 许可证
+
+MIT

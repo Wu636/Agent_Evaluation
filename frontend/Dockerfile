@@ -1,33 +1,49 @@
-FROM node:20-alpine AS builder
-
+# Multi-stage build for Next.js
+# Stage 1: Dependencies
+FROM node:20-alpine AS deps
 WORKDIR /app
 
-# 复制依赖文件
+# Copy package files
 COPY package*.json ./
 RUN npm ci
 
-# 复制源代码
+# Stage 2: Builder
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# 设置 API URL（构建时注入）
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-
-# 构建
+# Build the application
 RUN npm run build
 
-# 生产镜像
+# Stage 3: Runner
 FROM node:20-alpine AS runner
-
 WORKDIR /app
 
 ENV NODE_ENV=production
+# Disable telemetry during runtime
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# 复制构建产物
+# Create a non-root user
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Copy necessary files from builder
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
+# Create data directory for history storage
+RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
+
+# Switch to non-root user
+USER nextjs
+
 EXPOSE 3000
+
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]

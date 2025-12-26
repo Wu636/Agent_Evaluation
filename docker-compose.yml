@@ -1,35 +1,41 @@
 services:
-  # 前端服务
-  frontend:
+  # Next.js 全栈应用 (前端 + API)
+  app:
     build:
       context: ./frontend
-      args:
-        NEXT_PUBLIC_API_URL: http://backend:8000
+      dockerfile: Dockerfile
+    container_name: agent-evaluation
     ports:
       - "3000:3000"
     environment:
+      # Node 环境
       - NODE_ENV=production
-    depends_on:
-      - backend
-    networks:
-      - app-network
-    restart: unless-stopped
 
-  # 后端服务
-  backend:
-    build:
-      context: .
-      dockerfile: ./backend/Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
+      # LLM API 配置 (必需)
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL:-http://llm-service.polymas.com/api/openai/v1/chat/completions}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o}
+
+      # 数据存储配置
+      - DATA_DIR=/app/data
+      - HISTORY_FILE=evaluations_history.json
+    volumes:
+      # 持久化历史记录数据 (使用命名卷，无需文件共享配置)
+      - agent-data:/app/data
     networks:
       - app-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  agent-data:
+    driver: local

@@ -11,7 +11,13 @@ class HistoryManager:
         # Use /tmp for Vercel/serverless environments (only writable directory)
         if history_file is None:
             # Check if running in Vercel/serverless environment
-            if os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_VERSION'):
+            # Vercel sets VERCEL env var, Lambda/AWS sets AWS_LAMBDA_FUNCTION_VERSION
+            is_serverless = (
+                os.environ.get('VERCEL') is not None
+                or os.environ.get('AWS_LAMBDA_FUNCTION_VERSION') is not None
+                or os.path.exists('/var/task')  # Vercel/AWS Lambda marker
+            )
+            if is_serverless:
                 history_file = "/tmp/evaluations_history.json"
             else:
                 history_file = "evaluations_history.json"

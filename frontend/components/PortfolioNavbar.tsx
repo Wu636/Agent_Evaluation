@@ -14,10 +14,11 @@ const navigationLinks = [
     name: "首页",
     view: "main" as const,
   },
-  {
-    name: "历史记录",
-    view: "history" as const,
-  }
+  // History feature disabled for Vercel deployment
+  // {
+  //   name: "历史记录",
+  //   view: "history" as const,
+  // }
 ]
 
 // @component: PortfolioNavbar

@@ -1,16 +1,17 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
     Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer
 } from 'recharts';
 import {
     AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
-    Lightbulb, RotateCcw, Download, Sparkles, ChevronLeft, FileDown
+    Lightbulb, RotateCcw, Download, Sparkles, ChevronLeft, FileDown, Loader2
 } from 'lucide-react';
 import clsx from 'clsx';
 import { EvaluationReport } from '@/lib/api';
 import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
 // 维度名称映射：英文 key -> 中文显示名称
 const DIMENSION_NAMES: Record<string, string> = {
@@ -230,164 +231,95 @@ export function ReportView({ report, onReset }: ReportViewProps) {
         return '需改进';
     };
 
-    // PDF 生成函数
-    const generatePdfReport = () => {
-        const doc = new jsPDF();
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const pageHeight = doc.internal.pageSize.getHeight();
-        const margin = 20;
-        const contentWidth = pageWidth - margin * 2;
-        let yPos = margin;
+    // PDF 生成状态
+    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+    const reportRef = useRef<HTMLDivElement>(null);
 
-        // 辅助函数：添加新页面
-        const addNewPageIfNeeded = (requiredSpace: number) => {
-            if (yPos + requiredSpace > pageHeight - margin) {
-                doc.addPage();
-                yPos = margin;
-                return true;
+    // PDF 生成函数 - 使用 html2canvas 截图
+    const generatePdfReport = async () => {
+        if (!reportRef.current) return;
+
+        setIsGeneratingPdf(true);
+
+        try {
+            // 截取报告内容
+            const canvas = await html2canvas(reportRef.current, {
+                scale: 2, // 提高清晰度
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#f8fafc',
+            });
+
+            const imgData = canvas.toDataURL('image/png');
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+
+            // 创建 PDF (A4 尺寸)
+            const pdf = new jsPDF({
+                orientation: imgWidth > imgHeight ? 'landscape' : 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+
+            // 计算缩放比例
+            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+            const scaledWidth = imgWidth * ratio;
+            const scaledHeight = imgHeight * ratio;
+
+            // 如果内容太长，需要分页
+            const pageHeightPx = (pdfHeight / ratio) * 0.95; // 留边距
+            const totalPages = Math.ceil(imgHeight / pageHeightPx);
+
+            for (let page = 0; page < totalPages; page++) {
+                if (page > 0) {
+                    pdf.addPage();
+                }
+
+                // 创建裁剪后的画布
+                const pageCanvas = document.createElement('canvas');
+                pageCanvas.width = imgWidth;
+                pageCanvas.height = Math.min(pageHeightPx, imgHeight - page * pageHeightPx);
+
+                const ctx = pageCanvas.getContext('2d');
+                if (ctx) {
+                    ctx.drawImage(
+                        canvas,
+                        0, page * pageHeightPx,
+                        imgWidth, pageCanvas.height,
+                        0, 0,
+                        imgWidth, pageCanvas.height
+                    );
+
+                    const pageImgData = pageCanvas.toDataURL('image/png');
+                    const pageScaledHeight = pageCanvas.height * ratio;
+
+                    pdf.addImage(
+                        pageImgData,
+                        'PNG',
+                        (pdfWidth - scaledWidth) / 2,
+                        5,
+                        scaledWidth,
+                        pageScaledHeight
+                    );
+                }
             }
-            return false;
-        };
 
-        // 辅助函数：自动换行文本
-        const addWrappedText = (text: string, fontSize: number, maxWidth: number) => {
-            doc.setFontSize(fontSize);
-            const lines = doc.splitTextToSize(text, maxWidth);
-            lines.forEach((line: string) => {
-                addNewPageIfNeeded(fontSize * 0.5);
-                doc.text(line, margin, yPos);
-                yPos += fontSize * 0.5;
-            });
-        };
-
-        // 标题
-        doc.setFontSize(24);
-        doc.setTextColor(79, 70, 229); // indigo-600
-        doc.text('Agent Evaluation Report', pageWidth / 2, yPos, { align: 'center' });
-        yPos += 15;
-
-        // 副标题
-        doc.setFontSize(12);
-        doc.setTextColor(100, 116, 139);
-        doc.text(`Generated: ${new Date().toLocaleString('zh-CN')}`, pageWidth / 2, yPos, { align: 'center' });
-        yPos += 20;
-
-        // 总分区域
-        doc.setFillColor(248, 250, 252);
-        doc.roundedRect(margin, yPos, contentWidth, 40, 5, 5, 'F');
-
-        doc.setFontSize(16);
-        doc.setTextColor(71, 85, 105);
-        doc.text('Total Score:', margin + 10, yPos + 15);
-
-        doc.setFontSize(36);
-        doc.setTextColor(30, 41, 59);
-        doc.text(`${report.total_score.toFixed(0)}`, margin + 70, yPos + 28);
-
-        doc.setFontSize(14);
-        doc.text(`/ 100  (${getScoreLabel(report.total_score)})`, margin + 100, yPos + 28);
-        yPos += 55;
-
-        // 维度评分
-        doc.setFontSize(18);
-        doc.setTextColor(30, 41, 59);
-        doc.text('Dimension Scores', margin, yPos);
-        yPos += 12;
-
-        doc.setFontSize(11);
-        Object.entries(report.dimensions).forEach(([dim, data]) => {
-            addNewPageIfNeeded(25);
-
-            const dimName = getDimensionName(dim);
-            const score = data.score;
-
-            // 背景条
-            doc.setFillColor(241, 245, 249);
-            doc.roundedRect(margin, yPos - 5, contentWidth, 20, 3, 3, 'F');
-
-            // 进度条
-            const progressWidth = (score / 100) * (contentWidth - 60);
-            doc.setFillColor(99, 102, 241);
-            doc.roundedRect(margin + 5, yPos + 2, progressWidth, 8, 2, 2, 'F');
-
-            // 文字
-            doc.setTextColor(51, 65, 85);
-            doc.text(dimName, margin + 10, yPos + 8);
-            doc.text(`${score}`, margin + contentWidth - 25, yPos + 8);
-
-            yPos += 22;
-        });
-        yPos += 10;
-
-        // 详细分析
-        addNewPageIfNeeded(40);
-        doc.setFontSize(18);
-        doc.setTextColor(30, 41, 59);
-        doc.text('Detailed Analysis', margin, yPos);
-        yPos += 10;
-
-        doc.setTextColor(71, 85, 105);
-        addWrappedText(report.analysis || 'No analysis available.', 10, contentWidth);
-        yPos += 15;
-
-        // 问题
-        if (report.issues && report.issues.length > 0) {
-            addNewPageIfNeeded(30);
-            doc.setFontSize(18);
-            doc.setTextColor(220, 38, 38); // red-600
-            doc.text(`Issues Found (${report.issues.length})`, margin, yPos);
-            yPos += 10;
-
-            doc.setFontSize(10);
-            doc.setTextColor(71, 85, 105);
-            report.issues.forEach((issue, idx) => {
-                addNewPageIfNeeded(20);
-                const cleanIssue = issue.replace(/^【.*?】/, '').trim();
-                addWrappedText(`${idx + 1}. ${cleanIssue}`, 10, contentWidth - 10);
-                yPos += 3;
-            });
-            yPos += 10;
+            // 下载
+            const timestamp = new Date().toISOString().slice(0, 10);
+            pdf.save(`评估报告-${timestamp}.pdf`);
+        } catch (error) {
+            console.error('PDF 生成失败:', error);
+            alert('PDF 生成失败，请重试');
+        } finally {
+            setIsGeneratingPdf(false);
         }
-
-        // 建议
-        if (report.suggestions && report.suggestions.length > 0) {
-            addNewPageIfNeeded(30);
-            doc.setFontSize(18);
-            doc.setTextColor(5, 150, 105); // emerald-600
-            doc.text(`Suggestions (${report.suggestions.length})`, margin, yPos);
-            yPos += 10;
-
-            doc.setFontSize(10);
-            doc.setTextColor(71, 85, 105);
-            report.suggestions.forEach((suggestion, idx) => {
-                addNewPageIfNeeded(20);
-                const cleanSuggestion = suggestion.replace(/^【.*?】/, '').trim();
-                addWrappedText(`${idx + 1}. ${cleanSuggestion}`, 10, contentWidth - 10);
-                yPos += 3;
-            });
-        }
-
-        // 页脚
-        const totalPages = doc.getNumberOfPages();
-        for (let i = 1; i <= totalPages; i++) {
-            doc.setPage(i);
-            doc.setFontSize(9);
-            doc.setTextColor(148, 163, 184);
-            doc.text(
-                `Page ${i} of ${totalPages}`,
-                pageWidth / 2,
-                pageHeight - 10,
-                { align: 'center' }
-            );
-        }
-
-        // 下载
-        const timestamp = new Date().toISOString().slice(0, 10);
-        doc.save(`evaluation-report-${timestamp}.pdf`);
     };
 
     return (
-        <div className="w-full space-y-8 animate-in slide-in-from-bottom-8 duration-700">
+        <div ref={reportRef} className="w-full space-y-8 animate-in slide-in-from-bottom-8 duration-700">
 
             {/* Header / Score Card */}
             <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden relative">
@@ -565,10 +497,20 @@ export function ReportView({ report, onReset }: ReportViewProps) {
 
                     <button
                         onClick={generatePdfReport}
-                        className="w-full py-4 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-all flex items-center justify-center gap-2 group"
+                        disabled={isGeneratingPdf}
+                        className="w-full py-4 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 disabled:from-slate-400 disabled:to-slate-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-all flex items-center justify-center gap-2 group disabled:cursor-not-allowed"
                     >
-                        <FileDown className="w-5 h-5 group-hover:translate-y-0.5 transition-transform" />
-                        下载 PDF 报告
+                        {isGeneratingPdf ? (
+                            <>
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                                正在生成 PDF...
+                            </>
+                        ) : (
+                            <>
+                                <FileDown className="w-5 h-5 group-hover:translate-y-0.5 transition-transform" />
+                                下载 PDF 报告
+                            </>
+                        )}
                     </button>
 
                     <button

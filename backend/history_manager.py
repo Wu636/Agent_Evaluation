@@ -6,8 +6,15 @@ import uuid
 
 class HistoryManager:
     """Manages evaluation history using JSON file storage"""
-    
-    def __init__(self, history_file: str = "evaluations_history.json"):
+
+    def __init__(self, history_file: str = None):
+        # Use /tmp for Vercel/serverless environments (only writable directory)
+        if history_file is None:
+            # Check if running in Vercel/serverless environment
+            if os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_VERSION'):
+                history_file = "/tmp/evaluations_history.json"
+            else:
+                history_file = "evaluations_history.json"
         self.history_file = history_file
         self._ensure_file_exists()
     

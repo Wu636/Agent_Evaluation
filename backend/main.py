@@ -6,8 +6,7 @@ from typing import Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-# History functionality disabled for Vercel deployment
-# from history_manager import HistoryManager
+from history_manager import HistoryManager
 from txt_to_json_converter import parse_txt_dialogue
 
 # Add scripts directory to sys.path to import agent code
@@ -47,8 +46,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# History functionality disabled for Vercel deployment
-# history_manager = HistoryManager()
+# Initialize history manager
+history_manager = HistoryManager()
 
 @app.get("/")
 def read_root():
@@ -172,15 +171,15 @@ async def evaluate(
                 "veto_reasons": result.get("veto_reasons", [])
             }
             
-            # Save to history disabled for Vercel deployment
-            # eval_id = history_manager.save_evaluation(
-            #     report=result,
-            #     teacher_doc_name=teacher_doc.filename,
-            #     dialogue_record_name=dialogue_record.filename,
-            #     model=model or "gpt-4o"
-            # )
-            #
-            # frontend_result["history_id"] = eval_id
+            # Save to history (save original full result for history)
+            eval_id = history_manager.save_evaluation(
+                report=result,
+                teacher_doc_name=teacher_doc.filename,
+                dialogue_record_name=dialogue_record.filename,
+                model=model or "gpt-4o"
+            )
+
+            frontend_result["history_id"] = eval_id
             return frontend_result
             
         finally:
@@ -222,71 +221,76 @@ def get_models():
         ]
     }
 
-# History endpoints disabled for Vercel deployment
-# @app.get("/api/history")
-# def get_history():
-#     """Get all evaluation history (summaries)"""
-#     try:
-#         history = history_manager.get_all()
-#         return {"history": history}
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-#
-# @app.get("/api/history/{eval_id}")
-# def get_history_item(eval_id: str):
-#     """Get specific evaluation details by ID"""
-#     try:
-#         item = history_manager.get_by_id(eval_id)
-#         if item is None:
-#             raise HTTPException(status_code=404, detail="Evaluation not found")
-#
-#         # Transform the stored report to frontend expected format
-#         raw_report = item.get("report", {})
-#
-#         # Check if this is already in the new format (has "issues" key directly)
-#         # or needs transformation (has "critical_issues" key)
-#         if "critical_issues" in raw_report or "dimensions" in raw_report and isinstance(raw_report.get("dimensions"), list):
-#             # Transform to frontend format
-#             frontend_report = {
-#                 "total_score": raw_report.get("total_score", 0),
-#                 "dimensions": {
-#                     dim["dimension"]: {
-#                         "score": dim["score"],
-#                         "comment": dim["analysis"]
-#                     }
-#                     for dim in raw_report.get("dimensions", [])
-#                 } if isinstance(raw_report.get("dimensions"), list) else raw_report.get("dimensions", {}),
-#                 "analysis": raw_report.get("executive_summary", ""),
-#                 "issues": raw_report.get("critical_issues", []),
-#                 "suggestions": raw_report.get("actionable_suggestions", []),
-#                 "final_level": raw_report.get("final_level", ""),
-#                 "pass_criteria_met": raw_report.get("pass_criteria_met", False),
-#                 "veto_reasons": raw_report.get("veto_reasons", []),
-#                 "history_id": eval_id
-#             }
-#         else:
-#             # Already in frontend format
-#             frontend_report = raw_report
-#             frontend_report["history_id"] = eval_id
-#
-#         return {"report": frontend_report}
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-#
-# @app.delete("/api/history/{eval_id}")
-# def delete_history_item(eval_id: str):
-#     """Delete an evaluation from history"""
-#     try:
-#         success = history_manager.delete_by_id(eval_id)
-#         if not success:
-#             raise HTTPException(status_code=404, detail="Evaluation not found")
-#         return {"success": True, "message": "Evaluation deleted"}
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/history")
+def get_history():
+    """
+    Get all evaluation history (summaries)
+    """
+    try:
+        history = history_manager.get_all()
+        return {"history": history}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/history/{eval_id}")
+def get_history_item(eval_id: str):
+    """
+    Get specific evaluation details by ID
+    """
+    try:
+        item = history_manager.get_by_id(eval_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Evaluation not found")
+
+        # Transform the stored report to frontend expected format
+        raw_report = item.get("report", {})
+
+        # Check if this is already in the new format (has "issues" key directly)
+        # or needs transformation (has "critical_issues" key)
+        if "critical_issues" in raw_report or "dimensions" in raw_report and isinstance(raw_report.get("dimensions"), list):
+            # Transform to frontend format
+            frontend_report = {
+                "total_score": raw_report.get("total_score", 0),
+                "dimensions": {
+                    dim["dimension"]: {
+                        "score": dim["score"],
+                        "comment": dim["analysis"]
+                    }
+                    for dim in raw_report.get("dimensions", [])
+                } if isinstance(raw_report.get("dimensions"), list) else raw_report.get("dimensions", {}),
+                "analysis": raw_report.get("executive_summary", ""),
+                "issues": raw_report.get("critical_issues", []),
+                "suggestions": raw_report.get("actionable_suggestions", []),
+                "final_level": raw_report.get("final_level", ""),
+                "pass_criteria_met": raw_report.get("pass_criteria_met", False),
+                "veto_reasons": raw_report.get("veto_reasons", []),
+                "history_id": eval_id
+            }
+        else:
+            # Already in frontend format
+            frontend_report = raw_report
+            frontend_report["history_id"] = eval_id
+
+        return {"report": frontend_report}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/history/{eval_id}")
+def delete_history_item(eval_id: str):
+    """
+    Delete an evaluation from history
+    """
+    try:
+        success = history_manager.delete_by_id(eval_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Evaluation not found")
+        return {"success": True, "message": "Evaluation deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

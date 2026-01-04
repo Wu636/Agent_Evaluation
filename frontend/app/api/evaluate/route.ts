@@ -143,33 +143,37 @@ export async function POST(request: NextRequest) {
       history_id: "",
     };
 
-    // 保存到历史记录
-    const evalId = await saveEvaluation(
-      {
-        total_score: report.totalScore,
-        final_level: report.finalLevel,
-        dimensions: report.dimensions.map((d) => ({
-          dimension: d.dimension,
-          score: d.score,
-          weight: d.weight,
-          level: d.level,
-          analysis: d.analysis,
-          evidence: d.evidence,
-          issues: d.issues,
-          suggestions: d.suggestions,
-        })),
-        executive_summary: report.executiveSummary,
-        critical_issues: report.criticalIssues,
-        actionable_suggestions: report.actionableSuggestions,
-        pass_criteria_met: report.passCriteriaMet,
-        veto_reasons: report.vetoReasons,
-      },
-      teacherDoc.name,
-      dialogueRecord.name,
-      apiConfig.model
-    );
-
-    frontendResult.history_id = evalId;
+    // 保存到历史记录（失败不影响结果返回）
+    try {
+      const evalId = await saveEvaluation(
+        {
+          total_score: report.totalScore,
+          final_level: report.finalLevel,
+          dimensions: report.dimensions.map((d) => ({
+            dimension: d.dimension,
+            score: d.score,
+            weight: d.weight,
+            level: d.level,
+            analysis: d.analysis,
+            evidence: d.evidence,
+            issues: d.issues,
+            suggestions: d.suggestions,
+          })),
+          executive_summary: report.executiveSummary,
+          critical_issues: report.criticalIssues,
+          actionable_suggestions: report.actionableSuggestions,
+          pass_criteria_met: report.passCriteriaMet,
+          veto_reasons: report.vetoReasons,
+        },
+        teacherDoc.name,
+        dialogueRecord.name,
+        apiConfig.model
+      );
+      frontendResult.history_id = evalId;
+    } catch (historyError) {
+      console.warn("保存历史记录失败，但评估已完成:", historyError);
+      // 历史保存失败不影响返回结果
+    }
 
     return NextResponse.json(frontendResult);
   } catch (error) {

@@ -245,88 +245,110 @@ export function ReportView({ report, onReset }: ReportViewProps) {
         setIsGeneratingPdf(true);
 
         try {
-            // 等待一小段时间确保所有图表都渲染完成
+            console.log('开始生成 PDF...');
+
+            // 等待渲染完成
             await new Promise(resolve => setTimeout(resolve, 1000));
 
-            // 截取报告内容
+            console.log('开始截图...');
+
+            // 使用更简单的配置
             const canvas = await html2canvas(reportRef.current, {
-                scale: 1.5, // 降低 scale 避免内存问题
+                scale: 1,
                 useCORS: true,
-                logging: false,
-                backgroundColor: '#f8fafc',
-                allowTaint: false,
-                imageTimeout: 15000,
-                removeContainer: true,
+                allowTaint: true,
+                logging: true,
+                backgroundColor: '#ffffff',
             });
 
-            const imgData = canvas.toDataURL('image/jpeg', 0.95); // 使用 JPEG 减小文件大小
-            const imgWidth = canvas.width;
-            const imgHeight = canvas.height;
+            console.log('截图完成，canvas 尺寸:', canvas.width, 'x', canvas.height);
 
-            // 创建 PDF (A4 尺寸，纵向)
+            if (!canvas || canvas.width === 0 || canvas.height === 0) {
+                throw new Error('截图生成失败，canvas 尺寸为 0');
+            }
+
+            const imgData = canvas.toDataURL('image/png');
+            console.log('图片数据长度:', imgData.length);
+
+            if (!imgData || imgData === 'data:,') {
+                throw new Error('图片数据生成失败');
+            }
+
+            // 创建 PDF
             const pdf = new jsPDF({
                 orientation: 'portrait',
-                unit: 'px',
-                format: 'a4',
-                compress: true
+                unit: 'mm',
+                format: 'a4'
             });
 
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = pdf.internal.pageSize.getHeight();
 
-            // 计算缩放比例以适应页面宽度
-            const scale = pdfWidth / imgWidth;
-            const scaledHeight = imgHeight * scale;
+            // 计算图片在 PDF 中的尺寸
+            const imgWidth = pdfWidth - 20; // 留 10mm 边距
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-            // 如果内容超过一页，需要分页
-            if (scaledHeight > pdfHeight) {
+            // 如果图片高度超过一页，需要分页
+            if (imgHeight > pdfHeight - 20) {
                 let yOffset = 0;
-                let pageNumber = 0;
+                let position = 0;
 
-                while (yOffset < imgHeight) {
-                    if (pageNumber > 0) {
+                while (yOffset < canvas.height) {
+                    if (position > 0) {
                         pdf.addPage();
                     }
 
-                    // 计算当前页面应该显示的高度
-                    const pageHeightInSourcePx = pdfHeight / scale;
-                    const remainingHeight = imgHeight - yOffset;
-                    const currentPageHeight = Math.min(pageHeightInSourcePx, remainingHeight);
+                    // 计算当前页可以显示的高度
+                    const pageHeight = Math.min(
+                        (pdfHeight - 20) * canvas.width / imgWidth,
+                        canvas.height - yOffset
+                    );
 
-                    // 创建临时 canvas 用于裁剪
-                    const tempCanvas = document.createElement('canvas');
-                    tempCanvas.width = imgWidth;
-                    tempCanvas.height = currentPageHeight;
-                    const tempCtx = tempCanvas.getContext('2d');
+                    // 创建临时 canvas
+                    const pageCanvas = document.createElement('canvas');
+                    pageCanvas.width = canvas.width;
+                    pageCanvas.height = pageHeight;
 
-                    if (tempCtx) {
-                        tempCtx.drawImage(
+                    const ctx = pageCanvas.getContext('2d');
+                    if (ctx) {
+                        ctx.drawImage(
                             canvas,
                             0, yOffset,
-                            imgWidth, currentPageHeight,
+                            canvas.width, pageHeight,
                             0, 0,
-                            imgWidth, currentPageHeight
+                            canvas.width, pageHeight
                         );
 
-                        const pageImgData = tempCanvas.toDataURL('image/jpeg', 0.95);
-                        pdf.addImage(pageImgData, 'JPEG', 0, 0, pdfWidth, currentPageHeight * scale);
+                        const pageImg = pageCanvas.toDataURL('image/png');
+                        const pageImgHeight = (pageHeight * imgWidth) / canvas.width;
+
+                        pdf.addImage(pageImg, 'PNG', 10, 10, imgWidth, pageImgHeight);
                     }
 
-                    yOffset += currentPageHeight;
-                    pageNumber++;
+                    yOffset += pageHeight;
+                    position++;
                 }
             } else {
                 // 单页 PDF
-                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, scaledHeight);
+                pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
             }
 
             // 下载
             const timestamp = new Date().toISOString().slice(0, 10);
             pdf.save(`评估报告-${timestamp}.pdf`);
 
+            console.log('PDF 生成成功！');
+
         } catch (error) {
-            console.error('PDF 生成失败:', error);
-            alert(`PDF 生成失败: ${error instanceof Error ? error.message : '未知错误'}`);
+            console.error('PDF 生成详细错误:', error);
+            console.error('错误堆栈:', error instanceof Error ? error.stack : 'N/A');
+
+            let errorMsg = 'PDF 生成失败';
+            if (error instanceof Error) {
+                errorMsg += `: ${error.message}`;
+            }
+
+            alert(errorMsg + '\n\n请查看浏览器控制台获取详细错误信息');
         } finally {
             setIsGeneratingPdf(false);
         }

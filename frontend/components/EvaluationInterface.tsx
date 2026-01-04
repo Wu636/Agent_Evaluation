@@ -6,7 +6,7 @@ import { FileUpload } from '@/components/FileUpload';
 import { ReportView } from '@/components/ReportView';
 import { SettingsModal } from '@/components/SettingsModal';
 import { HistoryView } from '@/components/HistoryView';
-import { evaluateFiles, EvaluationReport } from '@/lib/api';
+import { evaluateFilesStream, EvaluationReport, StreamProgress } from '@/lib/api';
 
 interface EvaluationInterfaceProps {
     currentView?: 'main' | 'history';
@@ -22,6 +22,7 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
     const [step, setStep] = useState<'upload' | 'processing' | 'results'>('upload');
     const [internalView, setInternalView] = useState<'main' | 'history'>('main');
     const [showSettings, setShowSettings] = useState(false);
+    const [currentDimension, setCurrentDimension] = useState<string>('');
 
     // Use external view if provided, otherwise use internal state
     const currentView = externalView ?? internalView;
@@ -33,13 +34,28 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
         setStep('processing');
         setLoading(true);
         setError(null);
+        setProgress(0);
+        setCurrentDimension('');
 
         try {
             // Load API config from localStorage
             const savedSettings = localStorage.getItem('llm-eval-settings');
             const apiConfig = savedSettings ? JSON.parse(savedSettings) : {};
 
-            const result = await evaluateFiles(teacherDoc, dialogueRecord, apiConfig);
+            const result = await evaluateFilesStream(
+                teacherDoc,
+                dialogueRecord,
+                apiConfig,
+                (progressEvent: StreamProgress) => {
+                    if (progressEvent.type === 'progress' && progressEvent.dimension) {
+                        setCurrentDimension(progressEvent.dimension);
+                    } else if (progressEvent.type === 'dimension_complete') {
+                        if (progressEvent.current && progressEvent.total) {
+                            setProgress((progressEvent.current / progressEvent.total) * 100);
+                        }
+                    }
+                }
+            );
             setReport(result);
             setStep('results');
         } catch (err: any) {
@@ -60,24 +76,9 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
 
     const [progress, setProgress] = useState(0);
 
-    // Simulate progress
+    // Update progress to 100 when results are ready
     React.useEffect(() => {
-        if (step === 'processing') {
-            setProgress(0);
-            const timer = setInterval(() => {
-                setProgress((oldProgress) => {
-                    if (oldProgress === 100) return 100;
-                    // Fast initial progress
-                    if (oldProgress < 30) return oldProgress + 2;
-                    // Slower middle progress
-                    if (oldProgress < 70) return oldProgress + 0.5;
-                    // Very slow end progress until complete
-                    if (oldProgress < 95) return oldProgress + 0.1;
-                    return oldProgress;
-                });
-            }, 100);
-            return () => clearInterval(timer);
-        } else if (step === 'results') {
+        if (step === 'results') {
             setProgress(100);
         }
     }, [step]);
@@ -273,17 +274,15 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
 
                     <div className="text-center space-y-2">
                         <h2 className="text-2xl font-bold text-slate-800">正在进行评估</h2>
-                        <div className="flex flex-col gap-2 items-center text-slate-500 text-lg">
-                            <p className={progress < 30 ? "text-indigo-600 font-medium transition-colors" : "transition-colors"}>
-                                正在读取教师指导文档...
+                        {currentDimension ? (
+                            <p className="text-indigo-600 font-medium text-lg">
+                                正在评估: {currentDimension}
                             </p>
-                            <p className={progress >= 30 && progress < 70 ? "text-indigo-600 font-medium transition-colors" : "transition-colors"}>
-                                正在评估对话上下文...
+                        ) : (
+                            <p className="text-slate-500 text-lg">
+                                准备开始评估...
                             </p>
-                            <p className={progress >= 70 ? "text-indigo-600 font-medium transition-colors" : "transition-colors"}>
-                                正在计算维度得分...
-                            </p>
-                        </div>
+                        )}
                     </div>
                 </div>
             )}

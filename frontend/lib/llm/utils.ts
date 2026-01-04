@@ -49,7 +49,36 @@ export function parseLLMResponse(response: string): LLMResponse {
             }
         }
 
-        const result = JSON.parse(jsonText) as LLMResponse;
+        // 尝试修复常见的 JSON 格式问题
+        if (jsonText) {
+            // 修复数组中缺少逗号的问题（Claude 有时会这样）
+            jsonText = jsonText.replace(/"\s*\n\s*"/g, '",\n"');
+            // 修复对象中缺少逗号的问题
+            jsonText = jsonText.replace(/"\s*\n\s*([a-zA-Z_])/g, '",\n$1');
+            // 移除尾随逗号
+            jsonText = jsonText.replace(/,(\s*[}\]])/g, '$1');
+        }
+
+        let result: LLMResponse;
+
+        try {
+            result = JSON.parse(jsonText) as LLMResponse;
+        } catch (parseError) {
+            console.error("JSON 解析失败，尝试更激进的修复...");
+            console.error("原始 JSON:", jsonText?.substring(0, 500));
+
+            // 尝试更激进的修复
+            if (jsonText) {
+                // 移除所有注释
+                jsonText = jsonText.replace(/\/\*[\s\S]*?\*\//g, '');
+                jsonText = jsonText.replace(/\/\/.*/g, '');
+
+                // 再次尝试解析
+                result = JSON.parse(jsonText) as LLMResponse;
+            } else {
+                throw parseError;
+            }
+        }
 
         // 验证必要字段
         const requiredFields: (keyof LLMResponse)[] = [
@@ -60,22 +89,38 @@ export function parseLLMResponse(response: string): LLMResponse {
             "issues",
             "suggestions",
         ];
+
         for (const field of requiredFields) {
             if (!(field in result)) {
-                throw new Error(`LLM返回缺少必要字段: ${field}`);
+                console.warn(`LLM返回缺少字段: ${field}，使用默认值`);
+                // 提供默认值
+                if (field === "score") result.score = 50;
+                else if (field === "level") result.level = "合格";
+                else if (field === "analysis") result.analysis = "分析内容缺失";
+                else if (field === "evidence" || field === "issues" || field === "suggestions") {
+                    (result as any)[field] = [];
+                }
             }
         }
+
+        // 确保数组字段是数组
+        if (!Array.isArray(result.evidence)) result.evidence = [];
+        if (!Array.isArray(result.issues)) result.issues = [];
+        if (!Array.isArray(result.suggestions)) result.suggestions = [];
 
         return result;
     } catch (error) {
         console.error("JSON解析失败:", error);
+        console.error("原始响应:", response.substring(0, 1000));
+
+        // 返回默认值
         return {
             score: 50,
             level: "合格",
-            analysis: `JSON解析失败,使用默认分数。错误: ${error instanceof Error ? error.message : String(error)}`,
+            analysis: `JSON解析失败，使用默认分数。错误: ${error instanceof Error ? error.message : String(error)}`,
             evidence: [],
-            issues: ["LLM返回格式错误"],
-            suggestions: ["需要修复LLM提示词或响应解析"],
+            issues: ["LLM返回格式错误，请检查模型配置"],
+            suggestions: ["建议使用 GPT-4 或其他兼容模型"],
         };
     }
 }

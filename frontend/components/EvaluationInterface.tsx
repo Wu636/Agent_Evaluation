@@ -76,7 +76,16 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
         }
     };
 
+    // 返回到上传界面（保留文件）
     const handleReset = () => {
+        // 不清空文件，让用户可以用不同模型测试相同文件
+        setReport(null);
+        setStep('upload');
+        setError(null);
+    };
+
+    // 清空所有文件（用户主动清空时调用）
+    const handleClearFiles = () => {
         setTeacherDoc(null);
         setDialogueRecord(null);
         setReport(null);
@@ -113,6 +122,15 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
             {/* Action Bar (Only visible in upload step and main view) */}
             {step === 'upload' && (
                 <div className="w-full flex justify-end gap-4 mb-4">
+                    {/* 清空文件按钮 - 只在有文件时显示 */}
+                    {(teacherDoc || dialogueRecord) && (
+                        <button
+                            onClick={handleClearFiles}
+                            className="flex items-center gap-2 px-4 py-2 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium"
+                        >
+                            清空文件
+                        </button>
+                    )}
                     <button
                         onClick={() => setCurrentView('history')}
                         className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors text-sm font-medium"

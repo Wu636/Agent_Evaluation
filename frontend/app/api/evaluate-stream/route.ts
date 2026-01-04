@@ -9,6 +9,7 @@ import { convertDocxToMarkdown } from "@/lib/converters/docx-converter";
 import { DIMENSIONS, MODEL_NAME_MAPPING } from "@/lib/config";
 import { buildDimensionPrompt } from "@/lib/llm/prompts";
 import { formatDialogueForLLM, parseLLMResponse, callLLM } from "@/lib/llm/utils";
+import { saveEvaluation } from "@/lib/history-manager";
 import type { DialogueData, ApiConfig, DimensionScore, EvaluationLevel } from "@/lib/llm/types";
 
 export const maxDuration = 300;
@@ -222,6 +223,19 @@ export async function POST(request: NextRequest) {
                     veto_reasons: vetoReasons,
                     history_id: "",
                 };
+
+                // 保存到历史记录
+                try {
+                    const evalId = await saveEvaluation(
+                        frontendResult,
+                        teacherDoc.name,
+                        dialogueRecord.name,
+                        apiConfig.model
+                    );
+                    frontendResult.history_id = evalId;
+                } catch (historyError) {
+                    console.warn("保存历史记录失败:", historyError);
+                }
 
                 // 发送完成事件
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'complete', report: frontendResult })}\n\n`));

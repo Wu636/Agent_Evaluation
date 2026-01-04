@@ -1,17 +1,15 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
     Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer
 } from 'recharts';
 import {
     AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
-    Lightbulb, RotateCcw, Download, Sparkles, ChevronLeft, FileDown, Loader2
+    Lightbulb, RotateCcw, Sparkles, ChevronLeft
 } from 'lucide-react';
 import clsx from 'clsx';
 import { EvaluationReport } from '@/lib/api';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
 
 // 维度名称映射：英文 key -> 中文显示名称
 const DIMENSION_NAMES: Record<string, string> = {
@@ -231,132 +229,8 @@ export function ReportView({ report, onReset }: ReportViewProps) {
         return '需改进';
     };
 
-    // PDF 生成状态
-    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-    const reportRef = useRef<HTMLDivElement>(null);
-
-    // PDF 生成函数 - 使用 html2canvas 截图
-    const generatePdfReport = async () => {
-        if (!reportRef.current) {
-            alert('报告内容未加载完成，请稍后重试');
-            return;
-        }
-
-        setIsGeneratingPdf(true);
-
-        try {
-            console.log('开始生成 PDF...');
-
-            // 等待渲染完成
-            await new Promise(resolve => setTimeout(resolve, 1000));
-
-            console.log('开始截图...');
-
-            // 使用 foreignObjectRendering 避免颜色解析问题
-            const canvas = await html2canvas(reportRef.current, {
-                scale: 1,
-                useCORS: true,
-                allowTaint: true,
-                logging: false,
-                backgroundColor: '#ffffff',
-                foreignObjectRendering: true, // 使用 SVG foreignObject 渲染，避免颜色解析
-            });
-
-            console.log('截图完成，canvas 尺寸:', canvas.width, 'x', canvas.height);
-
-            if (!canvas || canvas.width === 0 || canvas.height === 0) {
-                throw new Error('截图生成失败，canvas 尺寸为 0');
-            }
-
-            const imgData = canvas.toDataURL('image/png');
-            console.log('图片数据长度:', imgData.length);
-
-            if (!imgData || imgData === 'data:,') {
-                throw new Error('图片数据生成失败');
-            }
-
-            // 创建 PDF
-            const pdf = new jsPDF({
-                orientation: 'portrait',
-                unit: 'mm',
-                format: 'a4'
-            });
-
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = pdf.internal.pageSize.getHeight();
-
-            // 计算图片在 PDF 中的尺寸
-            const imgWidth = pdfWidth - 20; // 留 10mm 边距
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-            // 如果图片高度超过一页，需要分页
-            if (imgHeight > pdfHeight - 20) {
-                let yOffset = 0;
-                let position = 0;
-
-                while (yOffset < canvas.height) {
-                    if (position > 0) {
-                        pdf.addPage();
-                    }
-
-                    // 计算当前页可以显示的高度
-                    const pageHeight = Math.min(
-                        (pdfHeight - 20) * canvas.width / imgWidth,
-                        canvas.height - yOffset
-                    );
-
-                    // 创建临时 canvas
-                    const pageCanvas = document.createElement('canvas');
-                    pageCanvas.width = canvas.width;
-                    pageCanvas.height = pageHeight;
-
-                    const ctx = pageCanvas.getContext('2d');
-                    if (ctx) {
-                        ctx.drawImage(
-                            canvas,
-                            0, yOffset,
-                            canvas.width, pageHeight,
-                            0, 0,
-                            canvas.width, pageHeight
-                        );
-
-                        const pageImg = pageCanvas.toDataURL('image/png');
-                        const pageImgHeight = (pageHeight * imgWidth) / canvas.width;
-
-                        pdf.addImage(pageImg, 'PNG', 10, 10, imgWidth, pageImgHeight);
-                    }
-
-                    yOffset += pageHeight;
-                    position++;
-                }
-            } else {
-                // 单页 PDF
-                pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
-            }
-
-            // 下载
-            const timestamp = new Date().toISOString().slice(0, 10);
-            pdf.save(`评估报告-${timestamp}.pdf`);
-
-            console.log('PDF 生成成功！');
-
-        } catch (error) {
-            console.error('PDF 生成详细错误:', error);
-            console.error('错误堆栈:', error instanceof Error ? error.stack : 'N/A');
-
-            let errorMsg = 'PDF 生成失败';
-            if (error instanceof Error) {
-                errorMsg += `: ${error.message}`;
-            }
-
-            alert(errorMsg + '\n\n请查看浏览器控制台获取详细错误信息');
-        } finally {
-            setIsGeneratingPdf(false);
-        }
-    };
-
     return (
-        <div ref={reportRef} className="w-full space-y-8 animate-in slide-in-from-bottom-8 duration-700">
+        <div className="w-full space-y-8 animate-in slide-in-from-bottom-8 duration-700">
 
             {/* Header / Score Card */}
             <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden relative">
@@ -532,23 +406,6 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                         colorTheme="emerald"
                     />
 
-                    <button
-                        onClick={generatePdfReport}
-                        disabled={isGeneratingPdf}
-                        className="w-full py-4 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 disabled:from-slate-400 disabled:to-slate-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-all flex items-center justify-center gap-2 group disabled:cursor-not-allowed"
-                    >
-                        {isGeneratingPdf ? (
-                            <>
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                                正在生成 PDF...
-                            </>
-                        ) : (
-                            <>
-                                <FileDown className="w-5 h-5 group-hover:translate-y-0.5 transition-transform" />
-                                下载 PDF 报告
-                            </>
-                        )}
-                    </button>
 
                     <button
                         onClick={onReset}

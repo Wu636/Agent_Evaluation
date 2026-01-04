@@ -1,17 +1,18 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Clock, FileText, Trash2, Eye, ArrowLeft, Download } from 'lucide-react';
+import { Clock, FileText, Trash2, Eye, ArrowLeft } from 'lucide-react';
 import clsx from 'clsx';
 import { ReportView } from './ReportView';
-import { getHistory, deleteHistory, getHistoryById, HistoryItem, EvaluationReport } from '@/lib/api';
+import { EvaluationReport } from '@/lib/api';
+import { getHistoryList, getHistoryItem, deleteHistoryItem, HistorySummary } from '@/lib/client-history';
 
 interface HistoryViewProps {
     onBack: () => void;
 }
 
 export function HistoryView({ onBack }: HistoryViewProps) {
-    const [history, setHistory] = useState<HistoryItem[]>([]);
+    const [history, setHistory] = useState<HistorySummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedReport, setSelectedReport] = useState<EvaluationReport | null>(null);
 
@@ -21,8 +22,9 @@ export function HistoryView({ onBack }: HistoryViewProps) {
 
     const fetchHistory = async () => {
         try {
-            const data = await getHistory();
-            setHistory(data.history || []);
+            // 使用客户端 localStorage
+            const data = getHistoryList();
+            setHistory(data);
         } catch (error) {
             console.error('Failed to fetch history:', error);
         } finally {
@@ -32,8 +34,10 @@ export function HistoryView({ onBack }: HistoryViewProps) {
 
     const handleViewReport = async (evalId: string) => {
         try {
-            const data = await getHistoryById(evalId);
-            setSelectedReport(data.report);
+            const item = getHistoryItem(evalId);
+            if (item) {
+                setSelectedReport(item.report);
+            }
         } catch (error) {
             console.error('Failed to fetch report:', error);
         }
@@ -43,7 +47,7 @@ export function HistoryView({ onBack }: HistoryViewProps) {
         if (!confirm('您确定要删除这条评估记录吗？')) return;
 
         try {
-            await deleteHistory(evalId);
+            deleteHistoryItem(evalId);
             fetchHistory(); // Refresh list
         } catch (error) {
             console.error('Failed to delete:', error);

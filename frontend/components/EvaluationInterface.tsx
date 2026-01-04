@@ -7,6 +7,7 @@ import { ReportView } from '@/components/ReportView';
 import { SettingsModal } from '@/components/SettingsModal';
 import { HistoryView } from '@/components/HistoryView';
 import { evaluateFilesStream, EvaluationReport, StreamProgress } from '@/lib/api';
+import { saveToHistory } from '@/lib/client-history';
 
 interface EvaluationInterfaceProps {
     currentView?: 'main' | 'history';
@@ -56,6 +57,15 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                     }
                 }
             );
+
+            // 保存到客户端历史记录
+            try {
+                const model = apiConfig.model || 'gpt-4o';
+                saveToHistory(result, teacherDoc.name, dialogueRecord.name, model);
+            } catch (historyError) {
+                console.warn('保存历史记录失败:', historyError);
+            }
+
             setReport(result);
             setStep('results');
         } catch (err: any) {

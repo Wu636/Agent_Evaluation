@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Upload, FileText, X, Check, FileCode, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -10,13 +10,21 @@ interface FileUploadProps {
     onChange: (file: File | null) => void;
     description: string;
     stepNumber: number;
+    currentFile?: File | null;  // 从外部传入的当前文件（用于持久化恢复）
 }
 
-export function FileUpload({ label, accept, onChange, description, stepNumber }: FileUploadProps) {
+export function FileUpload({ label, accept, onChange, description, stepNumber, currentFile }: FileUploadProps) {
     const [isDragging, setIsDragging] = useState(false);
     const [file, setFile] = useState<File | null>(null);
     const [error, setError] = useState<string | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+
+    // 同步外部传入的文件状态
+    useEffect(() => {
+        if (currentFile !== undefined) {
+            setFile(currentFile);
+        }
+    }, [currentFile]);
 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();

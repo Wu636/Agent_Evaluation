@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sparkles, Loader2, History, Settings } from 'lucide-react';
 import { FileUpload } from '@/components/FileUpload';
 import { ReportView } from '@/components/ReportView';
@@ -8,6 +8,7 @@ import { SettingsModal } from '@/components/SettingsModal';
 import { HistoryView } from '@/components/HistoryView';
 import { evaluateFilesStream, EvaluationReport, StreamProgress } from '@/lib/api';
 import { saveToHistory } from '@/lib/client-history';
+import { saveFile, loadFile, clearAllFiles, TEACHER_DOC_ID, DIALOGUE_RECORD_ID } from '@/lib/file-storage';
 
 interface EvaluationInterfaceProps {
     currentView?: 'main' | 'history';
@@ -24,6 +25,38 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
     const [internalView, setInternalView] = useState<'main' | 'history'>('main');
     const [showSettings, setShowSettings] = useState(false);
     const [currentDimension, setCurrentDimension] = useState<string>('');
+
+    // 从 IndexedDB 加载已保存的文件
+    useEffect(() => {
+        const loadSavedFiles = async () => {
+            try {
+                const savedTeacherDoc = await loadFile(TEACHER_DOC_ID);
+                const savedDialogueRecord = await loadFile(DIALOGUE_RECORD_ID);
+
+                if (savedTeacherDoc) setTeacherDoc(savedTeacherDoc);
+                if (savedDialogueRecord) setDialogueRecord(savedDialogueRecord);
+            } catch (error) {
+                console.error('加载保存的文件失败:', error);
+            }
+        };
+        loadSavedFiles();
+    }, []);
+
+    // 保存教师文档到 IndexedDB
+    const handleTeacherDocChange = async (file: File | null) => {
+        setTeacherDoc(file);
+        if (file) {
+            await saveFile(TEACHER_DOC_ID, file);
+        }
+    };
+
+    // 保存对话记录到 IndexedDB
+    const handleDialogueRecordChange = async (file: File | null) => {
+        setDialogueRecord(file);
+        if (file) {
+            await saveFile(DIALOGUE_RECORD_ID, file);
+        }
+    };
 
     // Use external view if provided, otherwise use internal state
     const currentView = externalView ?? internalView;
@@ -85,12 +118,14 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
     };
 
     // 清空所有文件（用户主动清空时调用）
-    const handleClearFiles = () => {
+    const handleClearFiles = async () => {
         setTeacherDoc(null);
         setDialogueRecord(null);
         setReport(null);
         setStep('upload');
         setError(null);
+        // 清空 IndexedDB 中的文件
+        await clearAllFiles();
     };
 
     const [progress, setProgress] = useState(0);
@@ -201,7 +236,8 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                                         label="上传教师手册"
                                         accept=".docx,.md"
                                         description="上传 .docx 或 .md 格式的指导文档"
-                                        onChange={setTeacherDoc}
+                                        onChange={handleTeacherDocChange}
+                                        currentFile={teacherDoc}
                                         stepNumber={1}
                                     />
                                 </div>
@@ -217,7 +253,8 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                                         label="上传对话记录"
                                         accept=".json,.txt"
                                         description="上传 .json 或 .txt 格式的对话日志"
-                                        onChange={setDialogueRecord}
+                                        onChange={handleDialogueRecordChange}
+                                        currentFile={dialogueRecord}
                                         stepNumber={2}
                                     />
                                 </div>

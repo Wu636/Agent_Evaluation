@@ -1,17 +1,15 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
     Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer
 } from 'recharts';
 import {
     AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
-    Lightbulb, RotateCcw, Download, Sparkles, ChevronLeft, FileDown, Loader2
+    Lightbulb, RotateCcw, Sparkles, ChevronLeft
 } from 'lucide-react';
 import clsx from 'clsx';
 import { EvaluationReport } from '@/lib/api';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
 
 // 维度名称映射：英文 key -> 中文显示名称
 const DIMENSION_NAMES: Record<string, string> = {
@@ -231,95 +229,8 @@ export function ReportView({ report, onReset }: ReportViewProps) {
         return '需改进';
     };
 
-    // PDF 生成状态
-    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-    const reportRef = useRef<HTMLDivElement>(null);
-
-    // PDF 生成函数 - 使用 html2canvas 截图
-    const generatePdfReport = async () => {
-        if (!reportRef.current) return;
-
-        setIsGeneratingPdf(true);
-
-        try {
-            // 截取报告内容
-            const canvas = await html2canvas(reportRef.current, {
-                scale: 2, // 提高清晰度
-                useCORS: true,
-                logging: false,
-                backgroundColor: '#f8fafc',
-            });
-
-            const imgData = canvas.toDataURL('image/png');
-            const imgWidth = canvas.width;
-            const imgHeight = canvas.height;
-
-            // 创建 PDF (A4 尺寸)
-            const pdf = new jsPDF({
-                orientation: imgWidth > imgHeight ? 'landscape' : 'portrait',
-                unit: 'mm',
-                format: 'a4'
-            });
-
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = pdf.internal.pageSize.getHeight();
-
-            // 计算缩放比例
-            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-            const scaledWidth = imgWidth * ratio;
-            const scaledHeight = imgHeight * ratio;
-
-            // 如果内容太长，需要分页
-            const pageHeightPx = (pdfHeight / ratio) * 0.95; // 留边距
-            const totalPages = Math.ceil(imgHeight / pageHeightPx);
-
-            for (let page = 0; page < totalPages; page++) {
-                if (page > 0) {
-                    pdf.addPage();
-                }
-
-                // 创建裁剪后的画布
-                const pageCanvas = document.createElement('canvas');
-                pageCanvas.width = imgWidth;
-                pageCanvas.height = Math.min(pageHeightPx, imgHeight - page * pageHeightPx);
-
-                const ctx = pageCanvas.getContext('2d');
-                if (ctx) {
-                    ctx.drawImage(
-                        canvas,
-                        0, page * pageHeightPx,
-                        imgWidth, pageCanvas.height,
-                        0, 0,
-                        imgWidth, pageCanvas.height
-                    );
-
-                    const pageImgData = pageCanvas.toDataURL('image/png');
-                    const pageScaledHeight = pageCanvas.height * ratio;
-
-                    pdf.addImage(
-                        pageImgData,
-                        'PNG',
-                        (pdfWidth - scaledWidth) / 2,
-                        5,
-                        scaledWidth,
-                        pageScaledHeight
-                    );
-                }
-            }
-
-            // 下载
-            const timestamp = new Date().toISOString().slice(0, 10);
-            pdf.save(`评估报告-${timestamp}.pdf`);
-        } catch (error) {
-            console.error('PDF 生成失败:', error);
-            alert('PDF 生成失败，请重试');
-        } finally {
-            setIsGeneratingPdf(false);
-        }
-    };
-
     return (
-        <div ref={reportRef} className="w-full space-y-8 animate-in slide-in-from-bottom-8 duration-700">
+        <div className="w-full space-y-8 animate-in slide-in-from-bottom-8 duration-700">
 
             {/* Header / Score Card */}
             <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden relative">
@@ -495,23 +406,6 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                         colorTheme="emerald"
                     />
 
-                    <button
-                        onClick={generatePdfReport}
-                        disabled={isGeneratingPdf}
-                        className="w-full py-4 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 disabled:from-slate-400 disabled:to-slate-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-all flex items-center justify-center gap-2 group disabled:cursor-not-allowed"
-                    >
-                        {isGeneratingPdf ? (
-                            <>
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                                正在生成 PDF...
-                            </>
-                        ) : (
-                            <>
-                                <FileDown className="w-5 h-5 group-hover:translate-y-0.5 transition-transform" />
-                                下载 PDF 报告
-                            </>
-                        )}
-                    </button>
 
                     <button
                         onClick={onReset}

@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sparkles, Loader2, History, Settings } from 'lucide-react';
 import { FileUpload } from '@/components/FileUpload';
 import { ReportView } from '@/components/ReportView';
 import { SettingsModal } from '@/components/SettingsModal';
 import { HistoryView } from '@/components/HistoryView';
-import { evaluateFiles, EvaluationReport } from '@/lib/api';
+import { evaluateFilesStream, EvaluationReport, StreamProgress } from '@/lib/api';
+import { saveToHistory } from '@/lib/client-history';
+import { saveFile, loadFile, clearAllFiles, TEACHER_DOC_ID, DIALOGUE_RECORD_ID } from '@/lib/file-storage';
 
 interface EvaluationInterfaceProps {
     currentView?: 'main' | 'history';
@@ -22,6 +24,39 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
     const [step, setStep] = useState<'upload' | 'processing' | 'results'>('upload');
     const [internalView, setInternalView] = useState<'main' | 'history'>('main');
     const [showSettings, setShowSettings] = useState(false);
+    const [currentDimension, setCurrentDimension] = useState<string>('');
+
+    // 从 IndexedDB 加载已保存的文件
+    useEffect(() => {
+        const loadSavedFiles = async () => {
+            try {
+                const savedTeacherDoc = await loadFile(TEACHER_DOC_ID);
+                const savedDialogueRecord = await loadFile(DIALOGUE_RECORD_ID);
+
+                if (savedTeacherDoc) setTeacherDoc(savedTeacherDoc);
+                if (savedDialogueRecord) setDialogueRecord(savedDialogueRecord);
+            } catch (error) {
+                console.error('加载保存的文件失败:', error);
+            }
+        };
+        loadSavedFiles();
+    }, []);
+
+    // 保存教师文档到 IndexedDB
+    const handleTeacherDocChange = async (file: File | null) => {
+        setTeacherDoc(file);
+        if (file) {
+            await saveFile(TEACHER_DOC_ID, file);
+        }
+    };
+
+    // 保存对话记录到 IndexedDB
+    const handleDialogueRecordChange = async (file: File | null) => {
+        setDialogueRecord(file);
+        if (file) {
+            await saveFile(DIALOGUE_RECORD_ID, file);
+        }
+    };
 
     // Use external view if provided, otherwise use internal state
     const currentView = externalView ?? internalView;
@@ -33,13 +68,37 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
         setStep('processing');
         setLoading(true);
         setError(null);
+        setProgress(0);
+        setCurrentDimension('');
 
         try {
             // Load API config from localStorage
             const savedSettings = localStorage.getItem('llm-eval-settings');
             const apiConfig = savedSettings ? JSON.parse(savedSettings) : {};
 
-            const result = await evaluateFiles(teacherDoc, dialogueRecord, apiConfig);
+            const result = await evaluateFilesStream(
+                teacherDoc,
+                dialogueRecord,
+                apiConfig,
+                (progressEvent: StreamProgress) => {
+                    if (progressEvent.type === 'progress' && progressEvent.dimension) {
+                        setCurrentDimension(progressEvent.dimension);
+                    } else if (progressEvent.type === 'dimension_complete') {
+                        if (progressEvent.current && progressEvent.total) {
+                            setProgress((progressEvent.current / progressEvent.total) * 100);
+                        }
+                    }
+                }
+            );
+
+            // 保存到客户端历史记录
+            try {
+                const model = apiConfig.model || 'gpt-4o';
+                saveToHistory(result, teacherDoc.name, dialogueRecord.name, model);
+            } catch (historyError) {
+                console.warn('保存历史记录失败:', historyError);
+            }
+
             setReport(result);
             setStep('results');
         } catch (err: any) {
@@ -50,34 +109,30 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
         }
     };
 
+    // 返回到上传界面（保留文件）
     const handleReset = () => {
-        setTeacherDoc(null);
-        setDialogueRecord(null);
+        // 不清空文件，让用户可以用不同模型测试相同文件
         setReport(null);
         setStep('upload');
         setError(null);
     };
 
+    // 清空所有文件（用户主动清空时调用）
+    const handleClearFiles = async () => {
+        setTeacherDoc(null);
+        setDialogueRecord(null);
+        setReport(null);
+        setStep('upload');
+        setError(null);
+        // 清空 IndexedDB 中的文件
+        await clearAllFiles();
+    };
+
     const [progress, setProgress] = useState(0);
 
-    // Simulate progress
+    // Update progress to 100 when results are ready
     React.useEffect(() => {
-        if (step === 'processing') {
-            setProgress(0);
-            const timer = setInterval(() => {
-                setProgress((oldProgress) => {
-                    if (oldProgress === 100) return 100;
-                    // Fast initial progress
-                    if (oldProgress < 30) return oldProgress + 2;
-                    // Slower middle progress
-                    if (oldProgress < 70) return oldProgress + 0.5;
-                    // Very slow end progress until complete
-                    if (oldProgress < 95) return oldProgress + 0.1;
-                    return oldProgress;
-                });
-            }, 100);
-            return () => clearInterval(timer);
-        } else if (step === 'results') {
+        if (step === 'results') {
             setProgress(100);
         }
     }, [step]);
@@ -102,6 +157,15 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
             {/* Action Bar (Only visible in upload step and main view) */}
             {step === 'upload' && (
                 <div className="w-full flex justify-end gap-4 mb-4">
+                    {/* 清空文件按钮 - 只在有文件时显示 */}
+                    {(teacherDoc || dialogueRecord) && (
+                        <button
+                            onClick={handleClearFiles}
+                            className="flex items-center gap-2 px-4 py-2 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium"
+                        >
+                            清空文件
+                        </button>
+                    )}
                     <button
                         onClick={() => setCurrentView('history')}
                         className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors text-sm font-medium"
@@ -172,7 +236,8 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                                         label="上传教师手册"
                                         accept=".docx,.md"
                                         description="上传 .docx 或 .md 格式的指导文档"
-                                        onChange={setTeacherDoc}
+                                        onChange={handleTeacherDocChange}
+                                        currentFile={teacherDoc}
                                         stepNumber={1}
                                     />
                                 </div>
@@ -188,7 +253,8 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                                         label="上传对话记录"
                                         accept=".json,.txt"
                                         description="上传 .json 或 .txt 格式的对话日志"
-                                        onChange={setDialogueRecord}
+                                        onChange={handleDialogueRecordChange}
+                                        currentFile={dialogueRecord}
                                         stepNumber={2}
                                     />
                                 </div>
@@ -273,17 +339,15 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
 
                     <div className="text-center space-y-2">
                         <h2 className="text-2xl font-bold text-slate-800">正在进行评估</h2>
-                        <div className="flex flex-col gap-2 items-center text-slate-500 text-lg">
-                            <p className={progress < 30 ? "text-indigo-600 font-medium transition-colors" : "transition-colors"}>
-                                正在读取教师指导文档...
+                        {currentDimension ? (
+                            <p className="text-indigo-600 font-medium text-lg">
+                                正在评估: {currentDimension}
                             </p>
-                            <p className={progress >= 30 && progress < 70 ? "text-indigo-600 font-medium transition-colors" : "transition-colors"}>
-                                正在评估对话上下文...
+                        ) : (
+                            <p className="text-slate-500 text-lg">
+                                准备开始评估...
                             </p>
-                            <p className={progress >= 70 ? "text-indigo-600 font-medium transition-colors" : "transition-colors"}>
-                                正在计算维度得分...
-                            </p>
-                        </div>
+                        )}
                     </div>
                 </div>
             )}

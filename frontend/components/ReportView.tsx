@@ -244,11 +244,42 @@ export function ReportView({ report, onReset }: ReportViewProps) {
 
         setIsGeneratingPdf(true);
 
+        // 创建临时样式来覆盖不支持的颜色
+        const tempStyle = document.createElement('style');
+        tempStyle.id = 'pdf-temp-style';
+        tempStyle.textContent = `
+            /* 覆盖所有可能使用 lab/lch 等现代颜色函数的元素 */
+            * {
+                color: inherit !important;
+            }
+            .text-slate-900 { color: #0f172a !important; }
+            .text-slate-800 { color: #1e293b !important; }
+            .text-slate-700 { color: #334155 !important; }
+            .text-slate-600 { color: #475569 !important; }
+            .text-slate-500 { color: #64748b !important; }
+            .text-slate-400 { color: #94a3b8 !important; }
+            .text-indigo-600 { color: #4f46e5 !important; }
+            .text-indigo-500 { color: #6366f1 !important; }
+            .text-red-600 { color: #dc2626 !important; }
+            .text-emerald-600 { color: #059669 !important; }
+            .bg-slate-50 { background-color: #f8fafc !important; }
+            .bg-white { background-color: #ffffff !important; }
+            .bg-indigo-50 { background-color: #eef2ff !important; }
+            .bg-red-50 { background-color: #fef2f2 !important; }
+            .bg-emerald-50 { background-color: #ecfdf5 !important; }
+            .border-slate-100 { border-color: #f1f5f9 !important; }
+            .border-slate-200 { border-color: #e2e8f0 !important; }
+            .border-indigo-200 { border-color: #c7d2fe !important; }
+        `;
+
         try {
             console.log('开始生成 PDF...');
 
-            // 等待渲染完成
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // 添加临时样式
+            document.head.appendChild(tempStyle);
+
+            // 等待样式应用
+            await new Promise(resolve => setTimeout(resolve, 500));
 
             console.log('开始截图...');
 
@@ -257,8 +288,14 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                 scale: 1,
                 useCORS: true,
                 allowTaint: true,
-                logging: true,
+                logging: false, // 关闭日志避免干扰
                 backgroundColor: '#ffffff',
+                onclone: (clonedDoc) => {
+                    // 在克隆的文档中也应用样式
+                    const clonedStyle = clonedDoc.createElement('style');
+                    clonedStyle.textContent = tempStyle.textContent;
+                    clonedDoc.head.appendChild(clonedStyle);
+                }
             });
 
             console.log('截图完成，canvas 尺寸:', canvas.width, 'x', canvas.height);
@@ -350,6 +387,11 @@ export function ReportView({ report, onReset }: ReportViewProps) {
 
             alert(errorMsg + '\n\n请查看浏览器控制台获取详细错误信息');
         } finally {
+            // 移除临时样式
+            const style = document.getElementById('pdf-temp-style');
+            if (style) {
+                style.remove();
+            }
             setIsGeneratingPdf(false);
         }
     };

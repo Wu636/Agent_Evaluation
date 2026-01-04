@@ -108,6 +108,32 @@ export function parseLLMResponse(response: string): LLMResponse {
         if (!Array.isArray(result.issues)) result.issues = [];
         if (!Array.isArray(result.suggestions)) result.suggestions = [];
 
+        // 将数组中的对象转换为字符串（Claude 有时会返回对象而非字符串）
+        const ensureStringArray = (arr: any[]): string[] => {
+            return arr.map(item => {
+                if (typeof item === 'string') return item;
+                if (typeof item === 'object' && item !== null) {
+                    // 尝试提取常见的文本字段
+                    if (item.text) return String(item.text);
+                    if (item.content) return String(item.content);
+                    if (item.description) return String(item.description);
+                    if (item.message) return String(item.message);
+                    if (item.issue) return String(item.issue);
+                    if (item.suggestion) return String(item.suggestion);
+                    // 如果是对象，将其转换为 JSON 字符串或使用第一个字符串值
+                    const values = Object.values(item);
+                    const firstString = values.find(v => typeof v === 'string');
+                    if (firstString) return String(firstString);
+                    return JSON.stringify(item);
+                }
+                return String(item);
+            });
+        };
+
+        result.evidence = ensureStringArray(result.evidence);
+        result.issues = ensureStringArray(result.issues);
+        result.suggestions = ensureStringArray(result.suggestions);
+
         return result;
     } catch (error) {
         console.error("JSON解析失败:", error);

@@ -200,6 +200,11 @@ export async function POST(request: NextRequest) {
 
                 const sortedDims = [...dimensionScores].sort((a, b) => a.score - b.score);
                 for (const dim of sortedDims) {
+                    console.log(`[建议聚合] 维度: ${dim.dimension}, 建议数: ${dim.suggestions.length}`);
+                    dim.suggestions.forEach((sug, idx) => {
+                        console.log(`  [${idx}] ${sug.substring(0, 100)}`);
+                    });
+
                     for (const suggestion of dim.suggestions.slice(0, 3)) {
                         const cleaned = suggestion.trim();
                         const finalSuggestion = /^\d+\./.test(cleaned) ? cleaned.substring(cleaned.indexOf(".") + 1).trim() : cleaned;

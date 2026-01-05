@@ -12,7 +12,11 @@ import { formatDialogueForLLM, parseLLMResponse, callLLM } from "@/lib/llm/utils
 import { saveEvaluation } from "@/lib/history-manager";
 import type { DialogueData, ApiConfig, DimensionScore, EvaluationLevel } from "@/lib/llm/types";
 
-export const maxDuration = 300;
+// Vercel 函数配置
+// 免费版：最大 300 秒（5分钟）
+// Pro 版：最大 900 秒（15分钟）
+// 注意：Gemini/Claude 每个维度需要 40-60 秒，6个维度总计约 240-360 秒
+export const maxDuration = 300; // 如果是 Pro 版可改为 900
 export const runtime = 'nodejs';
 
 async function readFileInfo(file: File): Promise<{ name: string; content: string | Buffer }> {

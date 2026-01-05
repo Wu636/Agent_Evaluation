@@ -152,7 +152,7 @@ export function parseLLMResponse(response: string): LLMResponse {
 }
 
 /**
- * 调用 LLM API
+ * 调用 LLM API（带重试和详细日志）
  */
 export async function callLLM(
     prompt: string,
@@ -182,26 +182,62 @@ export async function callLLM(
         temperature,
     };
 
-    const response = await fetch(baseUrl, {
-        method: "POST",
-        headers: {
-            "api-key": apiKey,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(120000),
-    });
+    console.log(`[LLM调用] 模型: ${model}, API: ${baseUrl}`);
+    const startTime = Date.now();
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API请求失败: HTTP ${response.status}\n${errorText.substring(0, 500)}`);
-    }
+    try {
+        // 使用 AbortController 来控制超时
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 180000); // 3分钟超时
 
-    const result = await response.json();
+        const response = await fetch(baseUrl, {
+            method: "POST",
+            headers: {
+                "api-key": apiKey,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+        });
 
-    if (result.choices && result.choices.length > 0) {
-        return result.choices[0].message.content;
-    } else {
-        throw new Error(`API返回格式异常: ${JSON.stringify(result)}`);
+        clearTimeout(timeoutId);
+
+        const elapsed = Date.now() - startTime;
+        console.log(`[LLM响应] 耗时: ${elapsed}ms, 状态: ${response.status}`);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[LLM错误] HTTP ${response.status}:`, errorText.substring(0, 500));
+            throw new Error(`API请求失败 (HTTP ${response.status}): ${errorText.substring(0, 200)}`);
+        }
+
+        const result = await response.json();
+
+        if (result.choices && result.choices.length > 0) {
+            const content = result.choices[0].message.content;
+            console.log(`[LLM成功] 返回内容长度: ${content.length} 字符`);
+            return content;
+        } else {
+            console.error(`[LLM错误] 返回格式异常:`, JSON.stringify(result).substring(0, 500));
+            throw new Error(`API返回格式异常: ${JSON.stringify(result).substring(0, 200)}`);
+        }
+    } catch (error) {
+        const elapsed = Date.now() - startTime;
+
+        if (error instanceof Error) {
+            if (error.name === 'AbortError') {
+                console.error(`[LLM超时] 模型: ${model}, 耗时: ${elapsed}ms`);
+                throw new Error(`API请求超时（${Math.round(elapsed / 1000)}秒）。Claude和Gemini模型响应较慢，建议：1) 检查网络连接 2) 尝试使用GPT模型 3) 减少评估维度数量`);
+            }
+
+            console.error(`[LLM异常] 模型: ${model}, 错误: ${error.message}, 耗时: ${elapsed}ms`);
+
+            // 网络错误
+            if (error.message.includes('fetch') || error.message.includes('network')) {
+                throw new Error(`网络错误: ${error.message}. 请检查：1) API密钥是否正确 2) API地址是否可访问 3) 网络连接是否正常`);
+            }
+        }
+
+        throw error;
     }
 }

@@ -21,6 +21,8 @@ export interface DimensionScore {
   suggestions: string[]; // 改进建议
   isVeto: boolean; // 是否一票否决
   weightedScore: number; // 加权分数
+  // 新增：分环节的建议
+  stage_suggestions?: StageSuggestion[];
 }
 
 export interface EvaluationReport {
@@ -49,6 +51,22 @@ export interface LLMResponse {
   evidence: string[];
   issues: string[];
   suggestions: string[];
+  // 新增：分环节的建议（如果提供了工作流配置）
+  stage_suggestions?: StageSuggestion[];
+}
+
+// 新增：环节级别的建议
+export interface StageSuggestion {
+  stage_name: string; // 环节名称
+  issues: string[]; // 该环节的问题
+  prompt_fixes: PromptFix[]; // Prompt 修改建议
+}
+
+// 新增：具体的 Prompt 修改建议
+export interface PromptFix {
+  section: string; // 章节名称：Role/Profile/Rules/Workflow/Output Requirements
+  current_problem: string; // 当前存在的问题
+  suggested_change: string; // 建议的修改方向
 }
 
 export interface ApiConfig {
@@ -73,7 +91,7 @@ export interface DialogueData {
   stages: Array<{
     stage_name: string;
     messages: Array<{
-      role: 'assistant' | 'user';
+      role: "assistant" | "user";
       content: string;
       round: number;
     }>;

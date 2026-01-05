@@ -407,62 +407,73 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                     />
 
                     {/* Prompt 优化建议（仅在有工作流配置时显示） */}
-                    {report.dimensions && report.dimensions.filter((d: any) => d.stage_suggestions && d.stage_suggestions.length > 0).length > 0 && (
-                        <div className="bg-white rounded-3xl shadow-xl p-8 border border-purple-100">
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
-                                    <Sparkles className="w-5 h-5 text-purple-600" />
+                    {(() => {
+                        const dims = Array.isArray(report.dimensions)
+                            ? report.dimensions
+                            : Object.values(report.dimensions || {});
+                        const hasStageSuggestions = dims.some((d: any) =>
+                            d.stage_suggestions && d.stage_suggestions.length > 0
+                        );
+
+                        if (!hasStageSuggestions) return null;
+
+                        return (
+                            <div className="bg-white rounded-3xl shadow-xl p-8 border border-purple-100">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                                        <Sparkles className="w-5 h-5 text-purple-600" />
+                                    </div>
+                                    <h3 className="text-xl font-bold text-slate-900">Prompt 优化建议</h3>
                                 </div>
-                                <h3 className="text-xl font-bold text-slate-900">Prompt 优化建议</h3>
-                            </div>
 
-                            <div className="space-y-6">
-                                {report.dimensions.map((dimension: any, dimIdx: number) =>
-                                    dimension.stage_suggestions?.map((stageSugg: any, stageIdx: number) => (
-                                        <div key={`${dimIdx}-${stageIdx}`} className="border-l-4 border-purple-400 pl-4 py-2">
-                                            <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                                                <span className="text-purple-600">📍</span>
-                                                {stageSugg.stage_name}
-                                            </h4>
+                                <div className="space-y-6">
+                                    {dims.map((dimension: any, dimIdx: number) =>
+                                        dimension.stage_suggestions?.map((stageSugg: any, stageIdx: number) => (
+                                            <div key={`${dimIdx}-${stageIdx}`} className="border-l-4 border-purple-400 pl-4 py-2">
+                                                <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                                                    <span className="text-purple-600">📍</span>
+                                                    {stageSugg.stage_name}
+                                                </h4>
 
-                                            {stageSugg.issues && stageSugg.issues.length > 0 && (
-                                                <div className="mb-3">
-                                                    <p className="text-sm font-semibold text-red-600 mb-1">发现问题：</p>
-                                                    <ul className="space-y-1">
-                                                        {stageSugg.issues.map((issue: string, issueIdx: number) => (
-                                                            <li key={issueIdx} className="text-sm text-slate-700 flex items-start gap-2">
-                                                                <span className="text-red-400 mt-1">•</span>
-                                                                <span>{issue}</span>
-                                                            </li>
+                                                {stageSugg.issues && stageSugg.issues.length > 0 && (
+                                                    <div className="mb-3">
+                                                        <p className="text-sm font-semibold text-red-600 mb-1">发现问题：</p>
+                                                        <ul className="space-y-1">
+                                                            {stageSugg.issues.map((issue: string, issueIdx: number) => (
+                                                                <li key={issueIdx} className="text-sm text-slate-700 flex items-start gap-2">
+                                                                    <span className="text-red-400 mt-1">•</span>
+                                                                    <span>{issue}</span>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+
+                                                {stageSugg.prompt_fixes && stageSugg.prompt_fixes.length > 0 && (
+                                                    <div className="space-y-2">
+                                                        <p className="text-sm font-semibold text-purple-600 mb-1">Prompt 修改建议：</p>
+                                                        {stageSugg.prompt_fixes.map((fix: any, fixIdx: number) => (
+                                                            <div key={fixIdx} className="bg-purple-50 rounded-lg p-3 space-y-1">
+                                                                <p className="text-xs font-bold text-purple-700 uppercase">
+                                                                    {fix.section}
+                                                                </p>
+                                                                <p className="text-sm text-slate-600">
+                                                                    <span className="font-semibold">问题：</span>{fix.current_problem}
+                                                                </p>
+                                                                <p className="text-sm text-emerald-700">
+                                                                    <span className="font-semibold">建议：</span>{fix.suggested_change}
+                                                                </p>
+                                                            </div>
                                                         ))}
-                                                    </ul>
-                                                </div>
-                                            )}
-
-                                            {stageSugg.prompt_fixes && stageSugg.prompt_fixes.length > 0 && (
-                                                <div className="space-y-2">
-                                                    <p className="text-sm font-semibold text-purple-600 mb-1">Prompt 修改建议：</p>
-                                                    {stageSugg.prompt_fixes.map((fix: any, fixIdx: number) => (
-                                                        <div key={fixIdx} className="bg-purple-50 rounded-lg p-3 space-y-1">
-                                                            <p className="text-xs font-bold text-purple-700 uppercase">
-                                                                {fix.section}
-                                                            </p>
-                                                            <p className="text-sm text-slate-600">
-                                                                <span className="font-semibold">问题：</span>{fix.current_problem}
-                                                            </p>
-                                                            <p className="text-sm text-emerald-700">
-                                                                <span className="font-semibold">建议：</span>{fix.suggested_change}
-                                                            </p>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))
-                                )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        );
+                    })()}
 
 
                     <button

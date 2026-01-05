@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
 
                 const teacherDoc = formData.get("teacher_doc") as File;
                 const dialogueRecord = formData.get("dialogue_record") as File;
+                const workflowConfigFile = formData.get("workflow_config") as File | null; // 新增：工作流配置
                 const apiKey = formData.get("api_key") as string | null;
                 const apiUrl = formData.get("api_url") as string | null;
                 const model = formData.get("model") as string | null;
@@ -80,6 +81,13 @@ export async function POST(request: NextRequest) {
                     return;
                 }
 
+                // 读取工作流配置（可选）
+                let workflowConfigContent: string | undefined;
+                if (workflowConfigFile) {
+                    const workflowConfigInfo = await readFileInfo(workflowConfigFile);
+                    workflowConfigContent = workflowConfigInfo.content as string;
+                }
+
                 // 发送开始事件
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'start', total: Object.keys(DIMENSIONS).length })}\n\n`));
 
@@ -107,6 +115,7 @@ export async function POST(request: NextRequest) {
                         const prompt = buildDimensionPrompt(dimensionKey, {
                             teacherDoc: teacherDocInfo.content as string,
                             dialogueText,
+                            workflowConfig: workflowConfigContent, // 传递工作流配置
                         });
 
                         // 调用 LLM

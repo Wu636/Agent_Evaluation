@@ -5,6 +5,7 @@
 export interface PromptContext {
   teacherDoc: string;
   dialogueText: string;
+  workflowConfig?: string; // 新增：可选的工作流配置
 }
 
 /**
@@ -14,7 +15,7 @@ export function buildDimensionPrompt(
   dimensionKey: string,
   context: PromptContext
 ): string {
-  const { teacherDoc, dialogueText } = context;
+  const { teacherDoc, dialogueText, workflowConfig } = context;
 
   const prompts: Record<string, string> = {
     teaching_goal_completion: `
@@ -84,6 +85,32 @@ ${dialogueText}
 - 如果只是细节遗漏但主体完整,可给70-80分
 - 如果全部完成且质量高,可给85-95分
 - 不要给100分,总有改进空间
+
+${workflowConfig ? `
+## 工作流配置信息
+
+以下是各环节的 Prompt 配置，如果发现问题请关联到具体环节：
+
+${workflowConfig}
+
+**如果发现环节相关问题，请在 JSON 中添加 stage_suggestions 字段：**
+
+\`\`\`json
+"stage_suggestions": [
+  {
+    "stage_name": "环节名称",
+    "issues": ["该环节的具体问题"],
+    "prompt_fixes": [
+      {
+        "section": "Role/Profile/Rules/Workflow等章节",
+        "current_problem": "当前Prompt存在的问题",
+        "suggested_change": "建议修改为..."
+      }
+    ]
+  }
+]
+\`\`\`
+` : ''}
 
 请严格按JSON格式输出,不要有任何多余的文字!
 `,

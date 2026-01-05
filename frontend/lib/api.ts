@@ -75,11 +75,17 @@ export async function evaluateFilesStream(
     teacherDoc: File,
     dialogueRecord: File,
     apiConfig: ApiConfig = {},
-    onProgress: (progress: StreamProgress) => void
+    onProgress: (progress: StreamProgress) => void,
+    workflowConfig?: File | null // 新增：可选的工作流配置文件
 ): Promise<EvaluationReport> {
     const formData = new FormData();
     formData.append('teacher_doc', teacherDoc);
     formData.append('dialogue_record', dialogueRecord);
+
+    // 添加工作流配置（如果有）
+    if (workflowConfig) {
+        formData.append('workflow_config', workflowConfig);
+    }
 
     if (apiConfig.apiKey) formData.append('api_key', apiConfig.apiKey);
     if (apiConfig.apiUrl) formData.append('api_url', apiConfig.apiUrl);

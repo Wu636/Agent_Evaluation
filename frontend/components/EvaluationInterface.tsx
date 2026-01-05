@@ -10,6 +10,9 @@ import { evaluateFilesStream, EvaluationReport, StreamProgress } from '@/lib/api
 import { saveToHistory } from '@/lib/client-history';
 import { saveFile, loadFile, clearAllFiles, TEACHER_DOC_ID, DIALOGUE_RECORD_ID } from '@/lib/file-storage';
 
+// 添加工作流配置文件 ID
+const WORKFLOW_CONFIG_ID = 'workflow_config';
+
 interface EvaluationInterfaceProps {
     currentView?: 'main' | 'history';
     onViewChange?: (view: 'main' | 'history') => void;
@@ -18,6 +21,7 @@ interface EvaluationInterfaceProps {
 export function EvaluationInterface({ currentView: externalView, onViewChange }: EvaluationInterfaceProps) {
     const [teacherDoc, setTeacherDoc] = useState<File | null>(null);
     const [dialogueRecord, setDialogueRecord] = useState<File | null>(null);
+    const [workflowConfig, setWorkflowConfig] = useState<File | null>(null); // 新增：工作流配置
     const [report, setReport] = useState<EvaluationReport | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -32,9 +36,11 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
             try {
                 const savedTeacherDoc = await loadFile(TEACHER_DOC_ID);
                 const savedDialogueRecord = await loadFile(DIALOGUE_RECORD_ID);
+                const savedWorkflowConfig = await loadFile(WORKFLOW_CONFIG_ID);
 
                 if (savedTeacherDoc) setTeacherDoc(savedTeacherDoc);
                 if (savedDialogueRecord) setDialogueRecord(savedDialogueRecord);
+                if (savedWorkflowConfig) setWorkflowConfig(savedWorkflowConfig);
             } catch (error) {
                 console.error('加载保存的文件失败:', error);
             }
@@ -55,6 +61,14 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
         setDialogueRecord(file);
         if (file) {
             await saveFile(DIALOGUE_RECORD_ID, file);
+        }
+    };
+
+    // 保存工作流配置到 IndexedDB
+    const handleWorkflowConfigChange = async (file: File | null) => {
+        setWorkflowConfig(file);
+        if (file) {
+            await saveFile(WORKFLOW_CONFIG_ID, file);
         }
     };
 
@@ -121,6 +135,7 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
     const handleClearFiles = async () => {
         setTeacherDoc(null);
         setDialogueRecord(null);
+        setWorkflowConfig(null);
         setReport(null);
         setStep('upload');
         setError(null);
@@ -257,6 +272,28 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                                         currentFile={dialogueRecord}
                                         stepNumber={2}
                                     />
+                                </div>
+
+                                <div className="flex items-center justify-center">
+                                    <span className="text-slate-300 text-xs font-bold bg-white px-2 z-10">可选</span>
+                                    <div className="absolute w-full h-px bg-slate-100 left-0"></div>
+                                </div>
+
+                                <div>
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 ml-1">
+                                        工作流配置 <span className="text-xs text-slate-300 normal-case">(可选)</span>
+                                    </h4>
+                                    <FileUpload
+                                        label="上传工作流配置"
+                                        accept=".md,.txt"
+                                        description="上传 .md 或 .txt 格式的 Prompt 配置"
+                                        onChange={handleWorkflowConfigChange}
+                                        currentFile={workflowConfig}
+                                        stepNumber={3}
+                                    />
+                                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                                        💡 上传工作流配置后，系统将提供针对具体环节的 Prompt 修改建议
+                                    </p>
                                 </div>
                             </div>
 

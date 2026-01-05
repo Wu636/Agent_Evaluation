@@ -98,11 +98,11 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                     if (progressEvent.type === 'progress' && progressEvent.dimension) {
                         setCurrentDimension(progressEvent.dimension);
                     } else if (progressEvent.type === 'dimension_complete') {
-                        if (progressEvent.current && progressEvent.total) {
-                            setProgress((progressEvent.current / progressEvent.total) * 100);
-                        }
+                        const pct = ((progressEvent.current || 0) / (progressEvent.total || 6)) * 100;
+                        setProgress(pct);
                     }
-                }
+                },
+                workflowConfig // 传递工作流配置
             );
 
             // 保存到客户端历史记录

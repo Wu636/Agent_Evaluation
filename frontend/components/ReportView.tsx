@@ -6,10 +6,11 @@ import {
 } from 'recharts';
 import {
     AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
-    Lightbulb, RotateCcw, Sparkles, ChevronLeft
+    Lightbulb, RotateCcw, Sparkles, ChevronLeft, Download
 } from 'lucide-react';
 import clsx from 'clsx';
 import { EvaluationReport } from '@/lib/api';
+import { exportReportAsMarkdown } from '@/lib/markdown-exporter';
 
 // 维度名称映射：英文 key -> 中文显示名称
 const DIMENSION_NAMES: Record<string, string> = {
@@ -475,6 +476,14 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                         );
                     })()}
 
+
+                    <button
+                        onClick={() => exportReportAsMarkdown(report)}
+                        className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-all flex items-center justify-center gap-2 group"
+                    >
+                        <Download className="w-5 h-5 group-hover:translate-y-0.5 transition-transform duration-300" />
+                        导出 Markdown 报告
+                    </button>
 
                     <button
                         onClick={onReset}

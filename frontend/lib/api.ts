@@ -113,7 +113,10 @@ export async function evaluateFilesStream(
         while (true) {
             const { done, value } = await reader.read();
 
-            if (done) break;
+            if (done) {
+                console.log('[Stream] Stream ended, finalReport:', finalReport ? 'received' : 'NOT received');
+                break;
+            }
 
             const chunk = decoder.decode(value, { stream: true });
             const lines = chunk.split('\n');
@@ -123,15 +126,18 @@ export async function evaluateFilesStream(
                     const data = line.slice(6);
                     try {
                         const event: StreamProgress = JSON.parse(data);
+                        console.log('[Stream] Event received:', event.type, event);
                         onProgress(event);
 
                         if (event.type === 'complete' && event.report) {
+                            console.log('[Stream] Final report received!');
                             finalReport = event.report;
                         } else if (event.type === 'error') {
+                            console.error('[Stream] Error event:', event.message);
                             throw new Error(event.message || 'Evaluation failed');
                         }
                     } catch (e) {
-                        console.error('Failed to parse SSE data:', e);
+                        console.error('[Stream] Failed to parse SSE data:', e, 'Raw data:', data);
                     }
                 }
             }

@@ -4,6 +4,8 @@
 
 import type { LLMResponse, ApiConfig, DialogueData, IssueItem, HighlightItem } from "./types";
 
+import { jsonrepair } from 'jsonrepair';
+
 /**
  * 格式化对话记录为 LLM 可读格式
  */
@@ -68,29 +70,26 @@ export function parseLLMResponse(response: string): LLMResponse {
             return createDefaultResponse("无法提取 JSON");
         }
 
-        // 6. 尝试修复常见的 JSON 格式问题
-        jsonText = fixCommonJsonIssues(jsonText);
-
         let result: any;
 
         try {
+            // 6. 首先尝试标准解析
             result = JSON.parse(jsonText);
         } catch (parseError) {
-            console.error("JSON 解析失败，尝试更激进的修复...");
-            console.error("提取的 JSON:", jsonText.substring(0, 500));
-
-            // 尝试更激进的修复
-            jsonText = aggressiveJsonFix(jsonText);
-
+            // 7. 如果标准解析失败，使用 jsonrepair 修复
+            console.warn("标准 JSON 解析失败，尝试使用 jsonrepair 修复...");
             try {
-                result = JSON.parse(jsonText);
-            } catch (secondError) {
-                console.error("二次解析仍然失败:", secondError);
-                return createDefaultResponse(`JSON 解析失败: ${secondError}`);
+                const repaired = jsonrepair(jsonText);
+                result = JSON.parse(repaired);
+            } catch (repairError) {
+                console.error("jsonrepair 修复失败:", repairError);
+                // Last resort logging
+                console.error("问题 JSON 片段:", jsonText.substring(0, 500));
+                return createDefaultResponse(`JSON 解析失败: ${repairError}`);
             }
         }
 
-        // 7. 填充默认值并返回标准化结果
+        // 8. 填充默认值并返回标准化结果
         return normalizeResult(result);
 
     } catch (error) {
@@ -101,38 +100,16 @@ export function parseLLMResponse(response: string): LLMResponse {
 }
 
 /**
- * 修复常见的 JSON 格式问题
+ * (已弃用 - 使用 jsonrepair) 修复常见的 JSON 格式问题
  */
 function fixCommonJsonIssues(jsonText: string): string {
-    // 修复数组中缺少逗号的问题（Claude 有时会这样）
-    jsonText = jsonText.replace(/"\s*\n\s*"/g, '",\n"');
-    // 修复对象中缺少逗号的问题
-    jsonText = jsonText.replace(/"\s*\n\s*([a-zA-Z_])/g, '",\n$1');
-    // 移除尾随逗号
-    jsonText = jsonText.replace(/,(\s*[}\]])/g, '$1');
-    // 修复未闭合的字符串（如果行尾缺少引号）
-    jsonText = jsonText.replace(/:\s*"([^"]*)\n/g, ': "$1",\n');
-
     return jsonText;
 }
 
 /**
- * 更激进的 JSON 修复
+ * (已弃用 - 使用 jsonrepair) 更激进的 JSON 修复
  */
 function aggressiveJsonFix(jsonText: string): string {
-    // 移除所有注释
-    jsonText = jsonText.replace(/\/\*[\s\S]*?\*\//g, '');
-    jsonText = jsonText.replace(/\/\/.*/g, '');
-
-    // 移除控制字符
-    jsonText = jsonText.replace(/[\x00-\x1F\x7F]/g, ' ');
-
-    // 尝试修复常见的转义问题
-    jsonText = jsonText.replace(/\\(?!["\\/bfnrt])/g, '\\\\');
-
-    // 修复未转义的换行符在字符串中
-    jsonText = jsonText.replace(/"([^"]*)\n([^"]*)"/g, '"$1\\n$2"');
-
     return jsonText;
 }
 
@@ -170,7 +147,7 @@ function normalizeResult(result: any): LLMResponse {
 
 function normalizeIssues(issues: any[]): IssueItem[] {
     return issues.map(item => ({
-        description: String(item.description || item),
+        description: String(item.description ?? ""),
         location: String(item.location || "未定位"),
         quote: String(item.quote || ""),
         severity: (["high", "medium", "low"].includes(item.severity) ? item.severity : "medium") as "high" | "medium" | "low",
@@ -180,7 +157,7 @@ function normalizeIssues(issues: any[]): IssueItem[] {
 
 function normalizeHighlights(highlights: any[]): HighlightItem[] {
     return highlights.map(item => ({
-        description: String(item.description || item),
+        description: String(item.description ?? ""),
         location: String(item.location || "未定位"),
         quote: String(item.quote || ""),
         impact: String(item.impact || "")

@@ -43,9 +43,10 @@ export function FileUpload({ label, accept, onChange, description, stepNumber, c
                 return '请上传 .json 或 .txt 文件';
             }
         }
-        if ((accept === '.docx,.md' || accept.includes('.docx')) &&
-            !file.name.endsWith('.docx') && !file.name.endsWith('.md')) {
-            return '请上传 .docx 或 .md 文件';
+        // Accept .doc, .docx and .md for teacher documents
+        if ((accept.includes('.docx') || accept.includes('.doc')) &&
+            !file.name.endsWith('.doc') && !file.name.endsWith('.docx') && !file.name.endsWith('.md')) {
+            return '请上传 .doc, .docx 或 .md 文件';
         }
         return null;
     };

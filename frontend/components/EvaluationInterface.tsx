@@ -9,6 +9,7 @@ import { HistoryView } from '@/components/HistoryView';
 import { evaluateFilesStream, EvaluationReport, StreamProgress } from '@/lib/api';
 import { saveToHistory } from '@/lib/client-history';
 import { saveFile, loadFile, clearAllFiles, TEACHER_DOC_ID, DIALOGUE_RECORD_ID } from '@/lib/file-storage';
+import { DIMENSIONS } from '@/lib/config';
 
 // 添加工作流配置文件 ID
 const WORKFLOW_CONFIG_ID = 'workflow_config';
@@ -21,7 +22,6 @@ interface EvaluationInterfaceProps {
 export function EvaluationInterface({ currentView: externalView, onViewChange }: EvaluationInterfaceProps) {
     const [teacherDoc, setTeacherDoc] = useState<File | null>(null);
     const [dialogueRecord, setDialogueRecord] = useState<File | null>(null);
-    const [workflowConfig, setWorkflowConfig] = useState<File | null>(null); // 新增：工作流配置
     const [report, setReport] = useState<EvaluationReport | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -36,11 +36,8 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
             try {
                 const savedTeacherDoc = await loadFile(TEACHER_DOC_ID);
                 const savedDialogueRecord = await loadFile(DIALOGUE_RECORD_ID);
-                const savedWorkflowConfig = await loadFile(WORKFLOW_CONFIG_ID);
-
                 if (savedTeacherDoc) setTeacherDoc(savedTeacherDoc);
                 if (savedDialogueRecord) setDialogueRecord(savedDialogueRecord);
-                if (savedWorkflowConfig) setWorkflowConfig(savedWorkflowConfig);
             } catch (error) {
                 console.error('加载保存的文件失败:', error);
             }
@@ -64,14 +61,6 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
         }
     };
 
-    // 保存工作流配置到 IndexedDB
-    const handleWorkflowConfigChange = async (file: File | null) => {
-        setWorkflowConfig(file);
-        if (file) {
-            await saveFile(WORKFLOW_CONFIG_ID, file);
-        }
-    };
-
     // Use external view if provided, otherwise use internal state
     const currentView = externalView ?? internalView;
     const setCurrentView = onViewChange ?? setInternalView;
@@ -83,39 +72,207 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
         setLoading(true);
         setError(null);
         setProgress(0);
-        setCurrentDimension('');
+        setCurrentDimension('正在准备...');
 
         try {
             // Load API config from localStorage
             const savedSettings = localStorage.getItem('llm-eval-settings');
             const apiConfig = savedSettings ? JSON.parse(savedSettings) : {};
+            const selectedModel = apiConfig.model || 'gpt-4o';
 
-            const result = await evaluateFilesStream(
-                teacherDoc,
-                dialogueRecord,
-                apiConfig,
-                (progressEvent: StreamProgress) => {
-                    if (progressEvent.type === 'progress' && progressEvent.dimension) {
-                        setCurrentDimension(progressEvent.dimension);
-                    } else if (progressEvent.type === 'dimension_complete') {
-                        const pct = ((progressEvent.current || 0) / (progressEvent.total || 6)) * 100;
-                        setProgress(pct);
+            // 1. 调用解析 API
+            setCurrentDimension("正在解析文档...");
+            const formData = new FormData();
+            formData.append("teacher_doc", teacherDoc);
+            formData.append("dialogue_record", dialogueRecord);
+
+            const parseRes = await fetch("/api/evaluate/parse", {
+                method: "POST",
+                body: formData
+            });
+
+            if (!parseRes.ok) throw new Error("文件解析失败");
+
+            const { teacherDoc: tDoc, dialogueRecord: dRec, workflowConfig: wCfg } = await parseRes.json();
+
+            // 2. 准备评测任务
+            const tasks: Array<{ dimKey: string, subKey: string, dimName: string, subName: string }> = [];
+            let totalSubDimensions = 0;
+
+            Object.entries(DIMENSIONS).forEach(([dKey, dConfig]) => {
+                dConfig.subDimensions.forEach(sub => {
+                    tasks.push({
+                        dimKey: dKey,
+                        subKey: sub.key,
+                        dimName: dConfig.name,
+                        subName: sub.name
+                    });
+                    totalSubDimensions++;
+                });
+            });
+
+            // 3. 并发评测
+            const CONCURRENCY_LIMIT = 5;
+            const results: Map<string, any> = new Map();
+            let completed = 0;
+
+            const executeTask = async (task: typeof tasks[0]) => {
+                try {
+                    // Update specific task status briefly? 
+                    // Actually let's just update the main progress text
+                    const res = await fetch("/api/evaluate/dimension", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            dimensionKey: task.dimKey,
+                            subDimensionKey: task.subKey,
+                            teacherDocContent: tDoc.content,
+                            dialogueData: dRec.data,
+                            workflowConfigContent: wCfg?.content,
+                            apiConfig: {
+                                apiKey: apiConfig.apiKey,
+                                baseUrl: apiConfig.baseUrl,
+                                model: selectedModel
+                            }
+                        })
+                    });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        results.set(`${task.dimKey}-${task.subKey}`, data);
+                    } else {
+                        console.error(`评测失败: ${task.subName}`);
                     }
-                },
-                workflowConfig // 传递工作流配置
-            );
+                } catch (e) {
+                    console.error(`请求异常: ${task.subName}`, e);
+                } finally {
+                    completed++;
+                    const pct = (completed / totalSubDimensions) * 100;
+                    setProgress(pct);
+                    setCurrentDimension(`${task.dimName} - ${task.subName} (${completed}/${totalSubDimensions})`);
+                }
+            };
 
-            // 保存到客户端历史记录
-            try {
-                const model = apiConfig.model || 'gpt-4o';
-                saveToHistory(result, teacherDoc.name, dialogueRecord.name, model);
-            } catch (historyError) {
-                console.warn('保存历史记录失败:', historyError);
+            // 手动实现并发控制
+            for (let i = 0; i < tasks.length; i += CONCURRENCY_LIMIT) {
+                const batch = tasks.slice(i, i + CONCURRENCY_LIMIT);
+                await Promise.all(batch.map(t => executeTask(t)));
             }
 
-            setReport(result);
+            setCurrentDimension("正在生成最终报告...");
+
+            // 4. 聚合结果
+            const dimensionScores = Object.entries(DIMENSIONS).map(([dKey, dConfig]) => {
+                const subScores: any[] = [];
+                dConfig.subDimensions.forEach(sub => {
+                    const res = results.get(`${dKey}-${sub.key}`);
+                    if (res) subScores.push(res);
+                });
+
+                const totalScore = subScores.reduce((sum, s) => sum + s.score, 0);
+
+                // 聚合分析文本
+                const analysis = subScores.map(s =>
+                    `【${s.sub_dimension}】(${s.score}/${s.full_score}): ${s.judgment_basis}`
+                ).join("\n\n");
+
+                let level = "合格";
+                if (totalScore >= dConfig.fullScore * 0.9) level = "优秀";
+                else if (totalScore >= dConfig.fullScore * 0.75) level = "良好";
+                else if (totalScore < dConfig.fullScore * 0.6) level = "不合格";
+
+                return {
+                    dimension: dConfig.name,
+                    score: totalScore,
+                    full_score: dConfig.fullScore,
+                    weight: dConfig.weight,
+                    level,
+                    analysis,
+                    sub_scores: subScores,
+                    isVeto: dConfig.isVeto && dConfig.vetoThreshold !== undefined && totalScore < dConfig.vetoThreshold,
+                    weighted_score: totalScore
+                };
+            });
+
+            // 计算总分
+            const finalTotalScore = dimensionScores.reduce((sum, d) => sum + d.weighted_score, 0);
+
+            // 确定否决和评级
+            const vetoReasons: string[] = [];
+            dimensionScores.forEach(d => {
+                if (d.isVeto) vetoReasons.push(`${d.dimension}得分低于阈值`);
+            });
+
+            let finalLevel = "不合格";
+            let passCriteriaMet = false;
+
+            if (vetoReasons.length > 0) {
+                finalLevel = "一票否决";
+            } else if (finalTotalScore >= 90) {
+                finalLevel = "优秀";
+                passCriteriaMet = true;
+            } else if (finalTotalScore >= 75) {
+                finalLevel = "良好";
+                passCriteriaMet = true;
+            } else if (finalTotalScore >= 60) {
+                finalLevel = "合格";
+                passCriteriaMet = true;
+            }
+
+            // 收集 Issues 和 Suggestions
+            const allIssues: string[] = [];
+            const allSuggestions: string[] = [];
+            dimensionScores.forEach(d => {
+                d.sub_scores.forEach((s: any) => {
+                    if (s.issues) s.issues.forEach((i: any) => allIssues.push(`[${s.sub_dimension}] ${i.description}`));
+                    if (s.rating === "不足" || s.rating === "较差") allSuggestions.push(`优化${s.sub_dimension}: ${s.judgment_basis}`);
+                });
+            });
+
+            const finalReport: EvaluationReport & { history_id?: string } = {
+                task_id: "",
+                total_score: finalTotalScore,
+                dimensions: dimensionScores,
+                analysis: `评测完成。总分: ${finalTotalScore.toFixed(1)}`,
+                issues: allIssues,
+                suggestions: allSuggestions,
+                final_level: finalLevel as any,
+                pass_criteria_met: passCriteriaMet,
+                veto_reasons: vetoReasons,
+                history_id: ""
+            };
+
+            // 5. 保存历史
+            try {
+                const saveRes = await fetch("/api/evaluate/history", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        report: finalReport,
+                        teacherDocName: tDoc.name,
+                        dialogueRecordName: dRec.name,
+                        modelName: selectedModel
+                    })
+                });
+                if (saveRes.ok) {
+                    const histData = await saveRes.json();
+                    finalReport.history_id = histData.history_id;
+                }
+            } catch (e) {
+                console.warn("历史保存失败", e);
+            }
+
+            // 同时保存到客户端 localStorage（作为后备）
+            try {
+                saveToHistory(finalReport as any, tDoc.name, dRec.name, selectedModel);
+            } catch (e) {
+                console.warn("客户端历史保存失败", e);
+            }
+
+            setReport(finalReport);
             setStep('results');
         } catch (err: any) {
+            console.error("评测流程错误:", err);
             setError(err.message || "Evaluation failed");
             setStep('upload');
         } finally {
@@ -135,7 +292,6 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
     const handleClearFiles = async () => {
         setTeacherDoc(null);
         setDialogueRecord(null);
-        setWorkflowConfig(null);
         setReport(null);
         setStep('upload');
         setError(null);
@@ -249,8 +405,8 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 ml-1">教师指导文档</h4>
                                     <FileUpload
                                         label="上传教师手册"
-                                        accept=".docx,.md"
-                                        description="上传 .docx 或 .md 格式的指导文档"
+                                        accept=".doc,.docx,.md"
+                                        description="上传 .doc, .docx 或 .md 格式的指导文档"
                                         onChange={handleTeacherDocChange}
                                         currentFile={teacherDoc}
                                         stepNumber={1}
@@ -272,28 +428,6 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                                         currentFile={dialogueRecord}
                                         stepNumber={2}
                                     />
-                                </div>
-
-                                <div className="flex items-center justify-center">
-                                    <span className="text-slate-300 text-xs font-bold bg-white px-2 z-10">可选</span>
-                                    <div className="absolute w-full h-px bg-slate-100 left-0"></div>
-                                </div>
-
-                                <div>
-                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 ml-1">
-                                        工作流配置 <span className="text-xs text-slate-300 normal-case">(可选)</span>
-                                    </h4>
-                                    <FileUpload
-                                        label="上传工作流配置"
-                                        accept=".md,.txt"
-                                        description="上传 .md 或 .txt 格式的 Prompt 配置"
-                                        onChange={handleWorkflowConfigChange}
-                                        currentFile={workflowConfig}
-                                        stepNumber={3}
-                                    />
-                                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                                        💡 上传工作流配置后，系统将提供针对具体环节的 Prompt 修改建议
-                                    </p>
                                 </div>
                             </div>
 
@@ -378,7 +512,7 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                         <h2 className="text-2xl font-bold text-slate-800">正在进行评估</h2>
                         {currentDimension ? (
                             <p className="text-indigo-600 font-medium text-lg">
-                                正在评估: {currentDimension}
+                                {currentDimension}
                             </p>
                         ) : (
                             <p className="text-slate-500 text-lg">

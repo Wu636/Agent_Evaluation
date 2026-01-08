@@ -2,7 +2,7 @@
  * LLM 工具函数
  */
 
-import type { LLMResponse, ApiConfig, DialogueData } from "./types";
+import type { LLMResponse, ApiConfig, DialogueData, IssueItem, HighlightItem } from "./types";
 
 /**
  * 格式化对话记录为 LLM 可读格式
@@ -23,132 +23,168 @@ export function formatDialogueForLLM(dialogueData: DialogueData): string {
 }
 
 /**
- * 解析 LLM 返回的 JSON
+ * 解析 LLM 返回的 JSON（增强版）
+ * 能够处理 LLM 在 JSON 前后添加解释性文字的情况
  */
 export function parseLLMResponse(response: string): LLMResponse {
     try {
         let cleaned = response.trim();
 
-        // 移除 thinking 标签
+        // 1. 移除 thinking 标签
         cleaned = cleaned.replace(/\<thinking\>[\s\S]*?\<\/thinking\>/g, "");
         cleaned = cleaned.trim();
 
         let jsonText: string | null = null;
 
-        // 提取 JSON
+        // 2. 优先查找 JSON 代码块
         const codeBlockMatch = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
         if (codeBlockMatch) {
             jsonText = codeBlockMatch[1].trim();
-        } else {
+        }
+
+        // 3. 如果没有代码块，尝试查找 JSON 对象
+        if (!jsonText) {
+            // 尝试找到第一个 { 和最后一个 } 之间的内容
             const firstBrace = cleaned.indexOf("{");
             const lastBrace = cleaned.lastIndexOf("}");
             if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
                 jsonText = cleaned.substring(firstBrace, lastBrace + 1);
-            } else {
-                jsonText = cleaned;
             }
         }
 
-        // 尝试修复常见的 JSON 格式问题
-        if (jsonText) {
-            // 修复数组中缺少逗号的问题（Claude 有时会这样）
-            jsonText = jsonText.replace(/"\s*\n\s*"/g, '",\n"');
-            // 修复对象中缺少逗号的问题
-            jsonText = jsonText.replace(/"\s*\n\s*([a-zA-Z_])/g, '",\n$1');
-            // 移除尾随逗号
-            jsonText = jsonText.replace(/,(\s*[}\]])/g, '$1');
+        // 4. 如果还是没有找到，尝试更宽松的匹配
+        if (!jsonText) {
+            // 尝试匹配任何看起来像 JSON 的内容
+            const jsonMatch = cleaned.match(/\{[\s\S]*"sub_dimension"[\s\S]*\}/);
+            if (jsonMatch) {
+                jsonText = jsonMatch[0];
+            }
         }
 
-        let result: LLMResponse;
+        // 5. 如果仍然没有 JSON，返回默认值
+        if (!jsonText) {
+            console.error("无法从响应中提取 JSON");
+            console.error("原始响应:", cleaned.substring(0, 500));
+            return createDefaultResponse("无法提取 JSON");
+        }
+
+        // 6. 尝试修复常见的 JSON 格式问题
+        jsonText = fixCommonJsonIssues(jsonText);
+
+        let result: any;
 
         try {
-            result = JSON.parse(jsonText) as LLMResponse;
+            result = JSON.parse(jsonText);
         } catch (parseError) {
             console.error("JSON 解析失败，尝试更激进的修复...");
-            console.error("原始 JSON:", jsonText?.substring(0, 500));
+            console.error("提取的 JSON:", jsonText.substring(0, 500));
 
             // 尝试更激进的修复
-            if (jsonText) {
-                // 移除所有注释
-                jsonText = jsonText.replace(/\/\*[\s\S]*?\*\//g, '');
-                jsonText = jsonText.replace(/\/\/.*/g, '');
+            jsonText = aggressiveJsonFix(jsonText);
 
-                // 再次尝试解析
-                result = JSON.parse(jsonText) as LLMResponse;
-            } else {
-                throw parseError;
+            try {
+                result = JSON.parse(jsonText);
+            } catch (secondError) {
+                console.error("二次解析仍然失败:", secondError);
+                return createDefaultResponse(`JSON 解析失败: ${secondError}`);
             }
         }
 
-        // 验证必要字段
-        const requiredFields: (keyof LLMResponse)[] = [
-            "score",
-            "level",
-            "analysis",
-            "evidence",
-            "issues",
-            "suggestions",
-        ];
+        // 7. 填充默认值并返回标准化结果
+        return normalizeResult(result);
 
-        for (const field of requiredFields) {
-            if (!(field in result)) {
-                console.warn(`LLM返回缺少字段: ${field}，使用默认值`);
-                // 提供默认值
-                if (field === "score") result.score = 50;
-                else if (field === "level") result.level = "合格";
-                else if (field === "analysis") result.analysis = "分析内容缺失";
-                else if (field === "evidence" || field === "issues" || field === "suggestions") {
-                    (result as any)[field] = [];
-                }
-            }
-        }
-
-        // 确保数组字段是数组
-        if (!Array.isArray(result.evidence)) result.evidence = [];
-        if (!Array.isArray(result.issues)) result.issues = [];
-        if (!Array.isArray(result.suggestions)) result.suggestions = [];
-
-        // 将数组中的对象转换为字符串（Claude 有时会返回对象而非字符串）
-        const ensureStringArray = (arr: any[]): string[] => {
-            return arr.map(item => {
-                if (typeof item === 'string') return item;
-                if (typeof item === 'object' && item !== null) {
-                    // 尝试提取常见的文本字段
-                    if (item.text) return String(item.text);
-                    if (item.content) return String(item.content);
-                    if (item.description) return String(item.description);
-                    if (item.message) return String(item.message);
-                    if (item.issue) return String(item.issue);
-                    if (item.suggestion) return String(item.suggestion);
-                    // 如果是对象，将其转换为 JSON 字符串或使用第一个字符串值
-                    const values = Object.values(item);
-                    const firstString = values.find(v => typeof v === 'string');
-                    if (firstString) return String(firstString);
-                    return JSON.stringify(item);
-                }
-                return String(item);
-            });
-        };
-
-        result.evidence = ensureStringArray(result.evidence);
-        result.issues = ensureStringArray(result.issues);
-        result.suggestions = ensureStringArray(result.suggestions);
-
-        return result;
     } catch (error) {
         console.error("JSON解析失败:", error);
         console.error("原始响应:", response.substring(0, 1000));
-
-        // 返回默认值
-        return {
-            score: 50,
-            level: "合格",
-            analysis: `JSON解析失败，使用默认分数。错误: ${error instanceof Error ? error.message : String(error)}`,
-            evidence: [],
-            issues: ["LLM返回格式错误，请检查模型配置"],
-            suggestions: ["建议使用 GPT-4 或其他兼容模型"],
-        };
+        return createDefaultResponse(`解析错误: ${error instanceof Error ? error.message : String(error)}`);
     }
+}
+
+/**
+ * 修复常见的 JSON 格式问题
+ */
+function fixCommonJsonIssues(jsonText: string): string {
+    // 修复数组中缺少逗号的问题（Claude 有时会这样）
+    jsonText = jsonText.replace(/"\s*\n\s*"/g, '",\n"');
+    // 修复对象中缺少逗号的问题
+    jsonText = jsonText.replace(/"\s*\n\s*([a-zA-Z_])/g, '",\n$1');
+    // 移除尾随逗号
+    jsonText = jsonText.replace(/,(\s*[}\]])/g, '$1');
+    // 修复未闭合的字符串（如果行尾缺少引号）
+    jsonText = jsonText.replace(/:\s*"([^"]*)\n/g, ': "$1",\n');
+
+    return jsonText;
+}
+
+/**
+ * 更激进的 JSON 修复
+ */
+function aggressiveJsonFix(jsonText: string): string {
+    // 移除所有注释
+    jsonText = jsonText.replace(/\/\*[\s\S]*?\*\//g, '');
+    jsonText = jsonText.replace(/\/\/.*/g, '');
+
+    // 移除控制字符
+    jsonText = jsonText.replace(/[\x00-\x1F\x7F]/g, ' ');
+
+    // 尝试修复常见的转义问题
+    jsonText = jsonText.replace(/\\(?!["\\/bfnrt])/g, '\\\\');
+
+    // 修复未转义的换行符在字符串中
+    jsonText = jsonText.replace(/"([^"]*)\n([^"]*)"/g, '"$1\\n$2"');
+
+    return jsonText;
+}
+
+/**
+ * 创建默认响应
+ */
+function createDefaultResponse(errorMessage: string): LLMResponse {
+    return {
+        sub_dimension: "解析失败",
+        score: 0,
+        full_score: 0,
+        rating: "解析失败",
+        score_range: "",
+        judgment_basis: errorMessage,
+        issues: [],
+        highlights: []
+    };
+}
+
+/**
+ * 标准化解析结果
+ */
+function normalizeResult(result: any): LLMResponse {
+    return {
+        sub_dimension: result.sub_dimension || "未知子维度",
+        score: typeof result.score === 'number' ? result.score : 0,
+        full_score: typeof result.full_score === 'number' ? result.full_score : 5,
+        rating: result.rating || "未知",
+        score_range: result.score_range || "未知",
+        judgment_basis: result.judgment_basis || "未提供判定依据",
+        issues: Array.isArray(result.issues) ? normalizeIssues(result.issues) : [],
+        highlights: Array.isArray(result.highlights) ? normalizeHighlights(result.highlights) : []
+    };
+}
+
+function normalizeIssues(issues: any[]): IssueItem[] {
+    return issues.map(item => ({
+        description: String(item.description || item),
+        location: String(item.location || "未定位"),
+        quote: String(item.quote || ""),
+        severity: (["high", "medium", "low"].includes(item.severity) ? item.severity : "medium") as "high" | "medium" | "low",
+        impact: String(item.impact || "")
+    }));
+}
+
+function normalizeHighlights(highlights: any[]): HighlightItem[] {
+    return highlights.map(item => ({
+        description: String(item.description || item),
+        location: String(item.location || "未定位"),
+        quote: String(item.quote || ""),
+        impact: String(item.impact || "")
+    }));
 }
 
 /**
@@ -157,7 +193,7 @@ export function parseLLMResponse(response: string): LLMResponse {
 export async function callLLM(
     prompt: string,
     config: ApiConfig & { model: string },
-    temperature: number = 0.3
+    temperature: number = 0.1 // 降低温度以获得更确定性的输出
 ): Promise<string> {
     const { apiKey, baseUrl, model } = config;
 
@@ -169,7 +205,13 @@ export async function callLLM(
         messages: [
             {
                 role: "system",
-                content: "你是一位资深的教学质量评估专家,擅长分析教学智能体的对话质量。你的评价客观、专业、有建设性。",
+                content: `你是一位资深的教学质量评估专家。你的任务是分析教学智能体的对话质量并输出评分结果。
+
+**重要规则：你必须只输出 JSON，不要输出任何其他内容！**
+- 不要写"为了..."、"首先..."、"让我..."等解释性文字
+- 不要写任何前言或总结
+- 直接输出 JSON 对象，以 { 开头，以 } 结尾
+- 如果需要思考，在心里思考，不要写出来`,
             },
             {
                 role: "user",

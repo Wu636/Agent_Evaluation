@@ -1,16 +1,9 @@
 // API 客户端 - 使用相对路径指向 Next.js API Routes
 
-export interface EvaluationReport {
-    total_score: number;
-    dimensions: Record<string, { score: number; comment: string }>;
-    analysis: string;
-    issues: string[];
-    suggestions: string[];
-    final_level?: string;
-    pass_criteria_met?: boolean;
-    veto_reasons?: string[];
-    history_id?: string;
-}
+import { EvaluationReport, ModelInfo, ApiConfig } from '@/lib/llm/types';
+
+// Re-export common types
+export type { EvaluationReport, ModelInfo, ApiConfig };
 
 export interface HistoryItem {
     id: string;
@@ -20,18 +13,6 @@ export interface HistoryItem {
     dialogue_record_name: string;
     model: string;
     final_level: string;
-}
-
-export interface ModelInfo {
-    id: string;
-    name: string;
-    description: string;
-}
-
-export interface ApiConfig {
-    apiKey?: string;
-    apiUrl?: string;
-    model?: string;
 }
 
 export async function evaluateFiles(
@@ -45,7 +26,7 @@ export async function evaluateFiles(
 
     // Add optional API configuration
     if (apiConfig.apiKey) formData.append('api_key', apiConfig.apiKey);
-    if (apiConfig.apiUrl) formData.append('api_url', apiConfig.apiUrl);
+    if (apiConfig.baseUrl) formData.append('api_url', apiConfig.baseUrl); // types.ts has baseUrl, api expects api_url or base_url? Route uses api_url
     if (apiConfig.model) formData.append('model', apiConfig.model);
 
     const response = await fetch('/api/evaluate', {
@@ -64,6 +45,7 @@ export async function evaluateFiles(
 export interface StreamProgress {
     type: 'start' | 'progress' | 'dimension_complete' | 'complete' | 'error';
     dimension?: string;
+    sub_dimension?: string;
     current?: number;
     total?: number;
     score?: number;
@@ -88,7 +70,7 @@ export async function evaluateFilesStream(
     }
 
     if (apiConfig.apiKey) formData.append('api_key', apiConfig.apiKey);
-    if (apiConfig.apiUrl) formData.append('api_url', apiConfig.apiUrl);
+    if (apiConfig.baseUrl) formData.append('api_url', apiConfig.baseUrl);
     if (apiConfig.model) formData.append('model', apiConfig.model);
 
     const response = await fetch('/api/evaluate-stream', {

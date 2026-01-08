@@ -1,24 +1,24 @@
 /**
- * LLM 评测核心逻辑
+ * LLM 评测核心逻辑 (非流式/CLI用)
  */
 
 import {
   DimensionScore,
   EvaluationReport,
   EvaluationLevel,
-  LLMResponse,
   ApiConfig,
   DialogueData,
+  SubDimensionScore,
 } from "./types";
 import { DIMENSIONS, MODEL_NAME_MAPPING } from "../config";
-import { buildDimensionPrompt } from "./prompts";
+import { buildSubDimensionPrompt } from "./prompts";
 import { formatDialogueForLLM, parseLLMResponse, callLLM } from "./utils";
 
 // 重新导出工具函数供其他模块使用
 export { formatDialogueForLLM, parseLLMResponse, callLLM } from "./utils";
 
 /**
- * 评测单个维度
+ * 评测单个维度 (包含多个子维度)
  */
 async function evaluateDimension(
   dimensionKey: string,
@@ -31,34 +31,82 @@ async function evaluateDimension(
 
   console.log(`\n⏳ 正在评测: ${dimensionName}...`);
 
-  // 构造评测提示词
   const dialogueText = formatDialogueForLLM(dialogueData);
-  const prompt = buildDimensionPrompt(dimensionKey, {
-    teacherDoc,
-    dialogueText,
-  });
+  const subDimensionScores: SubDimensionScore[] = [];
 
-  // 调用 LLM 评测
-  const llmResponse = await callLLM(prompt, apiConfig);
+  // 遍历所有子维度
+  for (const subDim of config.subDimensions) {
+    console.log(`  - 正在评测子维度: ${subDim.name}...`);
 
-  // 解析 LLM 返回的 JSON
-  const result = parseLLMResponse(llmResponse);
+    // 构造评测提示词
+    const prompt = buildSubDimensionPrompt(config.name, subDim.name, {
+      teacherDoc,
+      dialogueText,
+    });
+
+    if (!prompt) {
+      console.warn(`    ⚠️ 未找到prompt: ${dimensionKey}.${subDim.key}`);
+      continue;
+    }
+
+    try {
+      // 调用 LLM 评测
+      const llmResponse = await callLLM(prompt, apiConfig);
+      const result = parseLLMResponse(llmResponse);
+
+      // 收集子维度分数
+      subDimensionScores.push({
+        sub_dimension: subDim.name,
+        score: result.score,
+        full_score: subDim.fullScore,
+        rating: result.rating || "未知",
+        score_range: result.score_range || "",
+        judgment_basis: result.judgment_basis || "",
+        issues: result.issues || [],
+        highlights: result.highlights || [],
+      });
+    } catch (error) {
+      console.error(`    ❌ 评测失败: ${subDim.name}`, error);
+      subDimensionScores.push({
+        sub_dimension: subDim.name,
+        score: 0,
+        full_score: subDim.fullScore,
+        rating: "评估失败",
+        score_range: "",
+        judgment_basis: `系统错误: ${error}`,
+        issues: []
+      });
+    }
+  }
+
+  // 汇总子维度分数
+  const totalScore = subDimensionScores.reduce((sum, s) => sum + s.score, 0);
+
+  // 聚合分析
+  const analysis = subDimensionScores
+    .map(s => `【${s.sub_dimension}】(${s.score}/${s.full_score}分): ${s.judgment_basis}`)
+    .join("\n\n");
+
+  // 确定评级
+  let level = "合格";
+  if (totalScore >= config.fullScore * 0.9) level = "优秀";
+  else if (totalScore >= config.fullScore * 0.75) level = "良好";
+  else if (totalScore < config.fullScore * 0.6) level = "不合格";
 
   // 构造评分对象
   const score: DimensionScore = {
     dimension: dimensionName,
-    score: result.score,
+    score: totalScore,
+    full_score: config.fullScore,
     weight: config.weight,
-    level: result.level,
-    analysis: result.analysis,
-    evidence: result.evidence,
-    issues: result.issues,
-    suggestions: result.suggestions,
+    level: level,
+    analysis: analysis,
+    sub_scores: subDimensionScores,
     isVeto:
       config.isVeto &&
       config.vetoThreshold !== undefined &&
-      result.score < config.vetoThreshold,
-    weightedScore: result.score * config.weight,
+      totalScore < config.vetoThreshold,
+    weighted_score: totalScore, // snake_case
   };
 
   console.log(`✓ ${dimensionName}: ${score.score.toFixed(1)}分 - ${score.level}`);
@@ -90,9 +138,9 @@ function generateExecutiveSummary(
 
   lines.push("### 各维度得分");
   for (const dim of dimensions) {
-    const emoji = dim.score >= 80 ? "✅" : dim.score >= 60 ? "⚠️" : "❌";
+    const emoji = dim.score / dim.full_score >= 0.8 ? "✅" : dim.score / dim.full_score >= 0.6 ? "⚠️" : "❌";
     lines.push(
-      `${emoji} **${dim.dimension}**: ${dim.weightedScore.toFixed(1)}/${dim.weight * 100} `
+      `${emoji} **${dim.dimension}**: ${dim.score.toFixed(1)}/${dim.full_score} `
     );
   }
 
@@ -121,16 +169,13 @@ function extractCriticalIssues(dimensions: DimensionScore[]): string[] {
   const critical: string[] = [];
 
   for (const dim of dimensions) {
-    if (dim.score < 60) {
-      // 不合格的维度
-      critical.push(
-        ...dim.issues.map((issue) => `【${dim.dimension}】${issue}`)
-      );
-    } else if (dim.score < 75) {
-      // 合格但需改进的维度,只取前2个
-      critical.push(
-        ...dim.issues.slice(0, 2).map((issue) => `【${dim.dimension}】${issue}`)
-      );
+    if (dim.sub_scores) {
+      for (const sub of dim.sub_scores) {
+        if (sub.score < sub.full_score * 0.6) {
+          const issue = sub.issues?.[0]?.description || sub.judgment_basis;
+          critical.push(`【${dim.dimension}-${sub.sub_dimension}】${issue}`);
+        }
+      }
     }
   }
 
@@ -143,20 +188,11 @@ function extractCriticalIssues(dimensions: DimensionScore[]): string[] {
 function extractActionableSuggestions(dimensions: DimensionScore[]): string[] {
   const suggestions: string[] = [];
 
-  // 按分数从低到高排序,优先改进低分项
-  const sortedDims = [...dimensions].sort((a, b) => a.score - b.score);
-
-  for (const dim of sortedDims) {
-    if (dim.suggestions.length > 0) {
-      // 为每条建议添加维度标签,最多取前3条
-      for (const suggestion of dim.suggestions.slice(0, 3)) {
-        const cleaned = suggestion.trim();
-        // 如果建议以数字开头,移除它
-        const finalSuggestion = /^\d+\./.test(cleaned)
-          ? cleaned.substring(cleaned.indexOf(".") + 1).trim()
-          : cleaned;
-        if (finalSuggestion) {
-          suggestions.push(`【${dim.dimension}】${finalSuggestion}`);
+  for (const dim of dimensions) {
+    if (dim.sub_scores) {
+      for (const sub of dim.sub_scores) {
+        if (["不足", "较差"].includes(sub.rating)) {
+          suggestions.push(`【${dim.dimension}-${sub.sub_dimension}】建议优化: ${sub.judgment_basis.substring(0, 50)}...`);
         }
       }
     }
@@ -204,7 +240,7 @@ export async function evaluate(
 
   // 计算总分
   const totalScore = dimensionScores.reduce(
-    (sum, dim) => sum + dim.weightedScore,
+    (sum, dim) => sum + dim.weighted_score, // snake_case
     0
   );
 
@@ -242,15 +278,16 @@ export async function evaluate(
   const actionableSuggestions = extractActionableSuggestions(dimensionScores);
 
   const report: EvaluationReport = {
-    taskId: dialogueData.metadata.task_id,
-    totalScore,
-    finalLevel,
+    task_id: dialogueData.metadata.task_id, // snake_case
+    total_score: totalScore, // snake_case
+    final_level: finalLevel, // snake_case
     dimensions: dimensionScores,
-    executiveSummary,
-    criticalIssues,
-    actionableSuggestions,
-    passCriteriaMet,
-    vetoReasons,
+    analysis: executiveSummary, // mapped to analysis (which is executive_summary alias)
+    issues: criticalIssues,
+    suggestions: actionableSuggestions,
+    pass_criteria_met: passCriteriaMet, // snake_case
+    veto_reasons: vetoReasons, // snake_case
+    // Add compatibility fields if needed or make optional in types
   };
 
   console.log("\n" + "=".repeat(70));

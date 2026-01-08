@@ -1,5 +1,5 @@
 /**
- * LLM 评测系统类型定义
+ * LLM 评测系统类型定义（新版本 - 分数段限定版）
  */
 
 export enum EvaluationLevel {
@@ -10,63 +10,124 @@ export enum EvaluationLevel {
   VETO = "一票否决",
 }
 
-export interface DimensionScore {
-  dimension: string;
-  score: number; // 0-100
-  weight: number;
-  level: string; // 优秀/良好/合格/不合格
-  analysis: string; // 详细分析
-  evidence: string[]; // 支撑证据
-  issues: string[]; // 发现的问题
-  suggestions: string[]; // 改进建议
-  isVeto: boolean; // 是否一票否决
-  weightedScore: number; // 加权分数
-  // 新增：分环节的建议
-  stage_suggestions?: StageSuggestion[];
+/**
+ * 子维度配置
+ */
+export interface SubDimensionConfig {
+  key: string; // 子维度键名
+  name: string; // 子维度名称
+  fullScore: number; // 满分
 }
 
-export interface EvaluationReport {
-  taskId: string;
-  totalScore: number;
-  finalLevel: EvaluationLevel;
-  dimensions: DimensionScore[];
-  executiveSummary: string; // 高管摘要
-  criticalIssues: string[]; // 关键问题
-  actionableSuggestions: string[]; // 可执行建议
-  passCriteriaMet: boolean; // 是否达到合格标准
-  vetoReasons: string[]; // 一票否决原因
-}
-
+/**
+ * 维度配置
+ */
 export interface DimensionConfig {
   name: string;
   weight: number;
+  fullScore: number; // 满分
   isVeto: boolean;
   vetoThreshold?: number;
+  isBonus?: boolean; // 是否为加分项
+  subDimensions: SubDimensionConfig[];
 }
 
+/**
+ * 问题/证据项
+ */
+export interface IssueItem {
+  description: string; // 问题描述
+  location: string; // 位置定位（如"第X轮对话"）
+  quote: string; // 原文引用
+  severity: "high" | "medium" | "low"; // 严重程度
+  impact: string; // 对分数段判定的影响说明
+}
+
+/**
+ * 亮点项（用于加分项）
+ */
+export interface HighlightItem {
+  description: string; // 亮点描述
+  location: string; // 位置定位
+  quote: string; // 原文引用
+  impact: string; // 影响说明
+}
+
+/**
+ * 子维度评分结果
+ */
+export interface SubDimensionScore {
+  sub_dimension: string; // 子维度名称
+  score: number; // 具体分数
+  full_score: number; // 满分
+  rating: string; // 评级（优秀/良好/合格/不足/较差）
+  score_range: string; // 所属分数段
+  judgment_basis: string; // 判定该分数段的核心依据
+  issues?: IssueItem[]; // 问题清单
+  highlights?: HighlightItem[]; // 亮点清单（加分项使用）
+}
+
+/**
+ * 一级维度评分结果
+ */
+export interface DimensionScore {
+  dimension: string; // 维度名称
+  score: number; // 总分
+  full_score: number; // 满分
+  weight: number; // 权重
+  level: string; // 评级
+  analysis: string; // 详细分析
+  sub_scores: SubDimensionScore[]; // 子维度评分
+  isVeto: boolean; // 是否一票否决
+  weighted_score: number; // 加权分数 (snake_case)
+}
+
+/**
+ * 评测报告
+ */
+export interface EvaluationReport {
+  task_id: string; // snake_case
+  total_score: number; // snake_case
+  final_level: EvaluationLevel; // snake_case
+  dimensions: DimensionScore[];
+  executive_summary?: string; // snake_case (optional in some contexts, but let's keep it consistent)
+  analysis?: string; // Alias for executive_summary or detailed analysis
+  issues: string[]; // snake_case
+  suggestions: string[]; // snake_case
+  pass_criteria_met: boolean; // snake_case
+  veto_reasons: string[]; // snake_case
+
+  // 保持兼容性字段
+  criticalIssues?: string[]; // Deprecated, use issues
+  actionableSuggestions?: string[]; // Deprecated, use suggestions
+  executiveSummary?: string; // Deprecated, use analysis/executive_summary
+}
+
+/**
+ * LLM 响应（子维度评分）
+ */
 export interface LLMResponse {
+  sub_dimension: string;
   score: number;
-  level: string;
-  analysis: string;
-  evidence: string[];
-  issues: string[];
-  suggestions: string[];
-  // 新增：分环节的建议（如果提供了工作流配置）
-  stage_suggestions?: StageSuggestion[];
+  full_score: number;
+  rating: string;
+  score_range: string;
+  judgment_basis: string;
+  issues?: IssueItem[];
+  highlights?: HighlightItem[];
 }
 
-// 新增：环节级别的建议
+// 保留旧的类型以兼容性（后续可以移除）
 export interface StageSuggestion {
-  stage_name: string; // 环节名称
-  issues: string[]; // 该环节的问题
-  prompt_fixes: PromptFix[]; // Prompt 修改建议
+  stage_name: string;
+  issues: string[];
+  prompt_fixes: PromptFix[];
 }
 
-// 新增：具体的 Prompt 修改建议
 export interface PromptFix {
-  section: string; // 章节名称：Role/Profile/Rules/Workflow/Output Requirements
-  current_problem: string; // 当前存在的问题
-  suggested_change: string; // 建议的修改方向
+  section: string;
+  current_problem: string;
+  suggested_change: string;
 }
 
 export interface ApiConfig {

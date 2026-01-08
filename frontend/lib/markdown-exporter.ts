@@ -1,28 +1,14 @@
-import { EvaluationReport } from './api';
-
-/**
- * 获取维度中文名称
- */
-const DIMENSION_NAMES: Record<string, string> = {
-    teaching_goal_completion: '目标达成度',
-    teaching_strategy: '策略引导力',
-    workflow_consistency: '流程遵循度',
-    interaction_experience: '交互体验感',
-    hallucination_control: '幻觉控制力',
-    robustness: '异常处理力',
-};
-
-const getDimensionName = (key: string): string => {
-    return DIMENSION_NAMES[key] || key;
-};
+import { EvaluationReport, DimensionScore } from './llm/types';
+import { DIMENSIONS } from './config';
 
 /**
  * 获取评分等级
  */
-const getScoreLabel = (score: number): string => {
-    if (score >= 90) return '优秀';
-    if (score >= 75) return '良好';
-    if (score >= 60) return '合格';
+const getScoreLabel = (score: number, fullScore: number = 100): string => {
+    const ratio = score / fullScore;
+    if (ratio >= 0.9) return '优秀';
+    if (ratio >= 0.75) return '良好';
+    if (ratio >= 0.6) return '合格';
     return '需改进';
 };
 
@@ -46,147 +32,116 @@ export function formatReportToMarkdown(report: EvaluationReport): string {
     markdown += `**生成时间**: ${timestamp}\n\n`;
     markdown += `---\n\n`;
     markdown += `## 📊 总体评分\n\n`;
-    markdown += `**总分**: ${report.total_score.toFixed(1)} / 100\n\n`;
-    markdown += `**评级**: ${getScoreLabel(report.total_score)}\n\n`;
+    markdown += `- **总分**: ${report.total_score.toFixed(1)} / 100\n`;
+    markdown += `- **评级**: ${report.final_level}\n`;
 
-    // 各维度评分表格
-    markdown += `---\n\n`;
-    markdown += `## 📈 维度评分详情\n\n`;
-    markdown += `| 维度 | 分数 | 评级 |\n`;
-    markdown += `|------|------|------|\n`;
+    if (report.veto_reasons && report.veto_reasons.length > 0) {
+        markdown += `- **一票否决**: ${report.veto_reasons.join('; ')}\n`;
+    }
 
-    Object.entries(report.dimensions).forEach(([key, data]) => {
-        const dimName = getDimensionName(key);
-        const score = data.score;
-        const level = getScoreLabel(score);
-        markdown += `| ${dimName} | ${score} | ${level} |\n`;
+    markdown += `\n`;
+
+    // 各维度评分概览
+    markdown += `## 📈 维度评分概览\n\n`;
+    markdown += `| 维度 | 分数 | 评级 | 权重 |\n`;
+    markdown += `|------|------|------|------|\n`;
+
+    // 兼容数组或对象格式
+    const dimensionsList = Array.isArray(report.dimensions)
+        ? report.dimensions
+        : Object.entries(report.dimensions as any).map(([key, value]: any) => ({
+            dimension: DIMENSIONS[key]?.name || key,
+            score: value.score,
+            level: getScoreLabel(value.score, 20),
+            weight: 0.2,
+            full_score: 20,
+            analysis: value.comment,
+            sub_scores: [],
+            isVeto: false,
+            weighted_score: value.score
+        }));
+
+    dimensionsList.forEach((dim: any) => {
+        markdown += `| ${dim.dimension} | ${dim.score.toFixed(1)} | ${dim.level || getScoreLabel(dim.score, 20)} | ${(dim.weight * 100).toFixed(0)}% |\n`;
     });
 
     // 各维度详细分析
     markdown += `\n---\n\n`;
-    markdown += `## 📝 维度详细分析\n\n`;
+    markdown += `## 📝 维度详细评测\n\n`;
 
-    Object.entries(report.dimensions).forEach(([key, data]) => {
-        const dimName = getDimensionName(key);
-        markdown += `### ${dimName}\n\n`;
-        markdown += `**分数**: ${data.score} / 100\n\n`;
-        markdown += `**分析**:\n\n`;
-        markdown += `${data.comment}\n\n`;
+    dimensionsList.forEach((dim: DimensionScore) => {
+        markdown += `### ${dim.dimension} (${dim.score.toFixed(1)}分)\n\n`;
+
+        // 子维度详情
+        if (dim.sub_scores && dim.sub_scores.length > 0) {
+            markdown += `#### 子维度评分\n\n`;
+
+            dim.sub_scores.forEach(sub => {
+                const icon = ["优秀", "良好", "合格"].includes(sub.rating) ? "✅" : "⚠️";
+                markdown += `**${icon} ${sub.sub_dimension}**\n\n`;
+                markdown += `- **分数**: ${sub.score} / ${sub.full_score} (${sub.rating})\n`;
+                markdown += `- **判定依据**: ${sub.judgment_basis}\n`;
+
+                // 问题列表
+                if (sub.issues && sub.issues.length > 0) {
+                    markdown += `- **发现问题**:\n`;
+                    sub.issues.forEach(issue => {
+                        markdown += `  - **${issue.description}** (${issue.severity === 'high' ? '严重' : '一般'})\n`;
+                        markdown += `    > 位置: ${issue.location}\n`;
+                        markdown += `    > 引用: "${issue.quote}"\n`;
+                    });
+                }
+
+                // 亮点列表
+                if (sub.highlights && sub.highlights.length > 0) {
+                    markdown += `- **亮点表现**:\n`;
+                    sub.highlights.forEach(highlight => {
+                        markdown += `  - **${highlight.description}**\n`;
+                        markdown += `    > 引用: "${highlight.quote}"\n`;
+                    });
+                }
+
+                markdown += `\n`;
+            });
+        }
+
+        // 总体分析（兼容旧格式或汇总分析）
+        if (dim.analysis && (!dim.sub_scores || dim.sub_scores.length === 0)) {
+            markdown += `#### 维度分析\n\n${dim.analysis}\n\n`;
+        }
+
+        markdown += `---\n\n`;
     });
 
     // 整体分析
     if (report.analysis) {
-        markdown += `---\n\n`;
-        markdown += `## 🔍 整体分析\n\n`;
+        markdown += `## 🔍 整体综合分析\n\n`;
         markdown += `${report.analysis}\n\n`;
+        markdown += `---\n\n`;
     }
 
-    // 关键问题
+    // 关键问题汇总
     if (report.issues && report.issues.length > 0) {
-        markdown += `---\n\n`;
-        markdown += `## ⚠️ 关键问题\n\n`;
-
-        // 按维度分组
-        const groupedIssues = groupItemsByDimension(report.issues);
-
-        Object.entries(groupedIssues).forEach(([dimName, items]) => {
-            if (dimName !== '通用') {
-                markdown += `### ${getDimensionName(dimName)}\n\n`;
-            }
-            items.forEach((issue, index) => {
-                markdown += `${index + 1}. ${issue}\n`;
-            });
-            markdown += `\n`;
+        markdown += `## ⚠️ 关键问题汇总\n\n`;
+        report.issues.forEach((issue, index) => {
+            markdown += `${index + 1}. ${issue}\n`;
         });
+        markdown += `\n`;
     }
 
-    // 优化建议
+    // 优化建议汇总
     if (report.suggestions && report.suggestions.length > 0) {
-        markdown += `---\n\n`;
-        markdown += `## 💡 优化建议\n\n`;
-
-        // 按维度分组
-        const groupedSuggestions = groupItemsByDimension(report.suggestions);
-
-        Object.entries(groupedSuggestions).forEach(([dimName, items]) => {
-            if (dimName !== '通用') {
-                markdown += `### ${getDimensionName(dimName)}\n\n`;
-            }
-            items.forEach((suggestion, index) => {
-                markdown += `${index + 1}. ${suggestion}\n`;
-            });
-            markdown += `\n`;
+        markdown += `## 💡 优化建议汇总\n\n`;
+        report.suggestions.forEach((suggestion, index) => {
+            markdown += `${index + 1}. ${suggestion}\n`;
         });
-    }
-
-    // Prompt 优化建议
-    const dims = Object.values(report.dimensions || {});
-    const hasStageSuggestions = dims.some((d: any) =>
-        d.stage_suggestions && d.stage_suggestions.length > 0
-    );
-
-    if (hasStageSuggestions) {
-        markdown += `---\n\n`;
-        markdown += `## ✨ Prompt 优化建议\n\n`;
-
-        dims.forEach((dimension: any) => {
-            dimension.stage_suggestions?.forEach((stageSugg: any) => {
-                markdown += `### ${stageSugg.stage_name}\n\n`;
-
-                if (stageSugg.issues && stageSugg.issues.length > 0) {
-                    markdown += `**发现问题**:\n\n`;
-                    stageSugg.issues.forEach((issue: string) => {
-                        markdown += `- ${issue}\n`;
-                    });
-                    markdown += `\n`;
-                }
-
-                if (stageSugg.prompt_fixes && stageSugg.prompt_fixes.length > 0) {
-                    markdown += `**Prompt 修改建议**:\n\n`;
-                    stageSugg.prompt_fixes.forEach((fix: any) => {
-                        markdown += `#### ${fix.section}\n\n`;
-                        markdown += `**问题**: ${fix.current_problem}\n\n`;
-                        markdown += `**建议**: ${fix.suggested_change}\n\n`;
-                    });
-                }
-            });
-        });
+        markdown += `\n`;
     }
 
     markdown += `---\n\n`;
     markdown += `*本报告由智能体评测系统自动生成*\n`;
 
     return markdown;
-}
-
-/**
- * 分组解析函数：将 "【维度】内容" 格式的字符串数组，
- * 解析为 { "维度": ["内容1", "内容2"], "其他": [...] }
- */
-function groupItemsByDimension(items: string[]): Record<string, string[]> {
-    const groups: Record<string, string[]> = {};
-    const defaultKey = '通用';
-
-    items.forEach(item => {
-        const match = item.match(/^【(.*?)】(.*)/);
-        if (match) {
-            const dimName = match[1].trim();
-            const content = match[2].trim();
-            if (!groups[dimName]) {
-                groups[dimName] = [];
-            }
-            if (content) {
-                groups[dimName].push(content);
-            }
-        } else {
-            if (!groups[defaultKey]) {
-                groups[defaultKey] = [];
-            }
-            groups[defaultKey].push(item);
-        }
-    });
-
-    return groups;
 }
 
 /**

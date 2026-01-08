@@ -6,196 +6,109 @@ import {
 } from 'recharts';
 import {
     AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
-    Lightbulb, RotateCcw, Sparkles, ChevronLeft, Download
+    Lightbulb, RotateCcw, Sparkles, ChevronLeft, Download,
+    Quote, AlertTriangle
 } from 'lucide-react';
 import clsx from 'clsx';
-import { EvaluationReport } from '@/lib/api';
+import { EvaluationReport, DimensionScore, SubDimensionScore, IssueItem } from '@/lib/llm/types';
 import { exportReportAsMarkdown } from '@/lib/markdown-exporter';
+import { DIMENSIONS } from '@/lib/config';
 
 // 维度名称映射：英文 key -> 中文显示名称
-const DIMENSION_NAMES: Record<string, string> = {
-    teaching_goal_completion: '目标达成度',
-    teaching_strategy: '策略引导力',
-    workflow_consistency: '流程遵循度',
-    interaction_experience: '交互体验感',
-    hallucination_control: '幻觉控制力',
-    robustness: '异常处理力',
-};
-
-// 获取维度中文名称
+// 直接使用 config.ts 中的定义
 const getDimensionName = (key: string): string => {
-    return DIMENSION_NAMES[key] || key;
+    return DIMENSIONS[key]?.name || key;
 };
 
-// --- Helper Functions & Components ---
+// --- Helper Components ---
 
 /**
- * 分组解析函数：将 "【维度】内容" 格式的字符串数组，
- * 解析为 { "维度": ["内容1", "内容2"], "其他": [...] }
+ * 问题引用展示组件
  */
-function groupItemsByDimension(items: string[]): Record<string, string[]> {
-    const groups: Record<string, string[]> = {};
-    const defaultKey = '通用';
-
-    items.forEach(item => {
-        // 尝试匹配 【维度】内容
-        // 也可以适应带有优先级的旧格式，因为后端已经清理过格式了，这里再做一次防御
-        const match = item.match(/^【(.*?)】(.*)/);
-        if (match) {
-            const dimName = match[1].trim();
-            const content = match[2].trim();
-            if (!groups[dimName]) {
-                groups[dimName] = [];
-            }
-            if (content) {
-                groups[dimName].push(content);
-            }
-        } else {
-            if (!groups[defaultKey]) {
-                groups[defaultKey] = [];
-            }
-            groups[defaultKey].push(item);
-        }
-    });
-
-    return groups;
-}
-
-/**
- * 分页卡片组件
- */
-interface PagedCardViewProps {
-    title: string;
-    icon: React.ReactNode;
-    items: string[];
-    colorTheme: 'red' | 'emerald';
-}
-
-function PagedCardView({ title, icon, items, colorTheme }: PagedCardViewProps) {
-    const [currentIndex, setCurrentIndex] = useState(0);
-
-    // 分组数据
-    const grouped = groupItemsByDimension(items);
-    const dimensions = Object.keys(grouped);
-
-    if (dimensions.length === 0) {
-        return (
-            <div className={clsx(
-                "rounded-3xl border shadow-sm overflow-hidden",
-                colorTheme === 'red' ? "border-red-100 bg-white" : "border-emerald-100 bg-white"
-            )}>
-                <div className={clsx(
-                    "p-4 border-b flex items-center gap-3",
-                    colorTheme === 'red' ? "bg-red-50 border-red-100" : "bg-emerald-50 border-emerald-100"
-                )}>
-                    {icon}
-                    <h3 className={clsx("font-bold", colorTheme === 'red' ? "text-red-900" : "text-emerald-900")}>
-                        {title}
-                    </h3>
-                </div>
-                <div className="p-8 text-center text-slate-400 text-sm">
-                    暂无相关内容
-                </div>
-            </div>
-        );
-    }
-
-    // 当前显示的维度
-    const currentDim = dimensions[currentIndex];
-    const currentItems = grouped[currentDim] || [];
-
-    const handlePrev = () => {
-        setCurrentIndex(prev => (prev === 0 ? dimensions.length - 1 : prev - 1));
+function IssueQuote({ issue }: { issue: IssueItem }) {
+    const severityColors = {
+        high: "bg-red-100 text-red-700 border-red-200",
+        medium: "bg-amber-100 text-amber-700 border-amber-200",
+        low: "bg-blue-100 text-blue-700 border-blue-200"
     };
 
-    const handleNext = () => {
-        setCurrentIndex(prev => (prev === dimensions.length - 1 ? 0 : prev + 1));
+    const severityLabels = {
+        high: "严重",
+        medium: "一般",
+        low: "轻微"
     };
-
-    const isRed = colorTheme === 'red';
 
     return (
-        <div className={clsx(
-            "rounded-3xl border shadow-sm overflow-hidden flex flex-col h-[400px]", // 固定高度以保持对齐
-            isRed ? "border-red-100 bg-white" : "border-emerald-100 bg-white"
-        )}>
-            {/* Header */}
-            <div className={clsx(
-                "p-4 border-b flex items-center justify-between flex-shrink-0",
-                isRed ? "bg-red-50 border-red-100" : "bg-emerald-50 border-emerald-100"
-            )}>
-                <div className="flex items-center gap-3">
-                    {icon}
-                    <h3 className={clsx("font-bold", isRed ? "text-red-900" : "text-emerald-900")}>
-                        {title}
-                    </h3>
-                </div>
-                <div className="flex items-center gap-2">
-                    <span className={clsx("text-xs font-bold px-2 py-1 rounded-full", isRed ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700")}>
-                        {currentIndex + 1} / {dimensions.length}
-                    </span>
-                    <div className="flex gap-1">
-                        <button
-                            onClick={handlePrev}
-                            className={clsx("p-1 rounded-full transition-colors", isRed ? "hover:bg-red-100 text-red-400 hover:text-red-700" : "hover:bg-emerald-100 text-emerald-400 hover:text-emerald-700")}
-                        >
-                            <ChevronLeft className="w-5 h-5" />
-                        </button>
-                        <button
-                            onClick={handleNext}
-                            className={clsx("p-1 rounded-full transition-colors", isRed ? "hover:bg-red-100 text-red-400 hover:text-red-700" : "hover:bg-emerald-100 text-emerald-400 hover:text-emerald-700")}
-                        >
-                            <ChevronRight className="w-5 h-5" />
-                        </button>
-                    </div>
+        <div className="bg-slate-50 rounded-lg p-3 text-sm border border-slate-100 space-y-2">
+            <div className="flex items-start justify-between gap-2">
+                <span className="font-medium text-slate-800 flex-1">{issue.description}</span>
+                <span className={clsx("text-xs px-2 py-0.5 rounded-full border whitespace-nowrap", severityColors[issue.severity])}>
+                    {severityLabels[issue.severity]}
+                </span>
+            </div>
+
+            <div className="flex items-start gap-2 text-slate-500 text-xs bg-white p-2 rounded border border-slate-100 italic">
+                <Quote className="w-3 h-3 flex-shrink-0 mt-0.5 text-slate-400" />
+                <div className="space-y-1">
+                    <p className="font-semibold not-italic text-slate-600">{issue.location}</p>
+                    <p>"{issue.quote}"</p>
                 </div>
             </div>
 
-            {/* Content Area */}
-            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                <div className="mb-3">
-                    <span className={clsx(
-                        "inline-block px-3 py-1 rounded-lg text-xs font-bold mb-2",
-                        isRed ? "bg-red-50 text-red-600 border border-red-100" : "bg-emerald-50 text-emerald-600 border border-emerald-100"
-                    )}>
-                        {getDimensionName(currentDim)}
+            <p className="text-xs text-slate-500">
+                <span className="font-semibold">影响:</span> {issue.impact}
+            </p>
+        </div>
+    );
+}
+
+/**
+ * 子维度评分卡片
+ */
+function SubDimensionCard({ subScore }: { subScore: SubDimensionScore }) {
+    const isPass = ["优秀", "良好", "合格"].includes(subScore.rating);
+    const scoreColor = isPass ? "text-emerald-700" : "text-red-700";
+    const bgColor = isPass ? "bg-emerald-50" : "bg-red-50";
+    const borderColor = isPass ? "border-emerald-100" : "border-red-100";
+
+    return (
+        <div className={clsx("rounded-xl border p-4 space-y-3", isPass ? "bg-white border-slate-200" : "bg-red-50/30 border-red-100")}>
+            <div className="flex items-center justify-between">
+                <h4 className="font-bold text-slate-700">{subScore.sub_dimension}</h4>
+                <div className="flex items-center gap-3">
+                    <span className="text-xs font-semibold text-slate-400">
+                        {subScore.score_range}
+                    </span>
+                    <span className={clsx("px-2 py-1 rounded-md text-xs font-bold border", bgColor, borderColor, scoreColor)}>
+                        {subScore.rating} ({subScore.score}/{subScore.full_score})
                     </span>
                 </div>
-                <div className="space-y-3">
-                    {currentItems.map((item, idx) => (
-                        <div key={idx} className={clsx(
-                            "flex gap-3 text-slate-600 text-sm p-3 rounded-xl border transition-all",
-                            isRed
-                                ? "bg-red-50/30 border-red-50 hover:border-red-100 hover:shadow-sm"
-                                : "bg-emerald-50/30 border-emerald-50 hover:border-emerald-100 hover:shadow-sm"
-                        )}>
-                            <span className={clsx(
-                                "flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold mt-0.5",
-                                isRed ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600"
-                            )}>
-                                {isRed ? idx + 1 : <CheckCircle2 className="w-3.5 h-3.5" />}
-                            </span>
-                            <span className="leading-relaxed">{item}</span>
+            </div>
+
+            <p className="text-sm text-slate-600 leading-relaxed">
+                {subScore.judgment_basis}
+            </p>
+
+            {/* 显示问题列表 */}
+            {subScore.issues && subScore.issues.length > 0 && (
+                <div className="space-y-2 mt-2">
+                    {subScore.issues.map((issue, idx) => (
+                        <IssueQuote key={idx} issue={issue} />
+                    ))}
+                </div>
+            )}
+            {/* 显示亮点列表 */}
+            {subScore.highlights && subScore.highlights.length > 0 && (
+                <div className="space-y-2 mt-2">
+                    <p className="text-xs font-bold text-emerald-600 mb-1">亮点表现：</p>
+                    {subScore.highlights.map((highlight, idx) => (
+                        <div key={idx} className="bg-emerald-50 rounded-lg p-3 text-sm border border-emerald-100 space-y-1">
+                            <p className="font-medium text-emerald-800">{highlight.description}</p>
+                            <p className="text-xs text-emerald-600 italic">"{highlight.quote}"</p>
                         </div>
                     ))}
                 </div>
-            </div>
-
-            {/* Dots Indicator */}
-            <div className="p-3 flex justify-center gap-1.5 flex-shrink-0">
-                {dimensions.map((_, idx) => (
-                    <button
-                        key={idx}
-                        onClick={() => setCurrentIndex(idx)}
-                        className={clsx(
-                            "w-1.5 h-1.5 rounded-full transition-all",
-                            idx === currentIndex
-                                ? (isRed ? "bg-red-400 w-3" : "bg-emerald-400 w-3")
-                                : (isRed ? "bg-red-100" : "bg-emerald-100")
-                        )}
-                    />
-                ))}
-            </div>
+            )}
         </div>
     );
 }
@@ -210,25 +123,49 @@ interface ReportViewProps {
 export function ReportView({ report, onReset }: ReportViewProps) {
     const [expandedDim, setExpandedDim] = useState<string | null>(null);
 
-    const radarData = Object.entries(report.dimensions).map(([key, value]) => ({
-        subject: getDimensionName(key), // 使用中文名称
-        A: value.score,
+    // 只有当 dimensions 是数组时才进行处理（兼容旧数据结构）
+    const dimensionsList = Array.isArray(report.dimensions)
+        ? report.dimensions
+        : Object.entries(report.dimensions as any).map(([key, value]: any) => ({
+            dimension: DIMENSIONS[key]?.name || key,
+            score: value.score,
+            sub_scores: [], // 旧数据可能没有子维度
+            analysis: value.comment,
+            weight: 0.2, // 默认权重
+            full_score: 20, // 默认满分
+            isVeto: false,
+            weighted_score: value.score
+        }));
+
+    const radarData = dimensionsList.map((dim) => ({
+        subject: dim.dimension,
+        A: (dim.score / dim.full_score) * 100, // 转换为百分比用于雷达图
         fullMark: 100,
     }));
 
-    const getScoreColor = (score: number) => {
-        if (score >= 90) return 'text-emerald-600 bg-emerald-50 border-emerald-200';
-        if (score >= 75) return 'text-blue-600 bg-blue-50 border-blue-200';
-        if (score >= 60) return 'text-amber-600 bg-amber-50 border-amber-200';
+    const getScoreColor = (score: number, fullScore: number) => {
+        const ratio = score / fullScore;
+        if (ratio >= 0.9) return 'text-emerald-600 bg-emerald-50 border-emerald-200';
+        if (ratio >= 0.75) return 'text-blue-600 bg-blue-50 border-blue-200';
+        if (ratio >= 0.6) return 'text-amber-600 bg-amber-50 border-amber-200';
         return 'text-red-600 bg-red-50 border-red-200';
     };
 
-    const getScoreLabel = (score: number) => {
-        if (score >= 90) return '优秀';
-        if (score >= 75) return '良好';
-        if (score >= 60) return '合格';
+    const getScoreLabel = (score: number, fullScore: number) => {
+        const ratio = score / fullScore;
+        if (ratio >= 0.9) return '优秀';
+        if (ratio >= 0.75) return '良好';
+        if (ratio >= 0.6) return '合格';
         return '需改进';
     };
+
+    // 统计所有问题
+    const allIssues = dimensionsList.flatMap(d =>
+        d.sub_scores?.flatMap(s => s.issues || []) || []
+    );
+
+    // 筛选严重问题
+    const highSeverityIssues = allIssues.filter(i => i.severity === 'high');
 
     return (
         <div className="w-full space-y-8 animate-in slide-in-from-bottom-8 duration-700">
@@ -247,12 +184,18 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                                 {report.total_score.toFixed(0)}
                             </span>
                             <div className="flex flex-col items-start">
-                                <span className={clsx("px-3 py-1 rounded-full text-sm font-bold border", getScoreColor(report.total_score))}>
-                                    {getScoreLabel(report.total_score)}
+                                <span className={clsx("px-3 py-1 rounded-full text-sm font-bold border", getScoreColor(report.total_score, 100))}>
+                                    {getScoreLabel(report.total_score, 100)}
                                 </span>
                                 <span className="text-slate-400 text-sm font-medium mt-1">/ 100 分</span>
                             </div>
                         </div>
+                        {report.veto_reasons && report.veto_reasons.length > 0 && (
+                            <div className="mt-4 bg-red-50 border border-red-100 rounded-lg p-3 text-red-700 text-sm font-bold flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4" />
+                                触发一票否决：{report.veto_reasons[0]}
+                            </div>
+                        )}
                     </div>
 
                     {/* Radar Chart */}
@@ -270,26 +213,15 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                                     dataKey="subject"
                                     tick={(props) => {
                                         const { x, y, cx, cy, payload } = props;
-
                                         // 垂直偏移逻辑
                                         const isTop = y < cy;
                                         const isBottom = y > cy;
-
                                         let dy = 5;
                                         if (isTop) dy = -5;     // 上方标签微调上移
                                         if (isBottom) dy = 15;  // 下方标签微调下移
-
                                         return (
                                             <g transform={`translate(${x},${y})`}>
-                                                <text
-                                                    x={0}
-                                                    y={0}
-                                                    dy={dy}
-                                                    textAnchor="middle"
-                                                    fill="#475569"
-                                                    fontSize={13}
-                                                    fontWeight={600}
-                                                >
+                                                <text x={0} y={0} dy={dy} textAnchor="middle" fill="#475569" fontSize={13} fontWeight={600}>
                                                     {payload.value}
                                                 </text>
                                             </g>
@@ -309,21 +241,21 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                         </ResponsiveContainer>
                     </div>
 
-                    {/* Quick Stats Summary (Count Only) */}
+                    {/* Quick Stats Summary */}
                     <div className="space-y-4">
-                        <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 flex items-center justify-between">
+                        <div className="bg-red-50 rounded-2xl p-5 border border-red-100 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <AlertCircle className="w-5 h-5 text-amber-500" />
-                                <span className="font-bold text-slate-700">发现的问题</span>
+                                <AlertCircle className="w-5 h-5 text-red-500" />
+                                <span className="font-bold text-red-900">严重问题</span>
                             </div>
-                            <span className="text-2xl font-black text-slate-800">{report.issues?.length || 0}</span>
+                            <span className="text-2xl font-black text-red-800">{highSeverityIssues.length}</span>
                         </div>
                         <div className="bg-indigo-50 rounded-2xl p-5 border border-indigo-100 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <Lightbulb className="w-5 h-5 text-indigo-500" />
-                                <span className="font-bold text-indigo-900">改进建议</span>
+                                <span className="font-bold text-indigo-900">改进点</span>
                             </div>
-                            <span className="text-2xl font-black text-indigo-900">{report.suggestions?.length || 0}</span>
+                            <span className="text-2xl font-black text-indigo-900">{allIssues.length - highSeverityIssues.length}</span>
                         </div>
                     </div>
                 </div>
@@ -336,45 +268,60 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                 <div className="lg:col-span-8 space-y-6">
                     <h3 className="text-xl font-bold text-slate-800 px-2 flex items-center gap-2">
                         <Sparkles className="w-5 h-5 text-indigo-500" />
-                        维度详情
+                        维度详情与证据支撑
                     </h3>
 
                     <div className="space-y-4">
-                        {Object.entries(report.dimensions).map(([dim, data]) => (
+                        {dimensionsList.map((data, idx) => (
                             <div
-                                key={dim}
+                                key={idx}
                                 className={clsx(
                                     "bg-white rounded-2xl border transition-all duration-300 overflow-hidden",
-                                    expandedDim === dim ? "shadow-lg border-indigo-200 ring-2 ring-indigo-50" : "border-slate-200 hover:border-indigo-200"
+                                    expandedDim === data.dimension ? "shadow-lg border-indigo-200 ring-2 ring-indigo-50" : "border-slate-200 hover:border-indigo-200"
                                 )}
                             >
                                 <button
-                                    onClick={() => setExpandedDim(expandedDim === dim ? null : dim)}
+                                    onClick={() => setExpandedDim(expandedDim === data.dimension ? null : data.dimension)}
                                     className="w-full p-6 flex items-center justify-between hover:bg-slate-50 transition-colors"
                                 >
                                     <div className="flex items-center gap-4">
                                         <div className={clsx(
                                             "w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold border",
-                                            getScoreColor(data.score)
+                                            getScoreColor(data.score, data.full_score)
                                         )}>
                                             {data.score}
                                         </div>
                                         <div className="text-left">
-                                            <h4 className="font-bold text-slate-700 text-lg">{getDimensionName(dim)}</h4>
+                                            <h4 className="font-bold text-slate-700 text-lg">{data.dimension}</h4>
                                             <div className="flex items-center gap-2 mt-1">
                                                 <div className="h-1.5 w-24 bg-slate-100 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${data.score}%` }} />
+                                                    <div className="h-full bg-indigo-500 rounded-full"
+                                                        style={{ width: `${(data.score / data.full_score) * 100}%` }} />
                                                 </div>
+                                                <span className="text-xs text-slate-400">
+                                                    {((data.score / data.full_score) * 100).toFixed(0)}%
+                                                </span>
                                             </div>
                                         </div>
                                     </div>
-                                    {expandedDim === dim ? <ChevronDown className="text-indigo-500" /> : <ChevronRight className="text-slate-400" />}
+                                    <div className="flex items-center gap-3">
+                                        {data.isVeto && <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded font-bold">一票否决项</span>}
+                                        {expandedDim === data.dimension ? <ChevronDown className="text-indigo-500" /> : <ChevronRight className="text-slate-400" />}
+                                    </div>
                                 </button>
 
-                                {expandedDim === dim && (
-                                    <div className="px-6 pb-6 pt-0 animate-in slide-in-from-top-2">
-                                        <div className="bg-slate-50 p-4 rounded-xl text-slate-600 leading-relaxed border border-slate-100">
-                                            {data.comment}
+                                {expandedDim === data.dimension && (
+                                    <div className="px-6 pb-6 pt-0 animate-in slide-in-from-top-2 space-y-4">
+                                        {/* 子维度列表 */}
+                                        <div className="grid gap-4">
+                                            {data.sub_scores?.map((subScore, subIdx) => (
+                                                <SubDimensionCard key={subIdx} subScore={subScore} />
+                                            ))}
+                                            {(!data.sub_scores || data.sub_scores.length === 0) && (
+                                                <div className="bg-slate-50 p-4 rounded-xl text-slate-600">
+                                                    {data.analysis}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -383,106 +330,20 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                     </div>
 
                     <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm mt-8">
-                        <h3 className="text-xl font-bold text-slate-800 mb-4">详细分析</h3>
+                        <h3 className="text-xl font-bold text-slate-800 mb-4">综合分析</h3>
                         <p className="text-slate-600 leading-8 whitespace-pre-wrap">{report.analysis}</p>
                     </div>
                 </div>
 
-                {/* Right Col: Action Items (Paged Cards) */}
-                <div className="lg:col-span-4 space-y-8">
-
-                    {/* Issues Card */}
-                    <PagedCardView
-                        title="关键问题"
-                        icon={<AlertCircle className="w-5 h-5 text-red-500" />}
-                        items={report.issues || []}
-                        colorTheme="red"
-                    />
-
-                    {/* Suggestions Card */}
-                    <PagedCardView
-                        title="优化建议"
-                        icon={<Lightbulb className="w-5 h-5 text-emerald-600" />}
-                        items={report.suggestions || []}
-                        colorTheme="emerald"
-                    />
-
-                    {/* Prompt 优化建议（仅在有工作流配置时显示） */}
-                    {(() => {
-                        const dims = Array.isArray(report.dimensions)
-                            ? report.dimensions
-                            : Object.values(report.dimensions || {});
-                        const hasStageSuggestions = dims.some((d: any) =>
-                            d.stage_suggestions && d.stage_suggestions.length > 0
-                        );
-
-                        if (!hasStageSuggestions) return null;
-
-                        return (
-                            <div className="bg-white rounded-3xl shadow-xl p-8 border border-purple-100">
-                                <div className="flex items-center gap-3 mb-6">
-                                    <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
-                                        <Sparkles className="w-5 h-5 text-purple-600" />
-                                    </div>
-                                    <h3 className="text-xl font-bold text-slate-900">Prompt 优化建议</h3>
-                                </div>
-
-                                <div className="space-y-6">
-                                    {dims.map((dimension: any, dimIdx: number) =>
-                                        dimension.stage_suggestions?.map((stageSugg: any, stageIdx: number) => (
-                                            <div key={`${dimIdx}-${stageIdx}`} className="border-l-4 border-purple-400 pl-4 py-2">
-                                                <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                                                    <span className="text-purple-600">📍</span>
-                                                    {stageSugg.stage_name}
-                                                </h4>
-
-                                                {stageSugg.issues && stageSugg.issues.length > 0 && (
-                                                    <div className="mb-3">
-                                                        <p className="text-sm font-semibold text-red-600 mb-1">发现问题：</p>
-                                                        <ul className="space-y-1">
-                                                            {stageSugg.issues.map((issue: string, issueIdx: number) => (
-                                                                <li key={issueIdx} className="text-sm text-slate-700 flex items-start gap-2">
-                                                                    <span className="text-red-400 mt-1">•</span>
-                                                                    <span>{issue}</span>
-                                                                </li>
-                                                            ))}
-                                                        </ul>
-                                                    </div>
-                                                )}
-
-                                                {stageSugg.prompt_fixes && stageSugg.prompt_fixes.length > 0 && (
-                                                    <div className="space-y-2">
-                                                        <p className="text-sm font-semibold text-purple-600 mb-1">Prompt 修改建议：</p>
-                                                        {stageSugg.prompt_fixes.map((fix: any, fixIdx: number) => (
-                                                            <div key={fixIdx} className="bg-purple-50 rounded-lg p-3 space-y-1">
-                                                                <p className="text-xs font-bold text-purple-700 uppercase">
-                                                                    {fix.section}
-                                                                </p>
-                                                                <p className="text-sm text-slate-600">
-                                                                    <span className="font-semibold">问题：</span>{fix.current_problem}
-                                                                </p>
-                                                                <p className="text-sm text-emerald-700">
-                                                                    <span className="font-semibold">建议：</span>{fix.suggested_change}
-                                                                </p>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })()}
-
+                {/* Right Col: Actions */}
+                <div className="lg:col-span-4 space-y-6">
 
                     <button
                         onClick={() => exportReportAsMarkdown(report)}
                         className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-all flex items-center justify-center gap-2 group"
                     >
                         <Download className="w-5 h-5 group-hover:translate-y-0.5 transition-transform duration-300" />
-                        导出 Markdown 报告
+                        导出完整报告 (MD)
                     </button>
 
                     <button
@@ -492,6 +353,14 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                         <RotateCcw className="w-5 h-5 group-hover:-rotate-180 transition-transform duration-500" />
                         开始新的评估
                     </button>
+
+                    <div className="bg-blue-50/50 rounded-2xl p-6 border border-blue-100 text-sm text-blue-800 leading-relaxed">
+                        <h4 className="font-bold flex items-center gap-2 mb-2">
+                            <Sparkles className="w-4 h-4" />
+                            关于新版评分标准
+                        </h4>
+                        <p>本次评测采用了分数段限定版标准，包含5个一级维度和21个二级维度。每个评分均有具体的对话位置定位和原文引用作为证据支撑。</p>
+                    </div>
 
                 </div>
             </div>

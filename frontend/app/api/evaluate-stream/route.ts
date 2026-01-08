@@ -1,22 +1,25 @@
 /**
  * POST /api/evaluate-stream
- * 流式评估 API - 解决 Vercel 超时问题
+ * 流式评估 API - 支持子维度评测 (新版本)
  */
 
 import { NextRequest } from "next/server";
 import { parseTxtDialogue } from "@/lib/txt-converter";
 import { convertDocxToMarkdown } from "@/lib/converters/docx-converter";
 import { DIMENSIONS, MODEL_NAME_MAPPING } from "@/lib/config";
-import { buildDimensionPrompt } from "@/lib/llm/prompts";
+import { buildSubDimensionPrompt } from "@/lib/llm/prompts";
 import { formatDialogueForLLM, parseLLMResponse, callLLM } from "@/lib/llm/utils";
 import { saveEvaluation } from "@/lib/history-manager";
-import type { DialogueData, ApiConfig, DimensionScore, EvaluationLevel } from "@/lib/llm/types";
+import type {
+    DialogueData, ApiConfig, DimensionScore, EvaluationLevel,
+    SubDimensionScore, IssueItem
+} from "@/lib/llm/types";
 
 // Vercel 函数配置
 // 免费版：最大 300 秒（5分钟）
 // Pro 版：最大 900 秒（15分钟）
-// 注意：Gemini/Claude 每个维度需要 40-60 秒，6个维度总计约 240-360 秒
-export const maxDuration = 300; // 如果是 Pro 版可改为 900
+// 注意：现在有21个子维度，如果串行执行会非常慢，可能需要更长时间
+export const maxDuration = 300;
 export const runtime = 'nodejs';
 
 async function readFileInfo(file: File): Promise<{ name: string; content: string | Buffer }> {
@@ -44,7 +47,7 @@ export async function POST(request: NextRequest) {
 
                 const teacherDoc = formData.get("teacher_doc") as File;
                 const dialogueRecord = formData.get("dialogue_record") as File;
-                const workflowConfigFile = formData.get("workflow_config") as File | null; // 新增：工作流配置
+                const workflowConfigFile = formData.get("workflow_config") as File | null;
                 const apiKey = formData.get("api_key") as string | null;
                 const apiUrl = formData.get("api_url") as string | null;
                 const model = formData.get("model") as string | null;
@@ -92,78 +95,146 @@ export async function POST(request: NextRequest) {
                     workflowConfigContent = workflowConfigInfo.content as string;
                 }
 
+                // 计算总子维度数量
+                const totalSubDimensions = Object.values(DIMENSIONS).reduce(
+                    (sum, dim) => sum + dim.subDimensions.length,
+                    0
+                );
+
                 // 发送开始事件
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'start', total: Object.keys(DIMENSIONS).length })}\n\n`));
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'start', total: totalSubDimensions })}\n\n`));
 
                 const dimensionScores: DimensionScore[] = [];
                 const vetoReasons: string[] = [];
                 const dialogueText = formatDialogueForLLM(dialogueData);
 
-                let current = 0;
+                let currentProgress = 0;
 
-                // 逐个评估维度
+                // 逐个评估一级维度
                 for (const dimensionKey of Object.keys(DIMENSIONS)) {
-                    const config = DIMENSIONS[dimensionKey];
-                    current++;
+                    const dimConfig = DIMENSIONS[dimensionKey];
+                    const subDimensionScores: SubDimensionScore[] = [];
 
-                    // 发送进度
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-                        type: 'progress',
-                        dimension: config.name,
-                        current,
-                        total: Object.keys(DIMENSIONS).length
-                    })}\n\n`));
+                    // 逐个评估子维度
+                    for (const subDim of dimConfig.subDimensions) {
+                        currentProgress++;
 
-                    try {
-                        // 构造提示词
-                        const prompt = buildDimensionPrompt(dimensionKey, {
-                            teacherDoc: teacherDocInfo.content as string,
-                            dialogueText,
-                            workflowConfig: workflowConfigContent, // 传递工作流配置
-                        });
-
-                        // 调用 LLM
-                        const llmResponse = await callLLM(prompt, apiConfig);
-                        const result = parseLLMResponse(llmResponse);
-
-                        // 构造评分对象
-                        const score: DimensionScore = {
-                            dimension: config.name,
-                            score: result.score,
-                            weight: config.weight,
-                            level: result.level,
-                            analysis: result.analysis,
-                            evidence: result.evidence,
-                            issues: result.issues,
-                            suggestions: result.suggestions,
-                            isVeto: config.isVeto && config.vetoThreshold !== undefined && result.score < config.vetoThreshold,
-                            weightedScore: result.score * config.weight,
-                        };
-
-                        dimensionScores.push(score);
-
-                        // 检查一票否决
-                        if (score.isVeto) {
-                            vetoReasons.push(`${score.dimension}得分${score.score.toFixed(1)}分,低于${config.vetoThreshold}分阈值`);
-                        }
-
-                        // 发送维度完成
+                        // 发送进度
                         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-                            type: 'dimension_complete',
-                            dimension: config.name,
-                            score: result.score,
-                            current,
-                            total: Object.keys(DIMENSIONS).length
+                            type: 'progress',
+                            dimension: dimConfig.name,
+                            sub_dimension: subDim.name,
+                            current: currentProgress,
+                            total: totalSubDimensions
                         })}\n\n`));
 
-                    } catch (error) {
-                        console.error(`评估维度 ${config.name} 失败:`, error);
-                        // 继续评估其他维度
+                        try {
+                            // 构造子维度提示词
+                            const prompt = buildSubDimensionPrompt(
+                                dimConfig.name,
+                                subDim.name,
+                                {
+                                    teacherDoc: teacherDocInfo.content as string,
+                                    dialogueText,
+                                    workflowConfig: workflowConfigContent,
+                                }
+                            );
+
+                            if (!prompt) {
+                                console.warn(`未找到prompt: ${dimensionKey}.${subDim.key}`);
+                                continue;
+                            }
+
+                            // 调用 LLM
+                            const llmResponse = await callLLM(prompt, apiConfig);
+                            const result = parseLLMResponse(llmResponse);
+
+                            // 如果解析失败，尝试兼容处理
+                            if (!result) {
+                                console.error(`解析失败: ${dimensionKey}.${subDim.key}`);
+                                continue;
+                            }
+
+                            // 收集子维度分数
+                            subDimensionScores.push({
+                                sub_dimension: subDim.name,
+                                score: result.score, // 假设 LLM 返回正确的分数
+                                full_score: subDim.fullScore,
+                                rating: result.rating || "未知",
+                                score_range: result.score_range || "",
+                                judgment_basis: result.judgment_basis || "",
+                                issues: result.issues || [],
+                                highlights: result.highlights || [],
+                            });
+
+                        } catch (error) {
+                            console.error(`评估子维度 ${subDim.name} 失败:`, error);
+                            // 添加一个失败记录，避免总分计算错误
+                            subDimensionScores.push({
+                                sub_dimension: subDim.name,
+                                score: 0,
+                                full_score: subDim.fullScore,
+                                rating: "评估失败",
+                                score_range: "",
+                                judgment_basis: `系统错误: ${error}`,
+                                issues: [],
+                            });
+                        }
                     }
+
+                    // 汇总子维度分数到一级维度
+                    const totalScore = subDimensionScores.reduce((sum, s) => sum + s.score, 0);
+
+                    // 聚合分析和证据
+                    const analysis = subDimensionScores
+                        .map(s => `【${s.sub_dimension}】(${s.score}/${s.full_score}): ${s.judgment_basis}`)
+                        .join("\n\n");
+
+                    const evidence = subDimensionScores
+                        .flatMap(s => s.issues?.map(i => `[${s.sub_dimension}] ${i.description}`) || [])
+                        .filter(Boolean);
+
+                    const issues = subDimensionScores
+                        .flatMap(s => s.issues?.map(i => i.description) || [])
+                        .filter(Boolean);
+
+                    // 确定评级
+                    let level = "合格";
+                    if (totalScore >= dimConfig.fullScore * 0.9) level = "优秀";
+                    else if (totalScore >= dimConfig.fullScore * 0.75) level = "良好";
+                    else if (totalScore < dimConfig.fullScore * 0.6) level = "不合格";
+
+                    const dimScore: DimensionScore = {
+                        dimension: dimConfig.name,
+                        score: totalScore,
+                        full_score: dimConfig.fullScore,
+                        weight: dimConfig.weight,
+                        level: level,
+                        analysis: analysis,
+                        sub_scores: subDimensionScores, // 保存子维度详细信息
+                        isVeto: dimConfig.isVeto && dimConfig.vetoThreshold !== undefined && totalScore < dimConfig.vetoThreshold,
+                        weighted_score: totalScore, // 假设满分就是权重分（每个20分）
+                    };
+
+                    dimensionScores.push(dimScore);
+
+                    // 检查一票否决
+                    if (dimScore.isVeto) {
+                        vetoReasons.push(`${dimScore.dimension}得分${dimScore.score.toFixed(1)}分,低于${dimConfig.vetoThreshold}分阈值`);
+                    }
+
+                    // 发送维度完成事件
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                        type: 'dimension_complete',
+                        dimension: dimConfig.name,
+                        score: totalScore,
+                        current: currentProgress,
+                        total: totalSubDimensions
+                    })}\n\n`));
                 }
 
                 // 计算总分
-                const totalScore = dimensionScores.reduce((sum, dim) => sum + dim.weightedScore, 0);
+                const finalTotalScore = dimensionScores.reduce((sum, dim) => sum + dim.weighted_score, 0);
 
                 // 确定最终等级
                 let finalLevel: EvaluationLevel;
@@ -172,13 +243,13 @@ export async function POST(request: NextRequest) {
                 if (vetoReasons.length > 0) {
                     finalLevel = "一票否决" as EvaluationLevel;
                     passCriteriaMet = false;
-                } else if (totalScore >= 90) {
+                } else if (finalTotalScore >= 90) {
                     finalLevel = "优秀" as EvaluationLevel;
                     passCriteriaMet = true;
-                } else if (totalScore >= 75) {
+                } else if (finalTotalScore >= 75) {
                     finalLevel = "良好" as EvaluationLevel;
                     passCriteriaMet = true;
-                } else if (totalScore >= 60) {
+                } else if (finalTotalScore >= 60) {
                     finalLevel = "合格" as EvaluationLevel;
                     passCriteriaMet = true;
                 } else {
@@ -190,49 +261,36 @@ export async function POST(request: NextRequest) {
                 const criticalIssues: string[] = [];
                 const actionableSuggestions: string[] = [];
 
-                for (const dim of dimensionScores) {
-                    if (dim.score < 60) {
-                        criticalIssues.push(...dim.issues.map(issue => `【${dim.dimension}】${issue}`));
-                    } else if (dim.score < 75) {
-                        criticalIssues.push(...dim.issues.slice(0, 2).map(issue => `【${dim.dimension}】${issue}`));
-                    }
-                }
-
-                const sortedDims = [...dimensionScores].sort((a, b) => a.score - b.score);
-                for (const dim of sortedDims) {
-                    console.log(`[建议聚合] 维度: ${dim.dimension}, 建议数: ${dim.suggestions.length}`);
-                    dim.suggestions.forEach((sug, idx) => {
-                        console.log(`  [${idx}] ${sug.substring(0, 100)}`);
-                    });
-
-                    for (const suggestion of dim.suggestions.slice(0, 3)) {
-                        const cleaned = suggestion.trim();
-                        const finalSuggestion = /^\d+\./.test(cleaned) ? cleaned.substring(cleaned.indexOf(".") + 1).trim() : cleaned;
-                        if (finalSuggestion) {
-                            actionableSuggestions.push(`【${dim.dimension}】${finalSuggestion}`);
+                // 遍历所有子维度的 issue
+                dimensionScores.forEach(dim => {
+                    dim.sub_scores?.forEach(sub => {
+                        if (sub.score < sub.full_score * 0.6) {
+                            criticalIssues.push(`【${dim.dimension}-${sub.sub_dimension}】${sub.issues?.[0]?.description || '表现不佳'}`);
                         }
-                    }
-                }
+                    });
+                });
+
+                // 生成简单的改进建议（后续可以用 LLM 生成专门的建议）
+                dimensionScores.forEach(dim => {
+                    dim.sub_scores?.forEach(sub => {
+                        if (sub.rating === "不足" || sub.rating === "较差") {
+                            actionableSuggestions.push(`优化${sub.sub_dimension}: ${sub.judgment_basis.substring(0, 50)}...`);
+                        }
+                    });
+                });
 
                 // 生成分析摘要
                 const bestDim = dimensionScores.reduce((prev, current) => current.score > prev.score ? current : prev);
                 const worstDim = dimensionScores.reduce((prev, current) => current.score < prev.score ? current : prev);
 
-                const analysis = `评测结论: ${finalLevel} (${totalScore.toFixed(1)}/100)\n\n` +
-                    `优势: ${bestDim.dimension}表现最好 (${bestDim.score}分)\n` +
-                    `待改进: ${worstDim.dimension}需要重点优化 (${worstDim.score}分)`;
+                const analysis = `评测结论: ${finalLevel} (${finalTotalScore.toFixed(1)}/100)\n\n` +
+                    `优势: ${bestDim.dimension}表现最好 (${bestDim.score}/${bestDim.full_score}分)\n` +
+                    `待改进: ${worstDim.dimension}需要重点优化 (${worstDim.score}/${worstDim.full_score}分)`;
 
-                // 转换为前端格式
+                // 转换为前端需要的最终格式
                 const frontendResult = {
-                    total_score: totalScore,
-                    dimensions: dimensionScores.reduce((acc, dim) => {
-                        const key = Object.keys(DIMENSIONS).find(k => DIMENSIONS[k].name === dim.dimension) || dim.dimension;
-                        acc[key] = {
-                            score: dim.score,
-                            comment: dim.analysis,
-                        };
-                        return acc;
-                    }, {} as Record<string, { score: number; comment: string }>),
+                    total_score: finalTotalScore,
+                    dimensions: dimensionScores, // 直接传递完整结构，包含子维度
                     analysis,
                     issues: criticalIssues,
                     suggestions: actionableSuggestions,

@@ -9,6 +9,7 @@ import { saveEvaluation } from "@/lib/history-manager";
 import { parseTxtDialogue } from "@/lib/txt-converter";
 import { convertDocxToMarkdown } from "@/lib/converters/docx-converter";
 import { EvaluationLevel } from "@/lib/llm/types";
+import { DIMENSIONS } from "@/lib/config";
 
 export const maxDuration = 300; // 5分钟超时
 
@@ -115,15 +116,11 @@ export async function POST(request: NextRequest) {
       veto_reasons: string[];
       history_id: string;
     } = {
-      total_score: report.totalScore,
+      total_score: report.total_score,
       dimensions: report.dimensions.reduce(
         (acc, dim) => {
-          const key = Object.keys(
-            require("@/lib/config").DIMENSIONS
-          ).find(
-            (k) =>
-              (require("@/lib/config").DIMENSIONS as any)[k].name ===
-              dim.dimension
+          const key = Object.keys(DIMENSIONS).find(
+            (k) => DIMENSIONS[k].name === dim.dimension
           ) || dim.dimension;
 
           acc[key] = {
@@ -134,12 +131,12 @@ export async function POST(request: NextRequest) {
         },
         {} as Record<string, { score: number; comment: string }>
       ),
-      analysis: report.executiveSummary,
-      issues: report.criticalIssues,
-      suggestions: report.actionableSuggestions,
-      final_level: report.finalLevel,
-      pass_criteria_met: report.passCriteriaMet,
-      veto_reasons: report.vetoReasons,
+      analysis: report.analysis || "",
+      issues: report.issues,
+      suggestions: report.suggestions,
+      final_level: report.final_level,
+      pass_criteria_met: report.pass_criteria_met,
+      veto_reasons: report.veto_reasons,
       history_id: "",
     };
 
@@ -147,23 +144,21 @@ export async function POST(request: NextRequest) {
     try {
       const evalId = await saveEvaluation(
         {
-          total_score: report.totalScore,
-          final_level: report.finalLevel,
+          total_score: report.total_score,
+          final_level: report.final_level,
           dimensions: report.dimensions.map((d) => ({
             dimension: d.dimension,
             score: d.score,
             weight: d.weight,
             level: d.level,
             analysis: d.analysis,
-            evidence: d.evidence,
-            issues: d.issues,
-            suggestions: d.suggestions,
+            sub_scores: d.sub_scores, // 传递子维度分数
           })),
-          executive_summary: report.executiveSummary,
-          critical_issues: report.criticalIssues,
-          actionable_suggestions: report.actionableSuggestions,
-          pass_criteria_met: report.passCriteriaMet,
-          veto_reasons: report.vetoReasons,
+          executive_summary: report.analysis || "",
+          critical_issues: report.issues,
+          actionable_suggestions: report.suggestions,
+          pass_criteria_met: report.pass_criteria_met,
+          veto_reasons: report.veto_reasons,
         },
         teacherDoc.name,
         dialogueRecord.name,

@@ -46,3 +46,7 @@ data/
 # Temporary files
 *.tmp
 temp_*
+
+# History files
+evaluations_history.json
+

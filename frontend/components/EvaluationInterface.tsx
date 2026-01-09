@@ -117,15 +117,13 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
             let completed = 0;
 
             const executeTask = async (task: typeof tasks[0]) => {
-                const MAX_RETRIES = 2; // 最多重试 2 次
+                const MAX_RETRIES = 2;
                 let success = false;
 
                 for (let attempt = 0; attempt <= MAX_RETRIES && !success; attempt++) {
                     try {
-                        // 如果是重试，等待时间指数退避
                         if (attempt > 0) {
                             const waitTime = Math.pow(2, attempt) * 1000;
-                            // console.warn(`[重试等待] ${task.subName} 等待 ${waitTime}ms...`); // 减少日志
                             await new Promise(r => setTimeout(r, waitTime));
                         }
 
@@ -146,29 +144,68 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                             })
                         });
 
-                        if (res.ok) {
+                        // 检查是否为流式响应
+                        const contentType = res.headers.get("content-type") || "";
+
+                        if (contentType.includes("text/event-stream")) {
+                            // 处理 SSE 流式响应
+                            const reader = res.body?.getReader();
+                            if (!reader) throw new Error("无法读取响应流");
+
+                            const decoder = new TextDecoder();
+                            let buffer = "";
+
+                            while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) break;
+
+                                buffer += decoder.decode(value, { stream: true });
+                                const lines = buffer.split("\n\n");
+                                buffer = lines.pop() || "";
+
+                                for (const line of lines) {
+                                    if (line.startsWith("data: ")) {
+                                        try {
+                                            const data = JSON.parse(line.slice(6));
+                                            if (data.done && data.result) {
+                                                // 流结束，获取最终结果
+                                                results.set(`${task.dimKey}-${task.subKey}`, data.result);
+                                                success = true;
+                                            } else if (data.error) {
+                                                console.error(`流式评测错误: ${task.subName}`, data.error);
+                                            }
+                                            // data.chunk 是中间数据，可选择处理
+                                        } catch {
+                                            // 忽略解析错误
+                                        }
+                                    }
+                                }
+                            }
+                            reader.releaseLock();
+                        } else if (res.ok) {
+                            // 后备：处理传统 JSON 响应
                             const data = await res.json();
-                            results.set(`${task.dimKey}-${task.subKey}`, data);
-                            success = true;
-                        } else if (res.status === 504 || res.status === 503 || res.status === 500 || res.status === 502) {
-                            // 只有服务端错误才重试
+                            if (data.error) {
+                                console.error(`评测错误: ${task.subName}`, data.error);
+                            } else {
+                                results.set(`${task.dimKey}-${task.subKey}`, data);
+                                success = true;
+                            }
+                        } else if ([500, 502, 503, 504].includes(res.status)) {
                             if (attempt === MAX_RETRIES) {
                                 console.error(`评测失败: ${task.subName} (HTTP ${res.status})`);
                             }
                         } else {
                             console.error(`评测失败: ${task.subName} (HTTP ${res.status})`);
-                            break; // 其他错误（如400）不重试
+                            break;
                         }
                     } catch (e) {
-                        if (attempt < MAX_RETRIES) {
-                            // console.warn(`[重试 ${attempt + 1}/${MAX_RETRIES}] ${task.subName} 请求异常...`);
-                        } else {
+                        if (attempt === MAX_RETRIES) {
                             console.error(`请求异常: ${task.subName}`, e);
                         }
                     }
                 }
 
-                // 无论成功与否，都更新进度
                 completed++;
                 const pct = (completed / totalSubDimensions) * 100;
                 setProgress(pct);

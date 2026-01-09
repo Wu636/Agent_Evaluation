@@ -43,6 +43,9 @@ export async function POST(request: NextRequest) {
         const dialogueText = formatDialogueForLLM(dialogueData);
 
         // 构造 Prompt
+        console.log(`[DEBUG] 构建 Prompt: dimensionKey=${dimConfig.name}, subDimensionKey=${subDim.name}`);
+        console.log(`[DEBUG] teacherDoc 长度: ${teacherDocContent?.length || 0}, dialogueText 长度: ${dialogueText?.length || 0}`);
+
         const prompt = buildSubDimensionPrompt(
             dimConfig.name,
             subDim.name,
@@ -52,6 +55,10 @@ export async function POST(request: NextRequest) {
                 workflowConfig: workflowConfigContent,
             }
         );
+
+        console.log(`[DEBUG] 生成的 Prompt 长度: ${prompt?.length || 0}`);
+        console.log(`[DEBUG] Prompt 是否包含 teacherDoc 占位符: ${prompt?.includes('\\${teacherDoc}')}`);
+        console.log(`[DEBUG] Prompt 前 500 字符: ${prompt?.substring(0, 500)}`);
 
         if (!prompt) {
             return NextResponse.json({ error: "Prompt生成失败" }, { status: 500 });

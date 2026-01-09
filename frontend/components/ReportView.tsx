@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer
 } from 'recharts';
@@ -73,7 +73,10 @@ function SubDimensionCard({ subScore }: { subScore: SubDimensionScore }) {
     const borderColor = isPass ? "border-emerald-100" : "border-red-100";
 
     return (
-        <div className={clsx("rounded-xl border p-4 space-y-3", isPass ? "bg-white border-slate-200" : "bg-red-50/30 border-red-100")}>
+        <div
+            id={`sub-dim-${subScore.sub_dimension}`}
+            className={clsx("rounded-xl border p-4 space-y-3", isPass ? "bg-white border-slate-200" : "bg-red-50/30 border-red-100")}
+        >
             <div className="flex items-center justify-between">
                 <h4 className="font-bold text-slate-700">{subScore.sub_dimension}</h4>
                 <div className="flex items-center gap-3">
@@ -115,41 +118,88 @@ function SubDimensionCard({ subScore }: { subScore: SubDimensionScore }) {
 }
 
 /**
- * 严重问题列表组件
+ * 严重问题列表组件 - 按维度分组并可折叠
  */
-function HighSeverityIssuesList({ issues }: { issues: IssueItem[], dimensions: any[] }) {
+function HighSeverityIssuesList({ issues, dimensions }: { issues: IssueItem[], dimensions: any[] }) {
     if (!issues || issues.length === 0) return null;
 
+    // 按维度分组问题
+    const issuesByDimension = useMemo(() => {
+        // 直接遍历 dimensions 来聚合严重问题
+        return dimensions.reduce((acc, dim) => {
+            // 找出该维度下所有的严重问题
+            const dimIssues: IssueItem[] = dim.sub_scores?.flatMap((s: any) => s.issues || []).filter((i: any) => i.severity === 'high') || [];
+
+            // 教学策略不计入严重问题
+            if (dim.dimension === '教学策略') return acc;
+
+            if (dimIssues.length > 0) {
+                acc[dim.dimension] = dimIssues;
+            }
+            return acc;
+        }, {} as Record<string, IssueItem[]>);
+    }, [dimensions]);
+
+    // 默认展开所有有问题的维度
+    const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(Object.keys(issuesByDimension)));
+
+    const toggleGroup = (dimName: string) => {
+        const newSet = new Set(expandedGroups);
+        if (newSet.has(dimName)) {
+            newSet.delete(dimName);
+        } else {
+            newSet.add(dimName);
+        }
+        setExpandedGroups(newSet);
+    };
+
+    if (Object.keys(issuesByDimension).length === 0) return null;
+
     return (
-        <div className="bg-red-50 rounded-3xl p-8 border border-red-100 shadow-sm mt-8">
+        <div className="bg-red-50 rounded-3xl p-6 md:p-8 border border-red-100 shadow-sm mt-8">
             <h3 className="text-xl font-bold text-red-800 mb-6 flex items-center gap-2">
                 <AlertCircle className="w-6 h-6" />
                 严重问题汇总 ({issues.length})
             </h3>
+
             <div className="space-y-4">
-                {issues.map((issue, idx) => (
-                    <div key={idx} className="bg-white rounded-xl p-4 border border-red-100 shadow-sm flex gap-4">
-                        <div className="flex-shrink-0 mt-1">
-                            <AlertTriangle className="w-5 h-5 text-red-500" />
-                        </div>
-                        <div className="space-y-2 flex-1">
-                            <p className="font-bold text-slate-800">{issue.description}</p>
-                            <div className="bg-slate-50 rounded-lg p-3 text-sm text-slate-600 italic border border-slate-100 flex gap-2">
-                                <Quote className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                                <div>
-                                    <span className="font-semibold not-italic block mb-1 text-slate-500">
-                                        {issue.location || "未知位置"}
+                {(Object.entries(issuesByDimension) as [string, IssueItem[]][]).map(([dimName, dimIssues]) => {
+                    const isExpanded = expandedGroups.has(dimName);
+                    return (
+                        <div key={dimName} className="bg-white rounded-xl border border-red-100 overflow-hidden shadow-sm">
+                            <button
+                                onClick={() => toggleGroup(dimName)}
+                                className="w-full flex items-center justify-between p-4 bg-red-50/30 hover:bg-red-50/80 transition-colors"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <ChevronRight className={`w-5 h-5 text-red-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                    <span className="font-bold text-slate-800">{dimName}</span>
+                                    <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-bold">
+                                        {dimIssues.length}个问题
                                     </span>
-                                    "{issue.quote}"
                                 </div>
-                            </div>
-                            <p className="text-xs text-red-600 font-medium">
-                                <span className="text-slate-500">影响：</span>
-                                {issue.impact}
-                            </p>
+                            </button>
+
+                            {isExpanded && (
+                                <div className="p-4 space-y-3 pt-0 mt-2">
+                                    {dimIssues.map((issue, idx) => (
+                                        <div key={idx} className="flex gap-3 text-sm text-slate-700 ml-2">
+                                            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                                            <div className="space-y-1">
+                                                <p className="font-medium">{issue.description}</p>
+                                                {issue.quote && (
+                                                    <div className="bg-slate-50 rounded p-2 text-xs text-slate-500 italic border border-slate-100 mt-1">
+                                                        "{issue.quote}"
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );
@@ -164,6 +214,7 @@ interface ReportViewProps {
 
 export function ReportView({ report, onReset }: ReportViewProps) {
     const [expandedDim, setExpandedDim] = useState<string | null>(null);
+    const [sidebarExpandedDims, setSidebarExpandedDims] = useState<Set<string>>(new Set());
 
     // 只有当 dimensions 是数组时才进行处理（兼容旧数据结构）
     const dimensionsList = Array.isArray(report.dimensions)
@@ -319,6 +370,7 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                         {dimensionsList.map((data, idx) => (
                             <div
                                 key={idx}
+                                id={`dim-card-${data.dimension}`}
                                 className={clsx(
                                     "bg-white rounded-2xl border transition-all duration-300 overflow-hidden",
                                     expandedDim === data.dimension ? "shadow-lg border-indigo-200 ring-2 ring-indigo-50" : "border-slate-200 hover:border-indigo-200"
@@ -424,37 +476,93 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                 <div className="lg:col-span-4">
                     <div className="sticky top-6 space-y-5">
 
-                        {/* 维度得分一览 + 快速跳转 */}
+                        {/* 子维度得分一览 - 可折叠列表 */}
                         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-                            <h4 className="font-bold text-slate-700 mb-3">维度得分一览</h4>
-                            <div className="space-y-3">
-                                {dimensionsList.map((dim, idx) => (
-                                    <button
-                                        key={idx}
-                                        onClick={() => setExpandedDim(dim.dimension === expandedDim ? null : dim.dimension)}
-                                        className={`w-full text-left p-3 rounded-xl border transition-all hover:bg-slate-50 ${expandedDim === dim.dimension
-                                            ? 'border-indigo-300 bg-indigo-50/50'
-                                            : 'border-slate-100'
-                                            }`}
-                                    >
-                                        <div className="flex items-center justify-between mb-1.5">
-                                            <span className="text-sm font-medium text-slate-700">{dim.dimension}</span>
-                                            <span className={`text-sm font-bold ${(dim.score / dim.full_score) >= 0.8 ? 'text-emerald-600' :
-                                                (dim.score / dim.full_score) >= 0.6 ? 'text-amber-600' : 'text-red-600'
-                                                }`}>
-                                                {dim.score}/{dim.full_score}
-                                            </span>
-                                        </div>
-                                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                            <div
-                                                className={`h-full rounded-full transition-all ${(dim.score / dim.full_score) >= 0.8 ? 'bg-emerald-500' :
-                                                    (dim.score / dim.full_score) >= 0.6 ? 'bg-amber-500' : 'bg-red-500'
+                            <h4 className="font-bold text-slate-700 mb-3">子维度得分一览</h4>
+                            <div className="space-y-2">
+                                {dimensionsList.map((dim, idx) => {
+                                    const isExpanded = sidebarExpandedDims.has(dim.dimension);
+                                    const toggleExpand = () => {
+                                        const newSet = new Set(sidebarExpandedDims);
+                                        if (isExpanded) {
+                                            newSet.delete(dim.dimension);
+                                        } else {
+                                            newSet.add(dim.dimension);
+                                        }
+                                        setSidebarExpandedDims(newSet);
+                                    };
+
+                                    return (
+                                        <div key={idx} className="border border-slate-100 rounded-xl overflow-hidden">
+                                            {/* 主维度标题 */}
+                                            <button
+                                                onClick={toggleExpand}
+                                                className={`w-full text-left px-3 py-2.5 flex items-center justify-between transition-colors ${isExpanded ? 'bg-slate-50' : 'hover:bg-slate-50'
                                                     }`}
-                                                style={{ width: `${(dim.score / dim.full_score) * 100}%` }}
-                                            />
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''
+                                                        }`} />
+                                                    <span className="text-sm font-medium text-slate-700">{dim.dimension}</span>
+                                                </div>
+                                                <span className={`text-sm font-bold ${(dim.score / dim.full_score) >= 0.9 ? 'text-emerald-600' :
+                                                    (dim.score / dim.full_score) >= 0.75 ? 'text-blue-600' :
+                                                        (dim.score / dim.full_score) >= 0.6 ? 'text-amber-600' : 'text-red-600'
+                                                    }`}>
+                                                    {dim.score}/{dim.full_score}
+                                                </span>
+                                            </button>
+
+                                            {/* 子维度列表 */}
+                                            {isExpanded && dim.sub_scores && dim.sub_scores.length > 0 && (
+                                                <div className="px-3 pb-2 pt-1 bg-slate-50/50 border-t border-slate-100">
+                                                    {dim.sub_scores.map((sub, subIdx) => {
+                                                        const subRatio = sub.score / sub.full_score;
+                                                        return (
+                                                            <button
+                                                                key={subIdx}
+                                                                onClick={() => {
+                                                                    // 1. 展开左侧对应的主维度
+                                                                    setExpandedDim(dim.dimension);
+                                                                    // 2. 滚动到对应位置
+                                                                    setTimeout(() => {
+                                                                        // 优先尝试滚动到子维度
+                                                                        const subEl = document.getElementById(`sub-dim-${sub.sub_dimension}`);
+                                                                        const mainEl = document.getElementById(`dim-card-${dim.dimension}`);
+                                                                        const targetEl = subEl || mainEl;
+
+                                                                        if (targetEl) {
+                                                                            // 计算 sticky header 的偏移量 (假设顶部有导航栏或 sticky sidebar 的间距)
+                                                                            const offset = 80;
+                                                                            const elementPosition = targetEl.getBoundingClientRect().top;
+                                                                            const offsetPosition = elementPosition + window.pageYOffset - offset;
+
+                                                                            window.scrollTo({
+                                                                                top: offsetPosition,
+                                                                                behavior: "smooth"
+                                                                            });
+                                                                        }
+                                                                    }, 150); // 稍微增加延迟以确保展开动画完成或DOM已渲染
+                                                                }}
+                                                                className="w-full text-left py-1.5 pl-6 pr-2 flex items-center justify-between hover:bg-white rounded-lg transition-colors group"
+                                                            >
+                                                                <span className="text-xs text-slate-500 group-hover:text-slate-700 truncate">
+                                                                    {sub.sub_dimension}
+                                                                </span>
+                                                                <span className={`text-xs font-semibold ml-2 flex-shrink-0 ${subRatio >= 0.9 ? 'text-emerald-600' :
+                                                                    subRatio >= 0.75 ? 'text-blue-600' :
+                                                                        subRatio >= 0.6 ? 'text-amber-600' : 'text-red-600'
+                                                                    }`}>
+                                                                    {sub.score}/{sub.full_score}
+                                                                </span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
-                                    </button>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
 

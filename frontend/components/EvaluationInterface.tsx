@@ -117,40 +117,54 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
             let completed = 0;
 
             const executeTask = async (task: typeof tasks[0]) => {
-                try {
-                    // Update specific task status briefly? 
-                    // Actually let's just update the main progress text
-                    const res = await fetch("/api/evaluate/dimension", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            dimensionKey: task.dimKey,
-                            subDimensionKey: task.subKey,
-                            teacherDocContent: tDoc.content,
-                            dialogueData: dRec.data,
-                            workflowConfigContent: wCfg?.content,
-                            apiConfig: {
-                                apiKey: apiConfig.apiKey,
-                                baseUrl: apiConfig.baseUrl,
-                                model: selectedModel
-                            }
-                        })
-                    });
+                const MAX_RETRIES = 2; // 最多重试 2 次
+                let success = false;
 
-                    if (res.ok) {
-                        const data = await res.json();
-                        results.set(`${task.dimKey}-${task.subKey}`, data);
-                    } else {
-                        console.error(`评测失败: ${task.subName}`);
+                for (let attempt = 0; attempt <= MAX_RETRIES && !success; attempt++) {
+                    try {
+                        const res = await fetch("/api/evaluate/dimension", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                dimensionKey: task.dimKey,
+                                subDimensionKey: task.subKey,
+                                teacherDocContent: tDoc.content,
+                                dialogueData: dRec.data,
+                                workflowConfigContent: wCfg?.content,
+                                apiConfig: {
+                                    apiKey: apiConfig.apiKey,
+                                    baseUrl: apiConfig.baseUrl,
+                                    model: selectedModel
+                                }
+                            })
+                        });
+
+                        if (res.ok) {
+                            const data = await res.json();
+                            results.set(`${task.dimKey}-${task.subKey}`, data);
+                            success = true;
+                        } else if (res.status === 504 && attempt < MAX_RETRIES) {
+                            console.warn(`[重试 ${attempt + 1}/${MAX_RETRIES}] ${task.subName} 超时，1秒后重试...`);
+                            await new Promise(r => setTimeout(r, 1000));
+                        } else {
+                            console.error(`评测失败: ${task.subName} (HTTP ${res.status})`);
+                            break; // 非 504 错误，不重试
+                        }
+                    } catch (e) {
+                        if (attempt < MAX_RETRIES) {
+                            console.warn(`[重试 ${attempt + 1}/${MAX_RETRIES}] ${task.subName} 请求异常，1秒后重试...`);
+                            await new Promise(r => setTimeout(r, 1000));
+                        } else {
+                            console.error(`请求异常: ${task.subName}`, e);
+                        }
                     }
-                } catch (e) {
-                    console.error(`请求异常: ${task.subName}`, e);
-                } finally {
-                    completed++;
-                    const pct = (completed / totalSubDimensions) * 100;
-                    setProgress(pct);
-                    setCurrentDimension(`${task.dimName} - ${task.subName} (${completed}/${totalSubDimensions})`);
                 }
+
+                // 无论成功与否，都更新进度
+                completed++;
+                const pct = (completed / totalSubDimensions) * 100;
+                setProgress(pct);
+                setCurrentDimension(`${task.dimName} - ${task.subName} (${completed}/${totalSubDimensions})`);
             };
 
             // 手动实现并发控制

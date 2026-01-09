@@ -167,7 +167,12 @@ ${{{dialogue_var}}}
 4. **强制证据引用**: 每个问题必须有明确的位置定位和原文引用
 5. **quote字段必须是对话中的实际内容**, 不能编造
 6. **location必须精确到第X轮对话**
-7. **特别注意**: 字符串内部的双引号必须转义 (例如使用 \\" 而不是 "), 确保JSON格式合法
+7. **judgment_basis格式要求**:
+   - 使用 **Markdown** 格式进行排版，优化阅读体验
+   - 使用 **粗体** 强调关键结论
+   - 使用列表整理具体分析点，避免大段纯文本
+   - 条理清晰，分段落阐述
+8. **特别注意**: 字符串内部的双引号必须转义 (例如使用 \\" 而不是 "), 确保JSON格式合法
 
 请严格按JSON格式输出,不要有任何多余的文字!
 '''
@@ -224,7 +229,15 @@ export function buildSubDimensionPrompt(
     
     ts_content += '''  };
 
-  return prompts[dimensionKey]?.[subDimensionKey] || "";
+  // 获取原始模板并替换占位符
+  let prompt = prompts[dimensionKey]?.[subDimensionKey] || "";
+  
+  // 手动替换转义的占位符为实际内容
+  // 模板中的 \\${...} 在运行时变成 ${...}，所以要匹配不带反斜杠的版本
+  prompt = prompt.split("${teacherDoc}").join(teacherDoc);
+  prompt = prompt.split("${dialogueText}").join(dialogueText);
+  
+  return prompt;
 }
 
 /**

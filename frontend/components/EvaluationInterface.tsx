@@ -111,7 +111,7 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                 });
             });
 
-            // 3. 并发评测
+            // 3. 并发评测 - 使用动态并发池优化性能
             const CONCURRENCY_LIMIT = 5;
             const results: Map<string, any> = new Map();
             let completed = 0;
@@ -122,6 +122,13 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
 
                 for (let attempt = 0; attempt <= MAX_RETRIES && !success; attempt++) {
                     try {
+                        // 如果是重试，等待时间指数退避
+                        if (attempt > 0) {
+                            const waitTime = Math.pow(2, attempt) * 1000;
+                            // console.warn(`[重试等待] ${task.subName} 等待 ${waitTime}ms...`); // 减少日志
+                            await new Promise(r => setTimeout(r, waitTime));
+                        }
+
                         const res = await fetch("/api/evaluate/dimension", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
@@ -143,19 +150,18 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                             const data = await res.json();
                             results.set(`${task.dimKey}-${task.subKey}`, data);
                             success = true;
-                        } else if ([500, 502, 503, 504].includes(res.status) && attempt < MAX_RETRIES) {
-                            // 服务器错误，等待后重试
-                            const waitTime = (attempt + 1) * 2000; // 递增等待时间: 2s, 4s
-                            console.warn(`[重试 ${attempt + 1}/${MAX_RETRIES}] ${task.subName} 错误 ${res.status}，${waitTime / 1000}秒后重试...`);
-                            await new Promise(r => setTimeout(r, waitTime));
+                        } else if (res.status === 504 || res.status === 503 || res.status === 500 || res.status === 502) {
+                            // 只有服务端错误才重试
+                            if (attempt === MAX_RETRIES) {
+                                console.error(`评测失败: ${task.subName} (HTTP ${res.status})`);
+                            }
                         } else {
                             console.error(`评测失败: ${task.subName} (HTTP ${res.status})`);
-                            break; // 其他错误或重试次数用尽，不再重试
+                            break; // 其他错误（如400）不重试
                         }
                     } catch (e) {
                         if (attempt < MAX_RETRIES) {
-                            console.warn(`[重试 ${attempt + 1}/${MAX_RETRIES}] ${task.subName} 请求异常，1秒后重试...`);
-                            await new Promise(r => setTimeout(r, 1000));
+                            // console.warn(`[重试 ${attempt + 1}/${MAX_RETRIES}] ${task.subName} 请求异常...`);
                         } else {
                             console.error(`请求异常: ${task.subName}`, e);
                         }
@@ -169,11 +175,33 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                 setCurrentDimension(`${task.dimName} - ${task.subName} (${completed}/${totalSubDimensions})`);
             };
 
-            // 手动实现并发控制
-            for (let i = 0; i < tasks.length; i += CONCURRENCY_LIMIT) {
-                const batch = tasks.slice(i, i + CONCURRENCY_LIMIT);
-                await Promise.all(batch.map(t => executeTask(t)));
+            // 手动实现动态并发控制 (Promise Pool)
+            // 避免 Promise.all 的队头阻塞问题
+            const executing: Promise<void>[] = [];
+
+            for (const task of tasks) {
+                // 创建一个 promise，执行完后要把自己从 executing 数组中移除
+                const p = executeTask(task).then(() => {
+                    // 移除逻辑：找到 promise 对象并移除
+                    // 注意：这里需要确保 p 是被 push 进去的那个 promise
+                    // 实际上 splice 需要 index，但数组在变动。
+                    // 更稳健的方式是使用闭包引用或者 filter
+                    // 这里由于 splice 是同步的，可能会有问题如果并发很高？实际上 JS 是单线程的。
+                    // 简单实现：
+                    const idx = executing.indexOf(p);
+                    if (idx > -1) executing.splice(idx, 1);
+                });
+
+                executing.push(p);
+
+                // 如果达到并发限制，等待最快的一个完成
+                if (executing.length >= CONCURRENCY_LIMIT) {
+                    await Promise.race(executing);
+                }
             }
+
+            // 等待剩余的任务完成
+            await Promise.all(executing);
 
             setCurrentDimension("正在生成最终报告...");
 

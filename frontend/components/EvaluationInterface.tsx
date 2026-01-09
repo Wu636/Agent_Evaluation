@@ -143,12 +143,14 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                             const data = await res.json();
                             results.set(`${task.dimKey}-${task.subKey}`, data);
                             success = true;
-                        } else if (res.status === 504 && attempt < MAX_RETRIES) {
-                            console.warn(`[重试 ${attempt + 1}/${MAX_RETRIES}] ${task.subName} 超时，1秒后重试...`);
-                            await new Promise(r => setTimeout(r, 1000));
+                        } else if ([500, 502, 503, 504].includes(res.status) && attempt < MAX_RETRIES) {
+                            // 服务器错误，等待后重试
+                            const waitTime = (attempt + 1) * 2000; // 递增等待时间: 2s, 4s
+                            console.warn(`[重试 ${attempt + 1}/${MAX_RETRIES}] ${task.subName} 错误 ${res.status}，${waitTime / 1000}秒后重试...`);
+                            await new Promise(r => setTimeout(r, waitTime));
                         } else {
                             console.error(`评测失败: ${task.subName} (HTTP ${res.status})`);
-                            break; // 非 504 错误，不重试
+                            break; // 其他错误或重试次数用尽，不再重试
                         }
                     } catch (e) {
                         if (attempt < MAX_RETRIES) {

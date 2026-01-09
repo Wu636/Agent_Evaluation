@@ -260,3 +260,129 @@ export async function callLLM(
         throw error;
     }
 }
+
+/**
+ * 流式调用 LLM API（用于绕过 Vercel 60s 超时限制）
+ * 返回一个 AsyncGenerator，逐块 yield LLM 的输出
+ */
+export async function* callLLMStream(
+    prompt: string,
+    config: ApiConfig & { model: string },
+    temperature: number = 0.1
+): AsyncGenerator<string, void, unknown> {
+    const { apiKey, baseUrl, model } = config;
+
+    if (!apiKey) throw new Error("未配置 LLM API 密钥");
+    if (!baseUrl) throw new Error("未配置 LLM API 地址");
+
+    const payload = {
+        maxTokens: 4000,
+        messages: [
+            {
+                role: "system",
+                content: `你是一位资深的教学质量评估专家。你的任务是分析教学智能体的对话质量并输出评分结果。
+
+**重要规则：你必须只输出 JSON，不要输出任何其他内容！**
+- 不要写"为了..."、"首先..."、"让我..."等解释性文字
+- 不要写任何前言或总结
+- 直接输出 JSON 对象，以 { 开头，以 } 结尾
+- 如果需要思考，在心里思考，不要写出来`,
+            },
+            {
+                role: "user",
+                content: prompt,
+            },
+        ],
+        model,
+        n: 1,
+        presencePenalty: 0.0,
+        temperature,
+        stream: true, // 启用流式响应
+    };
+
+    console.log(`[LLM流式调用] 模型: ${model}, API: ${baseUrl}`);
+    const startTime = Date.now();
+
+    // 流式接口需要在原 URL 后加上 /stream
+    const streamUrl = baseUrl.endsWith('/stream') ? baseUrl : `${baseUrl}/stream`;
+
+    const response = await fetch(streamUrl, {
+        method: "POST",
+        headers: {
+            "api-key": apiKey,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[LLM流式错误] HTTP ${response.status}:`, errorText.substring(0, 500));
+        throw new Error(`API请求失败 (HTTP ${response.status}): ${errorText.substring(0, 200)}`);
+    }
+
+    if (!response.body) {
+        throw new Error("响应没有 body，无法进行流式读取");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    try {
+        let chunkCount = 0;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            buffer += chunk;
+
+            // 调试：打印前几个 chunk 的原始内容
+            chunkCount++;
+            if (chunkCount <= 3) {
+                console.log(`[流式调试] Chunk ${chunkCount} 原始内容:`, chunk.substring(0, 200));
+            }
+
+            // SSE 格式：每行以 "data: " 开头
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || ""; // 保留最后一个可能不完整的行
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed === "data: [DONE]") continue;
+
+                if (trimmed.startsWith("data:")) {
+                    // 支持 "data:" 和 "data: " 两种格式
+                    const jsonStr = trimmed.startsWith("data: ") ? trimmed.slice(6) : trimmed.slice(5);
+                    try {
+                        const json = JSON.parse(jsonStr);
+                        // 支持两种格式：delta.content (标准 OpenAI) 和 message.content (这个 API)
+                        const content = json.choices?.[0]?.delta?.content || json.choices?.[0]?.message?.content;
+                        if (content) {
+                            yield content;
+                        }
+                    } catch {
+                        // 忽略解析错误（可能是不完整的 JSON）
+                    }
+                } else if (trimmed.startsWith("{")) {
+                    // 尝试直接解析 JSON（某些 API 不使用 SSE 格式）
+                    try {
+                        const json = JSON.parse(trimmed);
+                        const content = json.choices?.[0]?.delta?.content || json.choices?.[0]?.message?.content;
+                        if (content) {
+                            yield content;
+                        }
+                    } catch {
+                        // 忽略
+                    }
+                }
+            }
+        }
+    } finally {
+        reader.releaseLock();
+        const elapsed = Date.now() - startTime;
+        console.log(`[LLM流式完成] 耗时: ${elapsed}ms`);
+    }
+}
+

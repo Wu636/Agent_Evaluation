@@ -7,7 +7,7 @@ import {
 import {
     AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
     Lightbulb, RotateCcw, Sparkles, ChevronLeft, Download,
-    Quote, AlertTriangle
+    Quote, AlertTriangle, FileText
 } from 'lucide-react';
 import clsx from 'clsx';
 import { EvaluationReport, DimensionScore, SubDimensionScore, IssueItem } from '@/lib/llm/types';
@@ -205,6 +205,8 @@ function HighSeverityIssuesList({ issues, dimensions }: { issues: IssueItem[], d
     );
 }
 
+import { DocumentViewer } from './DocumentViewer';
+
 // --- Main Component ---
 
 interface ReportViewProps {
@@ -215,6 +217,32 @@ interface ReportViewProps {
 export function ReportView({ report, onReset }: ReportViewProps) {
     const [expandedDim, setExpandedDim] = useState<string | null>(null);
     const [sidebarExpandedDims, setSidebarExpandedDims] = useState<Set<string>>(new Set());
+
+    // Document Viewer State
+    const [viewDoc, setViewDoc] = useState<{ isOpen: boolean; title: string; content: string; type: 'text' | 'json' } | null>(null);
+
+    const handleViewTeacherDoc = () => {
+        if (report.teacher_doc_content) {
+            setViewDoc({
+                isOpen: true,
+                title: report.teacher_doc_name || '教师指导手册',
+                content: report.teacher_doc_content,
+                type: 'text'
+            });
+        }
+    };
+
+    const handleViewDialogue = () => {
+        if (report.dialogue_doc_content) {
+            setViewDoc({
+                isOpen: true,
+                title: report.dialogue_doc_name || '对话记录',
+                content: report.dialogue_doc_content,
+                // 如果内容看起来像JSON，就用json模式
+                type: report.dialogue_doc_content.trim().startsWith('{') ? 'json' : 'text'
+            });
+        }
+    };
 
     // 只有当 dimensions 是数组时才进行处理（兼容旧数据结构）
     const dimensionsList = Array.isArray(report.dimensions)
@@ -585,25 +613,64 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                         </div>
 
                         {/* Action Buttons */}
-                        <button
-                            onClick={() => exportReportAsMarkdown(report)}
-                            className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-all flex items-center justify-center gap-2 group"
-                        >
-                            <Download className="w-5 h-5 group-hover:translate-y-0.5 transition-transform duration-300" />
-                            导出完整报告 (MD)
-                        </button>
 
-                        <button
-                            onClick={onReset}
-                            className="w-full py-4 bg-slate-900 hover:bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-slate-200 hover:shadow-indigo-200 transition-all flex items-center justify-center gap-2 group"
-                        >
-                            <RotateCcw className="w-5 h-5 group-hover:-rotate-180 transition-transform duration-500" />
-                            开始新的评估
-                        </button>
+                        {/* Action Buttons */}
+                        <div className="space-y-3">
+                            <button
+                                onClick={() => exportReportAsMarkdown(report)}
+                                className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-all flex items-center justify-center gap-2 group"
+                            >
+                                <Download className="w-5 h-5 group-hover:translate-y-0.5 transition-transform duration-300" />
+                                导出完整报告 (MD)
+                            </button>
+
+                            {/* View Source Documents Buttons */}
+                            {(report.teacher_doc_content || report.dialogue_doc_content) && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    {report.teacher_doc_content && (
+                                        <button
+                                            onClick={handleViewTeacherDoc}
+                                            className="py-3 bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 text-slate-600 rounded-xl font-medium shadow-sm hover:shadow transition-all flex items-center justify-center gap-2"
+                                        >
+                                            <FileText className="w-4 h-4" />
+                                            教师手册
+                                        </button>
+                                    )}
+                                    {report.dialogue_doc_content && (
+                                        <button
+                                            onClick={handleViewDialogue}
+                                            className="py-3 bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 text-slate-600 rounded-xl font-medium shadow-sm hover:shadow transition-all flex items-center justify-center gap-2"
+                                        >
+                                            <FileText className="w-4 h-4" />
+                                            对话记录
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            <button
+                                onClick={onReset}
+                                className="w-full py-4 bg-slate-900 hover:bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-slate-200 hover:shadow-indigo-200 transition-all flex items-center justify-center gap-2 group"
+                            >
+                                <RotateCcw className="w-5 h-5 group-hover:-rotate-180 transition-transform duration-500" />
+                                开始新的评估
+                            </button>
+                        </div>
 
                     </div>
                 </div>
             </div>
+
+            {/* Document Viewer Modal */}
+            {viewDoc && (
+                <DocumentViewer
+                    isOpen={viewDoc.isOpen}
+                    onClose={() => setViewDoc(null)}
+                    title={viewDoc.title}
+                    content={viewDoc.content}
+                    type={viewDoc.type}
+                />
+            )}
         </div>
     );
 }

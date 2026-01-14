@@ -10,7 +10,9 @@ import { useAuth } from './AuthProvider';
 interface CloudEvaluation {
     id: string;
     teacher_doc_name: string;
+    teacher_doc_content?: string;
     dialogue_record_name: string;
+    dialogue_data?: any;
     total_score: number;
     final_level: string;
     model_used: string;
@@ -52,7 +54,9 @@ export function HistoryView({ onBack }: HistoryViewProps) {
                     const formattedHistory = historyItems.map((item: any, index: number) => ({
                         id: item.id || `local_${index}`,
                         teacher_doc_name: item.teacherDocName || item.teacher_doc_name || 'unknown',
+                        teacher_doc_content: item.report?.teacher_doc_content, // 尝试从报告中恢复
                         dialogue_record_name: item.dialogueRecordName || item.dialogue_record_name || 'unknown',
+                        dialogue_data: item.report?.dialogue_doc_content, // 游客模式下可能直接存了内容
                         total_score: item.report?.total_score || item.totalScore || 0,
                         final_level: item.report?.final_level || item.finalLevel || '',
                         model_used: item.modelName || item.model_used || '',
@@ -100,6 +104,13 @@ export function HistoryView({ onBack }: HistoryViewProps) {
             final_level: evaluation.final_level as any,
             pass_criteria_met: evaluation.total_score >= 60,
             veto_reasons: evaluation.veto_reasons || [],
+            // 注入源文档内容
+            teacher_doc_name: evaluation.teacher_doc_name,
+            teacher_doc_content: evaluation.teacher_doc_content,
+            dialogue_doc_name: evaluation.dialogue_record_name,
+            dialogue_doc_content: typeof evaluation.dialogue_data === 'string'
+                ? evaluation.dialogue_data
+                : JSON.stringify(evaluation.dialogue_data, null, 2)
         };
         setSelectedReport(report);
         setSelectedEvaluation(evaluation);

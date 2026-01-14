@@ -326,7 +326,13 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                 final_level: finalLevel as any,
                 pass_criteria_met: passCriteriaMet,
                 veto_reasons: vetoReasons,
-                history_id: ""
+                history_id: "",
+
+                // 注入源文档内容
+                teacher_doc_name: tDoc.name,
+                teacher_doc_content: tDoc.content,
+                dialogue_doc_name: dRec.name,
+                dialogue_doc_content: JSON.stringify(dRec.data, null, 2)
             };
 
             // 5. 保存历史

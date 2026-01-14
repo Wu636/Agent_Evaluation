@@ -101,6 +101,12 @@ export interface EvaluationReport {
   criticalIssues?: string[]; // Deprecated, use issues
   actionableSuggestions?: string[]; // Deprecated, use suggestions
   executiveSummary?: string; // Deprecated, use analysis/executive_summary
+
+  // 源文档内容 (可选，用于在报告中查看)
+  teacher_doc_content?: string;
+  dialogue_doc_content?: string;
+  teacher_doc_name?: string;
+  dialogue_doc_name?: string;
 }
 
 /**

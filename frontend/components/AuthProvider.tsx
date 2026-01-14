@@ -33,17 +33,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const guestMode = localStorage.getItem('guest_mode') === 'true';
         setIsGuest(guestMode);
 
+        // 如果 Supabase 未配置，设置为游客模式
+        if (!supabase) {
+            setIsGuest(true);
+            setLoading(false);
+            return;
+        }
+
         // 获取初始 session
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
             setUser(session?.user ?? null);
-            
+
             // 如果有登录用户，清除游客模式
             if (session?.user) {
                 setIsGuest(false);
                 localStorage.removeItem('guest_mode');
             }
-            
+
             setLoading(false);
         });
 
@@ -67,7 +74,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const signOut = async () => {
-        await supabase.auth.signOut();
+        if (supabase) {
+            await supabase.auth.signOut();
+        }
         setUser(null);
         setSession(null);
         setIsGuest(false);
@@ -94,6 +103,8 @@ export const useAuth = () => useContext(AuthContext);
 
 // 同步 localStorage 数据到 Supabase
 async function syncLocalData(userId: string) {
+    if (!supabase) return; // Supabase 未配置则跳过同步
+
     try {
         const localHistory = localStorage.getItem('evaluation_history');
         if (!localHistory) return;

@@ -4,19 +4,16 @@ import React, { useState, useMemo } from 'react';
 import {
     Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer
 } from 'recharts';
-import {
-    AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
-    Lightbulb, RotateCcw, Sparkles, ChevronLeft, Download,
-    Quote, AlertTriangle, FileText
-} from 'lucide-react';
+import { Share2, Download, AlertTriangle, CheckCircle2, Sliders, FileText, ChevronDown, ChevronRight, X, Copy, Check, Sparkles, RotateCcw, Lightbulb, AlertCircle, Quote } from 'lucide-react';
 import clsx from 'clsx';
-import { EvaluationReport, DimensionScore, SubDimensionScore, IssueItem } from '@/lib/llm/types';
-import { exportReportAsMarkdown } from '@/lib/markdown-exporter';
+import { EvaluationReport, DimensionScore, IssueItem, SubDimensionScore } from '@/lib/llm/types';
+import { DocumentViewer } from '@/components/DocumentViewer';
+import { CommentSection } from './CommentSection'; // Correct Import
 import { DIMENSIONS } from '@/lib/config';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { exportReportAsMarkdown } from '@/lib/markdown-exporter';
 
 // 维度名称映射：英文 key -> 中文显示名称
-// 直接使用 config.ts 中的定义
 const getDimensionName = (key: string): string => {
     return DIMENSIONS[key]?.name || key;
 };
@@ -124,7 +121,7 @@ function HighSeverityIssuesList({ issues, dimensions }: { issues: IssueItem[], d
     if (!issues || issues.length === 0) return null;
 
     // 按维度分组问题
-    const issuesByDimension = useMemo(() => {
+    const issuesByDimension = React.useMemo(() => {
         // 直接遍历 dimensions 来聚合严重问题
         return dimensions.reduce((acc, dim) => {
             // 找出该维度下所有的严重问题
@@ -205,16 +202,15 @@ function HighSeverityIssuesList({ issues, dimensions }: { issues: IssueItem[], d
     );
 }
 
-import { DocumentViewer } from './DocumentViewer';
-
 // --- Main Component ---
 
 interface ReportViewProps {
     report: EvaluationReport;
     onReset: () => void;
+    isPublic?: boolean;
 }
 
-export function ReportView({ report, onReset }: ReportViewProps) {
+export function ReportView({ report, onReset, isPublic = false }: ReportViewProps) {
     const [expandedDim, setExpandedDim] = useState<string | null>(null);
     const [sidebarExpandedDims, setSidebarExpandedDims] = useState<Set<string>>(new Set());
 
@@ -660,6 +656,14 @@ export function ReportView({ report, onReset }: ReportViewProps) {
                     title={viewDoc.title}
                     content={viewDoc.content}
                     type={viewDoc.type}
+                />
+            )}
+
+            {/* 评论区 - 仅当有有效ID时显示 */}
+            {report.task_id && (
+                <CommentSection
+                    evaluationId={report.task_id}
+                    isPublic={isPublic}
                 />
             )}
         </div>

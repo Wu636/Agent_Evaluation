@@ -18,6 +18,7 @@ interface Evaluation {
     dimensions: any[];
     veto_reasons: string[];
     created_at: string;
+    is_public: boolean;
 }
 
 export default function SharedReportPage() {
@@ -134,7 +135,8 @@ export default function SharedReportPage() {
             <div className="max-w-7xl mx-auto px-4 py-6">
                 <ReportView
                     report={report}
-                    onReset={() => window.history.back()}
+                    onReset={() => { }}
+                    isPublic={evaluation.is_public}
                 />
             </div>
         </div>

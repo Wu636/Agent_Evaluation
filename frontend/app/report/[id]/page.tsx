@@ -71,11 +71,11 @@ export default function SharedReportPage() {
                     <h1 className="text-xl font-bold text-slate-900 mb-2">无法访问此报告</h1>
                     <p className="text-slate-500 mb-6">{error || '报告不存在或已被删除'}</p>
                     <Link
-                        href="/"
+                        href="/explore"
                         className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
                     >
                         <ArrowLeft className="w-4 h-4" />
-                        返回首页
+                        返回探索广场
                     </Link>
                 </div>
             </div>
@@ -109,11 +109,11 @@ export default function SharedReportPage() {
             <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
                 <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
                     <Link
-                        href="/"
+                        href="/explore"
                         className="flex items-center gap-2 text-slate-600 hover:text-indigo-600 transition-colors"
                     >
                         <ArrowLeft className="w-4 h-4" />
-                        <span className="text-sm font-medium">返回首页</span>
+                        <span className="text-sm font-medium">返回探索广场</span>
                     </Link>
 
                     <div className="text-center">

@@ -23,7 +23,7 @@ export default function ExplorePage() {
     useEffect(() => {
         const fetchPublicEvaluations = async () => {
             try {
-                const res = await fetch('/api/evaluations/public');
+                const res = await fetch('/api/evaluations/public', { cache: 'no-store' });
                 if (res.ok) {
                     const data = await res.json();
                     setEvaluations(data.evaluations || []);
@@ -40,7 +40,8 @@ export default function ExplorePage() {
 
     const filteredEvaluations = evaluations.filter(e =>
         e.teacher_doc_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        e.model_used.toLowerCase().includes(searchQuery.toLowerCase())
+        e.model_used.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        e.id.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const getScoreColor = (score: number) => {

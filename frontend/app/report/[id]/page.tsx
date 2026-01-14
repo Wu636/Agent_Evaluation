@@ -9,7 +9,9 @@ import Link from 'next/link';
 interface Evaluation {
     id: string;
     teacher_doc_name: string;
+    teacher_doc_content?: string;
     dialogue_record_name: string;
+    dialogue_data?: any;
     total_score: number;
     final_level: string;
     model_used: string;
@@ -91,6 +93,14 @@ export default function SharedReportPage() {
         final_level: evaluation.final_level as any,
         pass_criteria_met: evaluation.total_score >= 60,
         veto_reasons: evaluation.veto_reasons || [],
+
+        // 注入源文档内容
+        teacher_doc_name: evaluation.teacher_doc_name,
+        teacher_doc_content: evaluation.teacher_doc_content,
+        dialogue_doc_name: evaluation.dialogue_record_name,
+        dialogue_doc_content: typeof evaluation.dialogue_data === 'string'
+            ? evaluation.dialogue_data
+            : JSON.stringify(evaluation.dialogue_data, null, 2)
     };
 
     return (
@@ -111,7 +121,7 @@ export default function SharedReportPage() {
                         <p className="text-sm font-medium text-slate-700">
                             {evaluation.teacher_doc_name || '未知文档'} · {evaluation.created_at ? new Date(evaluation.created_at).toLocaleDateString('zh-CN') : '未知日期'}
                         </p>
-<p className="text-xs text-slate-500 font-mono mt-1">
+                        <p className="text-xs text-slate-500 font-mono mt-1">
                             ID: {evaluation.id.substring(0, 8)}
                         </p>
                     </div>

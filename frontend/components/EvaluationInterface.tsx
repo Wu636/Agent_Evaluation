@@ -607,7 +607,16 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
             )}
 
             {step === 'processing' && (
-                <div className="flex flex-col items-center justify-center py-32 space-y-8 animate-in fade-in duration-700">
+                <div className="flex flex-col items-center justify-center py-32 space-y-8 animate-in fade-in duration-700 relative w-full">
+                    {/* 返回按钮 */}
+                    <button
+                        onClick={handleReset}
+                        className="absolute left-0 top-0 flex items-center gap-2 px-4 py-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                    >
+                        <ArrowLeft className="w-5 h-5" />
+                        <span className="font-medium">返回/取消</span>
+                    </button>
+
                     <div className="relative w-32 h-32">
                         {/* Circular Progress Bar */}
                         <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">

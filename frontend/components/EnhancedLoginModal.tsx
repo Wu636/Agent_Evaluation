@@ -9,13 +9,13 @@ interface EnhancedLoginModalProps {
     onClose: () => void;
 }
 
-type LoginMode = 'email' | 'username' | 'guest';
+type LoginMode = 'email' | 'guest';
 
 export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps) {
     const [loginMode, setLoginMode] = useState<LoginMode>('email');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [username, setUsername] = useState('');
+
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -38,7 +38,6 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
         if (isOpen) {
             setEmail('');
             setPassword('');
-            setUsername('');
             setError('');
             setLoading(false);
         }
@@ -109,118 +108,7 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
         }
     };
 
-    const handleQuickRegister = async () => {
-        if (!supabase) {
-            setError('Supabase 未配置，请使用游客模式');
-            return;
-        }
 
-        if (!email || !password) {
-            setError('请填写邮箱和密码');
-            return;
-        }
-
-        setLoading(true);
-        setError('');
-
-        try {
-            // 生成随机用户名
-            const randomUsername = `user_${Math.random().toString(36).substring(2, 9)}`;
-
-            // 使用 signUp 但禁用邮箱验证
-            const { data, error } = await supabase.auth.signUp({
-                email,
-                password,
-                options: {
-                    data: {
-                        username: randomUsername
-                    }
-                }
-            });
-
-            if (error) throw error;
-
-            // 如果创建了用户但未确认，手动确认
-            if (data.user && !data.session) {
-                // 使用 signInWithPassword 来激活用户
-                const { error: signInError } = await supabase.auth.signInWithPassword({
-                    email,
-                    password,
-                });
-
-                if (signInError) {
-                    // 如果仍然失败，说明邮箱验证是强制性的
-                    setError('此系统需要邮箱验证，请使用普通注册');
-                    return;
-                }
-            }
-
-            // 创建用户名记录
-            if (data.user?.id) {
-                const { error: profileError } = await supabase
-                    .from('profiles')
-                    .update({ username: randomUsername })
-                    .eq('id', data.user.id);
-
-                if (profileError) {
-                    console.warn('Failed to set username:', profileError);
-                }
-            }
-
-            // 显示注册成功消息
-            setError('快速注册成功！已自动登录');
-
-            // 短暂延迟后关闭模态框
-            setTimeout(() => {
-                onClose();
-            }, 1500);
-        } catch (error: any) {
-            setError(error.message || '快速注册失败');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleUsernameLogin = async () => {
-        if (!supabase) {
-            setError('Supabase 未配置，请使用游客模式');
-            return;
-        }
-
-        if (!username || !password) {
-            setError('请填写用户名和密码');
-            return;
-        }
-
-        setLoading(true);
-        setError('');
-
-        try {
-            // 通过用户名查找邮箱
-            const { data: profile, error: profileError } = await supabase
-                .from('profiles')
-                .select('email')
-                .eq('username', username)
-                .single();
-
-            if (profileError || !profile?.email) {
-                setError('用户名不存在');
-                return;
-            }
-
-            // 使用邮箱登录
-            const { error } = await supabase.auth.signInWithPassword({
-                email: profile.email,
-                password,
-            });
-
-            if (error) throw error;
-        } catch (error: any) {
-            setError(error.message || '登录失败');
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleGuestMode = () => {
         // 设置游客模式标志
@@ -266,16 +154,7 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
                         <Mail className="w-4 h-4 inline mr-1" />
                         邮箱
                     </button>
-                    <button
-                        onClick={() => setLoginMode('username')}
-                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${loginMode === 'username'
-                            ? 'bg-white text-indigo-600 shadow-sm'
-                            : 'text-slate-600 hover:text-slate-900'
-                            }`}
-                    >
-                        <User className="w-4 h-4 inline mr-1" />
-                        用户名
-                    </button>
+
                     <button
                         onClick={() => setLoginMode('guest')}
                         className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${loginMode === 'guest'
@@ -354,54 +233,6 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
                     </div>
                 )}
 
-                {/* Username Login Form */}
-                {loginMode === 'username' && (
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                                用户名
-                            </label>
-                            <input
-                                type="text"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                                placeholder="输入用户名"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                                密码
-                            </label>
-                            <div className="relative">
-                                <input
-                                    type={showPassword ? 'text' : 'password'}
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none pr-10"
-                                    placeholder="••••••••"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowPassword(!showPassword)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                >
-                                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                </button>
-                            </div>
-                        </div>
-                        <button
-                            onClick={handleUsernameLogin}
-                            disabled={loading}
-                            className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
-                        >
-                            {loading ? '登录中...' : '用户名登录'}
-                        </button>
-                        <p className="text-xs text-slate-500 text-center">
-                            用户名登录需要先通过邮箱注册并设置用户名
-                        </p>
-                    </div>
-                )}
 
                 {/* Guest Mode */}
                 {loginMode === 'guest' && (

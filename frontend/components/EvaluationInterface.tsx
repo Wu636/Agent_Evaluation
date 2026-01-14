@@ -411,6 +411,9 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
         setReport(null);
         setStep('upload');
         setError(null);
+        setLoading(false);  // 重置加载状态
+        setProgress(0);     // 重置进度
+        setCurrentDimension('');  // 清空当前维度显示
     };
 
     // 清空所有文件（用户主动清空时调用）

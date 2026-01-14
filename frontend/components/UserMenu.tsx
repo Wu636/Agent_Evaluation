@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { User, LogOut, Share2, ChevronDown } from 'lucide-react';
+import { User, LogOut, ChevronDown } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 
 interface UserMenuProps {
@@ -78,17 +78,6 @@ export function UserMenu({ onLoginClick }: UserMenuProps) {
                         <p className="text-sm font-medium text-slate-900 truncate">{displayName}</p>
                         <p className="text-xs text-slate-500 truncate">{user.email}</p>
                     </div>
-
-                    <button
-                        onClick={() => {
-                            setIsOpen(false);
-                            // TODO: 打开我的分享页面
-                        }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-                    >
-                        <Share2 className="w-4 h-4 text-slate-400" />
-                        我的分享
-                    </button>
 
                     <button
                         onClick={() => {

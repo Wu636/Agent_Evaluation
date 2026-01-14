@@ -259,8 +259,8 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
                     <button
                         onClick={() => setLoginMode('email')}
                         className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${loginMode === 'email'
-                                ? 'bg-white text-indigo-600 shadow-sm'
-                                : 'text-slate-600 hover:text-slate-900'
+                            ? 'bg-white text-indigo-600 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
                             }`}
                     >
                         <Mail className="w-4 h-4 inline mr-1" />
@@ -269,8 +269,8 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
                     <button
                         onClick={() => setLoginMode('username')}
                         className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${loginMode === 'username'
-                                ? 'bg-white text-indigo-600 shadow-sm'
-                                : 'text-slate-600 hover:text-slate-900'
+                            ? 'bg-white text-indigo-600 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
                             }`}
                     >
                         <User className="w-4 h-4 inline mr-1" />
@@ -279,8 +279,8 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
                     <button
                         onClick={() => setLoginMode('guest')}
                         className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${loginMode === 'guest'
-                                ? 'bg-white text-indigo-600 shadow-sm'
-                                : 'text-slate-600 hover:text-slate-900'
+                            ? 'bg-white text-indigo-600 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
                             }`}
                     >
                         游客模式
@@ -290,8 +290,8 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
                 {/* Error Message */}
                 {error && (
                     <div className={`mb-4 p-3 rounded-lg text-sm ${error.includes('成功')
-                            ? 'bg-green-50 text-green-700'
-                            : 'bg-red-50 text-red-700'
+                        ? 'bg-green-50 text-green-700'
+                        : 'bg-red-50 text-red-700'
                         }`}>
                         {error}
                     </div>
@@ -350,13 +350,6 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
                                     {loading ? '注册中...' : '注册'}
                                 </button>
                             </div>
-                            <button
-                                onClick={handleQuickRegister}
-                                disabled={loading}
-                                className="w-full px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg hover:from-emerald-600 hover:to-teal-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all text-sm shadow-sm"
-                            >
-                                {loading ? '注册中...' : '⚡ 快速注册（无需邮箱验证）'}
-                            </button>
                         </div>
                     </div>
                 )}

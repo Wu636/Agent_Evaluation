@@ -1,30 +1,82 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Clock, FileText, Trash2, Eye, ArrowLeft } from 'lucide-react';
+import { Clock, FileText, Trash2, Eye, ArrowLeft, Share2, Lock, Unlock, Copy, Check } from 'lucide-react';
 import clsx from 'clsx';
 import { ReportView } from './ReportView';
 import { EvaluationReport } from '@/lib/api';
-import { getHistoryList, getHistoryItem, deleteHistoryItem, HistorySummary } from '@/lib/client-history';
+import { useAuth } from './AuthProvider';
+
+interface CloudEvaluation {
+    id: string;
+    teacher_doc_name: string;
+    dialogue_record_name: string;
+    total_score: number;
+    final_level: string;
+    model_used: string;
+    dimensions: any[];
+    veto_reasons: string[];
+    is_public: boolean;
+    share_token: string | null;
+    created_at: string;
+}
 
 interface HistoryViewProps {
     onBack: () => void;
 }
 
 export function HistoryView({ onBack }: HistoryViewProps) {
-    const [history, setHistory] = useState<HistorySummary[]>([]);
+    const { session, isGuest } = useAuth();
+    const [history, setHistory] = useState<CloudEvaluation[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedReport, setSelectedReport] = useState<EvaluationReport | null>(null);
+    const [selectedEvaluation, setSelectedEvaluation] = useState<CloudEvaluation | null>(null);
+    const [copiedId, setCopiedId] = useState<string | null>(null);
 
     useEffect(() => {
         fetchHistory();
-    }, []);
+    }, [session]);
 
     const fetchHistory = async () => {
+        if (!session?.access_token && !isGuest) {
+            setLoading(false);
+            return;
+        }
+
         try {
-            // 使用客户端 localStorage
-            const data = getHistoryList();
-            setHistory(data);
+            if (isGuest) {
+                // 游客模式：从localStorage加载本地历史
+                const localHistory = localStorage.getItem('evaluation_history');
+                if (localHistory) {
+                    const historyItems = JSON.parse(localHistory);
+                    const formattedHistory = historyItems.map((item: any, index: number) => ({
+                        id: item.id || `local_${index}`,
+                        teacher_doc_name: item.teacherDocName || item.teacher_doc_name || 'unknown',
+                        dialogue_record_name: item.dialogueRecordName || item.dialogue_record_name || 'unknown',
+                        total_score: item.report?.total_score || item.totalScore || 0,
+                        final_level: item.report?.final_level || item.finalLevel || '',
+                        model_used: item.modelName || item.model_used || '',
+                        dimensions: item.report?.dimensions || [],
+                        veto_reasons: item.report?.veto_reasons || [],
+                        is_public: false,
+                        share_token: null,
+                        created_at: item.timestamp || item.created_at || new Date().toISOString(),
+                    }));
+                    setHistory(formattedHistory);
+                }
+            } else {
+                // 正常登录用户：从云端获取
+                const res = await fetch('/api/evaluations', {
+                    headers: {
+                        'Authorization': `Bearer ${session.access_token}`
+                    }
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    setHistory(data.evaluations || []);
+                }
+            }
         } catch (error) {
             console.error('Failed to fetch history:', error);
         } finally {
@@ -32,26 +84,93 @@ export function HistoryView({ onBack }: HistoryViewProps) {
         }
     };
 
-    const handleViewReport = async (evalId: string) => {
-        try {
-            const item = getHistoryItem(evalId);
-            if (item) {
-                setSelectedReport(item.report);
-            }
-        } catch (error) {
-            console.error('Failed to fetch report:', error);
-        }
+    const handleViewReport = (evaluation: CloudEvaluation) => {
+        const report: EvaluationReport = {
+            task_id: evaluation.id,
+            total_score: evaluation.total_score,
+            dimensions: evaluation.dimensions,
+            analysis: '',
+            issues: [],
+            suggestions: [],
+            final_level: evaluation.final_level as any,
+            pass_criteria_met: evaluation.total_score >= 60,
+            veto_reasons: evaluation.veto_reasons || [],
+        };
+        setSelectedReport(report);
+        setSelectedEvaluation(evaluation);
     };
 
     const handleDelete = async (evalId: string) => {
         if (!confirm('您确定要删除这条评估记录吗？')) return;
+        if (!session?.access_token) return;
 
         try {
-            deleteHistoryItem(evalId);
-            fetchHistory(); // Refresh list
+            const res = await fetch(`/api/evaluations/${evalId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`
+                }
+            });
+
+            if (res.ok) {
+                fetchHistory(); // Refresh list
+            }
         } catch (error) {
             console.error('Failed to delete:', error);
         }
+    };
+
+    const handleTogglePublic = async (evalId: string, currentPublic: boolean) => {
+        if (!session?.access_token) return;
+
+        try {
+            const res = await fetch(`/api/evaluations/${evalId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({ is_public: !currentPublic })
+            });
+
+            if (res.ok) {
+                fetchHistory(); // Refresh list
+            }
+        } catch (error) {
+            console.error('Failed to toggle public:', error);
+        }
+    };
+
+    const handleGenerateShare = async (evalId: string) => {
+        if (!session?.access_token) return;
+
+        try {
+            const res = await fetch(`/api/evaluations/${evalId}/share`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`
+                }
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                // Copy to clipboard
+                await navigator.clipboard.writeText(data.share_url);
+                setCopiedId(evalId);
+                setTimeout(() => setCopiedId(null), 2000);
+
+                fetchHistory(); // Refresh to show share token
+            }
+        } catch (error) {
+            console.error('Failed to generate share link:', error);
+        }
+    };
+
+    const handleCopyShareLink = async (shareToken: string, evalId: string) => {
+        const shareUrl = `${window.location.origin}/report/${shareToken}`;
+        await navigator.clipboard.writeText(shareUrl);
+        setCopiedId(evalId);
+        setTimeout(() => setCopiedId(null), 2000);
     };
 
     const formatDate = (isoString: string) => {
@@ -76,14 +195,23 @@ export function HistoryView({ onBack }: HistoryViewProps) {
     if (selectedReport) {
         return (
             <div className="w-full">
-                <button
-                    onClick={() => setSelectedReport(null)}
-                    className="mb-6 flex items-center gap-2 px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors font-medium border border-transparent hover:border-slate-200"
-                >
-                    <ArrowLeft className="w-4 h-4" />
-                    返回历史列表
-                </button>
-                <ReportView report={selectedReport} onReset={() => setSelectedReport(null)} />
+                <ReportView report={selectedReport} onReset={() => {
+                    setSelectedReport(null);
+                    setSelectedEvaluation(null);
+                }} />
+            </div>
+        );
+    }
+
+    // Not logged in and not guest
+    if (!session && !isGuest) {
+        return (
+            <div className="w-full max-w-5xl mx-auto">
+                <div className="text-center py-20 bg-white rounded-3xl border border-slate-200 shadow-sm">
+                    <Lock className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                    <h3 className="text-xl font-bold text-slate-700 mb-2">请先登录</h3>
+                    <p className="text-slate-500">登录后可查看云端保存的评测记录</p>
+                </div>
             </div>
         );
     }
@@ -94,8 +222,17 @@ export function HistoryView({ onBack }: HistoryViewProps) {
             {/* Header */}
             <div className="mb-8 flex items-center justify-between">
                 <div>
-                    <h1 className="text-4xl font-black text-slate-900 mb-2">历史评估记录</h1>
-                    <p className="text-slate-500">查看和管理过往的评估报告</p>
+                    <h1 className="text-4xl font-black text-slate-900 mb-2">
+                        历史评估记录
+                        {isGuest && (
+                            <span className="ml-3 text-sm font-normal text-slate-500 bg-slate-100 px-3 py-1 rounded-lg">
+                                游客模式 - 本地数据
+                            </span>
+                        )}
+                    </h1>
+                    <p className="text-slate-500">
+                        {isGuest ? '查看本地保存的评估记录（游客模式）' : '查看和管理过往的评估报告'}
+                    </p>
                 </div>
                 <button
                     onClick={onBack}
@@ -129,11 +266,10 @@ export function HistoryView({ onBack }: HistoryViewProps) {
 
                                 {/* Score Badge */}
                                 <div className={clsx(
-                                    "flex-shrink-0 w-20 h-20 rounded-2xl border-2 flex flex-col items-center justify-center font-bold",
+                                    "flex-shrink-0 w-16 h-16 rounded-2xl border-2 flex items-center justify-center font-bold text-xl",
                                     getScoreColor(item.total_score)
                                 )}>
-                                    <div className="text-2xl">{item.total_score.toFixed(0)}</div>
-                                    <div className="text-xs opacity-70">{item.final_level}</div>
+                                    {item.total_score.toFixed(0)}
                                 </div>
 
                                 {/* Info */}
@@ -150,33 +286,74 @@ export function HistoryView({ onBack }: HistoryViewProps) {
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center gap-4 text-xs text-slate-400 mt-2">
-                                        <span className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-md border border-slate-100">
-                                            <Clock className="w-3 h-3" />
-                                            {formatDate(item.timestamp)}
-                                        </span>
-                                        <span className="px-2 py-1 bg-indigo-50 text-indigo-600 rounded-md font-medium border border-indigo-100">
-                                            {item.model}
-                                        </span>
+                                    <div className="space-y-2 mt-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="flex items-center gap-2 text-xs text-slate-400">
+                                                <span className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-md border border-slate-100">
+                                                    <Clock className="w-3 h-3" />
+                                                    {formatDate(item.created_at)}
+                                                </span>
+                                            </span>
+                                            <div className="flex items-center gap-2 text-xs">
+                                                <span className="flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-600 rounded-md font-mono border border-indigo-100">
+                                                    ID: {item.id.substring(0, 8)}
+                                                </span>
+                                                <span className="px-2 py-1 bg-indigo-50 text-indigo-600 rounded-md font-medium border border-indigo-100">
+                                                    {item.model_used}
+                                                </span>
+                                                {item.is_public && <span className="px-2 py-1 bg-green-50 text-green-600 rounded-md font-medium border border-green-100">公开</span>}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
 
                                 {/* Actions */}
                                 <div className="flex gap-2">
                                     <button
-                                        onClick={() => handleViewReport(item.id)}
+                                        onClick={() => handleViewReport(item)}
                                         className="p-3 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors"
                                         title="查看报告"
                                     >
                                         <Eye className="w-5 h-5" />
                                     </button>
-                                    <button
-                                        onClick={() => handleDelete(item.id)}
-                                        className="p-3 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-                                        title="删除"
-                                    >
-                                        <Trash2 className="w-5 h-5" />
-                                    </button>
+
+                                    {!isGuest && (
+                                        <>
+                                            <button
+                                                onClick={() => handleTogglePublic(item.id, item.is_public)}
+                                                className={`p-3 rounded-xl transition-colors ${item.is_public ? 'text-green-600 hover:bg-green-50' : 'text-slate-400 hover:bg-slate-50'}`}
+                                                title={item.is_public ? "设为私有" : "设为公开"}
+                                            >
+                                                {item.is_public ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                                            </button>
+
+                                            {item.share_token ? (
+                                                <button
+                                                    onClick={() => handleCopyShareLink(item.share_token!, item.id)}
+                                                    className="p-3 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                                                    title="复制分享链接"
+                                                >
+                                                    {copiedId === item.id ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleGenerateShare(item.id)}
+                                                    className="p-3 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                                                    title="生成分享链接"
+                                                >
+                                                    <Share2 className="w-5 h-5" />
+                                                </button>
+                                            )}
+
+                                            <button
+                                                onClick={() => handleDelete(item.id)}
+                                                className="p-3 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                                                title="删除"
+                                            >
+                                                <Trash2 className="w-5 h-5" />
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         </div>

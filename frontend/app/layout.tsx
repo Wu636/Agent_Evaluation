@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Figtree, Inter, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
+import { AuthProvider } from "@/components/AuthProvider"
 import "./globals.css"
 
 const figtree = Figtree({
@@ -22,9 +23,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "AgentEval",
-  description: "Created with v0",
-  generator: "v0.app",
+  title: "AgentEval - 智能体评测系统",
+  description: "专业的 AI 教学智能体质量评估工具",
   icons: {
     icon: "/icon.svg",
   },
@@ -36,11 +36,14 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body className={`${inter.variable} ${figtree.variable} ${geistMono.variable} font-sans antialiased`}>
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
         <Analytics />
       </body>
     </html>
   )
 }
+

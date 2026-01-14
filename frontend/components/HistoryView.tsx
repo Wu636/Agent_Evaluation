@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Clock, FileText, Trash2, Eye, ArrowLeft, Share2, Lock, Unlock, Copy, Check } from 'lucide-react';
+import { Clock, FileText, Trash2, Eye, ArrowLeft, Share2, Lock, Unlock, Copy, Check, Edit2, X as CloseIcon, Save as SaveIcon } from 'lucide-react';
 import clsx from 'clsx';
 import { ReportView } from './ReportView';
 import { EvaluationReport } from '@/lib/api';
@@ -34,6 +34,10 @@ export function HistoryView({ onBack }: HistoryViewProps) {
     const [selectedReport, setSelectedReport] = useState<EvaluationReport | null>(null);
     const [selectedEvaluation, setSelectedEvaluation] = useState<CloudEvaluation | null>(null);
     const [copiedId, setCopiedId] = useState<string | null>(null);
+
+    // Rename state
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editName, setEditName] = useState('');
 
     useEffect(() => {
         fetchHistory();
@@ -114,6 +118,41 @@ export function HistoryView({ onBack }: HistoryViewProps) {
         };
         setSelectedReport(report);
         setSelectedEvaluation(evaluation);
+    };
+
+    const handleStartRename = (item: CloudEvaluation) => {
+        setEditingId(item.id);
+        setEditName(item.teacher_doc_name);
+    };
+
+    const handleSaveRename = async () => {
+        if (!editingId || !editName.trim() || !session?.access_token) return;
+
+        try {
+            const res = await fetch(`/api/evaluations/${editingId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({ teacher_doc_name: editName.trim() })
+            });
+
+            if (res.ok) {
+                // Optimistic update
+                setHistory(prev => prev.map(item =>
+                    item.id === editingId
+                        ? { ...item, teacher_doc_name: editName.trim() }
+                        : item
+                ));
+                setEditingId(null);
+            } else {
+                alert('重命名失败，请重试');
+            }
+        } catch (error) {
+            console.error('Failed to rename:', error);
+            alert('重命名失败');
+        }
     };
 
     const handleDelete = async (evalId: string) => {
@@ -292,9 +331,47 @@ export function HistoryView({ onBack }: HistoryViewProps) {
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-start gap-3 mb-2">
                                         <div className="flex-1">
-                                            <h3 className="font-bold text-slate-800 truncate mb-1 text-lg">
-                                                {item.teacher_doc_name}
-                                            </h3>
+                                            {editingId === item.id ? (
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <input
+                                                        type="text"
+                                                        value={editName}
+                                                        onChange={(e) => setEditName(e.target.value)}
+                                                        className="flex-1 px-2 py-1 text-lg font-bold border border-indigo-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                        autoFocus
+                                                    />
+                                                    <button
+                                                        onClick={handleSaveRename}
+                                                        className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                                        title="保存"
+                                                    >
+                                                        <SaveIcon className="w-5 h-5" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setEditingId(null)}
+                                                        className="p-1 text-slate-400 hover:bg-slate-50 rounded"
+                                                        title="取消"
+                                                    >
+                                                        <CloseIcon className="w-5 h-5" />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2 group/title">
+                                                    <h3 className="font-bold text-slate-800 truncate mb-1 text-lg">
+                                                        {item.teacher_doc_name}
+                                                    </h3>
+                                                    {!isGuest && (
+                                                        <button
+                                                            onClick={() => handleStartRename(item)}
+                                                            className="opacity-0 group-hover/title:opacity-100 p-1 text-slate-400 hover:text-indigo-600 transition-opacity"
+                                                            title="重命名"
+                                                        >
+                                                            <Edit2 className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+
                                             <p className="text-sm text-slate-500 truncate flex items-center gap-2">
                                                 <span className="font-medium bg-slate-100 px-2 py-0.5 rounded text-slate-600 text-xs">对话记录</span>
                                                 {item.dialogue_record_name}

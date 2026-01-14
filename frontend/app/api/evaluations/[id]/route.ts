@@ -85,12 +85,20 @@ export async function PATCH(
         }
 
         const body = await request.json();
-        const { is_public } = body;
+        const { is_public, teacher_doc_name } = body;
+
+        const updates: any = {};
+        if (typeof is_public !== 'undefined') updates.is_public = is_public;
+        if (typeof teacher_doc_name !== 'undefined') updates.teacher_doc_name = teacher_doc_name;
+
+        if (Object.keys(updates).length === 0) {
+            return NextResponse.json({ error: '没有提供更新内容' }, { status: 400 });
+        }
 
         // 只能更新自己的评测
         const { data, error } = await supabase
             .from('evaluations')
-            .update({ is_public })
+            .update(updates)
             .eq('id', id)
             .eq('user_id', user.id)
             .select()

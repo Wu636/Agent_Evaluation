@@ -35,11 +35,10 @@ export function UserMenu({ onLoginClick }: UserMenuProps) {
         return (
             <button
                 onClick={onLoginClick}
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    isGuest 
-                        ? 'text-slate-700 bg-slate-200 hover:bg-slate-300' 
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${isGuest
+                        ? 'text-slate-700 bg-slate-200 hover:bg-slate-300'
                         : 'text-white bg-indigo-600 hover:bg-indigo-700'
-                }`}
+                    }`}
             >
                 <User className="w-4 h-4" />
                 {isGuest ? '游客模式' : '登录'}
@@ -52,6 +51,11 @@ export function UserMenu({ onLoginClick }: UserMenuProps) {
 
     const handleDeleteAccount = async () => {
         if (!confirm('⚠️ 警告：账号注销后将无法恢复，所有数据将被永久删除！\n\n确定要注销账号吗？')) {
+            return;
+        }
+
+        if (!supabase) {
+            alert('Supabase 未配置，无法注销账号');
             return;
         }
 
@@ -75,7 +79,7 @@ export function UserMenu({ onLoginClick }: UserMenuProps) {
             if (deleteProfileError) {
                 console.warn('删除用户资料失败:', deleteProfileError);
             }
-            
+
             setIsOpen(false);
             signOut();
             alert('账号已成功注销');

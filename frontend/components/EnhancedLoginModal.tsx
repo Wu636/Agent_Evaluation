@@ -22,6 +22,8 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
 
     // 监听登录状态变化，登录成功后自动关闭弹窗
     useEffect(() => {
+        if (!supabase) return;
+
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             if (event === 'SIGNED_IN' && session) {
                 onClose();
@@ -43,6 +45,11 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
     }, [isOpen]);
 
     const handleEmailLogin = async () => {
+        if (!supabase) {
+            setError('Supabase 未配置，请使用游客模式');
+            return;
+        }
+
         if (!email || !password) {
             setError('请填写邮箱和密码');
             return;
@@ -66,6 +73,11 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
     };
 
     const handleEmailRegister = async () => {
+        if (!supabase) {
+            setError('Supabase 未配置，请使用游客模式');
+            return;
+        }
+
         if (!email || !password) {
             setError('请填写邮箱和密码');
             return;
@@ -87,7 +99,7 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
             });
 
             if (error) throw error;
-            
+
             // 显示注册成功消息
             setError('注册成功！请检查邮箱（如果需要验证）');
         } catch (error: any) {
@@ -98,6 +110,11 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
     };
 
     const handleQuickRegister = async () => {
+        if (!supabase) {
+            setError('Supabase 未配置，请使用游客模式');
+            return;
+        }
+
         if (!email || !password) {
             setError('请填写邮箱和密码');
             return;
@@ -109,7 +126,7 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
         try {
             // 生成随机用户名
             const randomUsername = `user_${Math.random().toString(36).substring(2, 9)}`;
-            
+
             // 使用 signUp 但禁用邮箱验证
             const { data, error } = await supabase.auth.signUp({
                 email,
@@ -149,10 +166,10 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
                     console.warn('Failed to set username:', profileError);
                 }
             }
-            
+
             // 显示注册成功消息
             setError('快速注册成功！已自动登录');
-            
+
             // 短暂延迟后关闭模态框
             setTimeout(() => {
                 onClose();
@@ -165,6 +182,11 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
     };
 
     const handleUsernameLogin = async () => {
+        if (!supabase) {
+            setError('Supabase 未配置，请使用游客模式');
+            return;
+        }
+
         if (!username || !password) {
             setError('请填写用户名和密码');
             return;
@@ -236,33 +258,30 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
                 <div className="flex gap-2 mb-6 bg-slate-100 p-1 rounded-lg">
                     <button
                         onClick={() => setLoginMode('email')}
-                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                            loginMode === 'email'
+                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${loginMode === 'email'
                                 ? 'bg-white text-indigo-600 shadow-sm'
                                 : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                            }`}
                     >
                         <Mail className="w-4 h-4 inline mr-1" />
                         邮箱
                     </button>
                     <button
                         onClick={() => setLoginMode('username')}
-                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                            loginMode === 'username'
+                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${loginMode === 'username'
                                 ? 'bg-white text-indigo-600 shadow-sm'
                                 : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                            }`}
                     >
                         <User className="w-4 h-4 inline mr-1" />
                         用户名
                     </button>
                     <button
                         onClick={() => setLoginMode('guest')}
-                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                            loginMode === 'guest'
+                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${loginMode === 'guest'
                                 ? 'bg-white text-indigo-600 shadow-sm'
                                 : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                            }`}
                     >
                         游客模式
                     </button>
@@ -270,11 +289,10 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
 
                 {/* Error Message */}
                 {error && (
-                    <div className={`mb-4 p-3 rounded-lg text-sm ${
-                        error.includes('成功') 
-                            ? 'bg-green-50 text-green-700' 
+                    <div className={`mb-4 p-3 rounded-lg text-sm ${error.includes('成功')
+                            ? 'bg-green-50 text-green-700'
                             : 'bg-red-50 text-red-700'
-                    }`}>
+                        }`}>
                         {error}
                     </div>
                 )}

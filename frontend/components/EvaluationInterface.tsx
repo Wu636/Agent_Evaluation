@@ -1,15 +1,19 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Loader2, History, Settings } from 'lucide-react';
+import { Sparkles, Loader2, History, Settings, ArrowLeft } from 'lucide-react';
 import { FileUpload } from '@/components/FileUpload';
 import { ReportView } from '@/components/ReportView';
 import { SettingsModal } from '@/components/SettingsModal';
 import { HistoryView } from '@/components/HistoryView';
+import { EnhancedLoginModal } from '@/components/EnhancedLoginModal';
+import { UserMenu } from '@/components/UserMenu';
+import { useAuth } from '@/components/AuthProvider';
 import { evaluateFilesStream, EvaluationReport, StreamProgress } from '@/lib/api';
 import { saveToHistory } from '@/lib/client-history';
 import { saveFile, loadFile, clearAllFiles, TEACHER_DOC_ID, DIALOGUE_RECORD_ID } from '@/lib/file-storage';
 import { DIMENSIONS } from '@/lib/config';
+import { supabase } from '@/lib/supabase';
 
 // 添加工作流配置文件 ID
 const WORKFLOW_CONFIG_ID = 'workflow_config';
@@ -20,6 +24,7 @@ interface EvaluationInterfaceProps {
 }
 
 export function EvaluationInterface({ currentView: externalView, onViewChange }: EvaluationInterfaceProps) {
+    const { user, session } = useAuth();
     const [teacherDoc, setTeacherDoc] = useState<File | null>(null);
     const [dialogueRecord, setDialogueRecord] = useState<File | null>(null);
     const [report, setReport] = useState<EvaluationReport | null>(null);
@@ -28,6 +33,7 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
     const [step, setStep] = useState<'upload' | 'processing' | 'results'>('upload');
     const [internalView, setInternalView] = useState<'main' | 'history'>('main');
     const [showSettings, setShowSettings] = useState(false);
+    const [showLoginModal, setShowLoginModal] = useState(false);
     const [currentDimension, setCurrentDimension] = useState<string>('');
 
     // 从 IndexedDB 加载已保存的文件
@@ -350,6 +356,38 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                 console.warn("客户端历史保存失败", e);
             }
 
+            // 如果用户已登录，保存到 Supabase
+            console.log("[Supabase] 检查登录状态:", { hasSession: !!session, hasToken: !!session?.access_token });
+            if (session?.access_token) {
+                try {
+                    const supabaseRes = await fetch("/api/evaluations", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${session.access_token}`
+                        },
+                        body: JSON.stringify({
+                            teacherDocName: tDoc.name,
+                            teacherDocContent: tDoc.content,
+                            dialogueRecordName: dRec.name,
+                            dialogueData: dRec.data,
+                            report: finalReport,
+                            modelUsed: selectedModel
+                        })
+                    });
+                    if (supabaseRes.ok) {
+                        console.log("[Supabase] 评测已保存到云端");
+                    } else {
+                        const errData = await supabaseRes.json();
+                        console.warn("[Supabase] 保存失败:", errData);
+                    }
+                } catch (e) {
+                    console.warn("Supabase 保存失败", e);
+                }
+            } else {
+                console.log("[Supabase] 用户未登录，跳过云端保存");
+            }
+
             setReport(finalReport);
             setStep('results');
         } catch (err: any) {
@@ -406,6 +444,9 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
             {/* Settings Modal */}
             <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
+            {/* Login Modal */}
+            <EnhancedLoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
+
             {/* Action Bar (Only visible in upload step and main view) */}
             {step === 'upload' && (
                 <div className="w-full flex justify-end gap-4 mb-4">
@@ -432,6 +473,18 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                         <Settings className="w-4 h-4" />
                         设置
                     </button>
+
+                    {/* 探索广场 */}
+                    <a
+                        href="/explore"
+                        className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors text-sm font-medium"
+                    >
+                        <Sparkles className="w-4 h-4" />
+                        探索
+                    </a>
+
+                    {/* 用户菜单 */}
+                    <UserMenu onLoginClick={() => setShowLoginModal(true)} />
                 </div>
             )}
 

@@ -263,7 +263,16 @@ export function ReportView({ report, onReset }: ReportViewProps) {
     const highSeverityIssues = allIssues.filter(i => i.severity === 'high');
 
     return (
-        <div className="w-full space-y-8 animate-in slide-in-from-bottom-8 duration-700">
+        <div className="w-full space-y-6 animate-in slide-in-from-bottom-8 duration-700">
+
+            {/* Back Button */}
+            <button
+                onClick={onReset}
+                className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-xl transition-colors font-medium border border-transparent hover:border-slate-200"
+            >
+                <ChevronLeft className="w-4 h-4" />
+                返回继续评估
+            </button>
 
             {/* Header / Score Card */}
             <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden relative">

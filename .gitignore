@@ -29,8 +29,6 @@ venv/
 .env.local
 .env.*.local
 
-# History files
-evaluations_history.json
 
 # IDE
 .vscode/

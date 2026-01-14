@@ -66,6 +66,11 @@ export function HistoryView({ onBack }: HistoryViewProps) {
                 }
             } else {
                 // 正常登录用户：从云端获取
+                if (!session?.access_token) {
+                    console.error('No valid session found');
+                    return;
+                }
+
                 const res = await fetch('/api/evaluations', {
                     headers: {
                         'Authorization': `Bearer ${session.access_token}`

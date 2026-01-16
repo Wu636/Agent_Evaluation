@@ -87,7 +87,7 @@ export async function POST(
         );
 
         const body = await request.json();
-        const { content, parent_comment_id } = body;
+        const { content, parent_comment_id, mentioned_user_ids } = body;
 
         if (!content || content.trim().length === 0) {
             return NextResponse.json({ error: '评论内容不能为空' }, { status: 400 });
@@ -102,7 +102,8 @@ export async function POST(
         const { data: comment, error } = await supabase.rpc('post_comment', {
             p_evaluation_id: evaluationId,
             p_content: content.trim(),
-            p_parent_comment_id: parent_comment_id || null
+            p_parent_comment_id: parent_comment_id || null,
+            p_mentioned_user_ids: mentioned_user_ids || []
         });
 
         if (error) {
@@ -129,6 +130,95 @@ export async function POST(
         return NextResponse.json({ comment }, { status: 201 });
     } catch (error) {
         console.error('创建评论异常:', error);
+        return NextResponse.json({ error: '服务器错误' }, { status: 500 });
+    }
+}
+
+export async function PATCH(
+    request: NextRequest,
+    props: { params: Promise<{ id: string }> }
+) {
+    const start = Date.now();
+    try {
+        const authHeader = request.headers.get('Authorization');
+        if (!authHeader) {
+            return NextResponse.json({ error: '未授权' }, { status: 401 });
+        }
+
+        const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+                global: { headers: { Authorization: authHeader } },
+                auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+            }
+        );
+
+        const body = await request.json();
+        const { comment_id, content } = body;
+
+        if (!comment_id || !content) {
+            return NextResponse.json({ error: '缺少参数' }, { status: 400 });
+        }
+
+        const { data, error } = await supabase.rpc('edit_comment', {
+            p_comment_id: comment_id,
+            p_content: content
+        });
+
+        if (error) {
+            console.error('RPC edit_comment failed:', error);
+            return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        console.log(`PATCH Comment (RPC) took ${Date.now() - start}ms`);
+        return NextResponse.json({ comment: data });
+    } catch (error) {
+        console.error('更新评论异常:', error);
+        return NextResponse.json({ error: '服务器错误' }, { status: 500 });
+    }
+}
+
+export async function DELETE(
+    request: NextRequest,
+    props: { params: Promise<{ id: string }> }
+) {
+    const start = Date.now();
+    try {
+        const authHeader = request.headers.get('Authorization');
+        if (!authHeader) {
+            return NextResponse.json({ error: '未授权' }, { status: 401 });
+        }
+
+        const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+                global: { headers: { Authorization: authHeader } },
+                auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+            }
+        );
+
+        const { searchParams } = new URL(request.url);
+        const comment_id = searchParams.get('comment_id');
+
+        if (!comment_id) {
+            return NextResponse.json({ error: '缺少 comment_id 参数' }, { status: 400 });
+        }
+
+        const { error } = await supabase.rpc('delete_comment', {
+            p_comment_id: comment_id
+        });
+
+        if (error) {
+            console.error('RPC delete_comment failed:', error);
+            return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        console.log(`DELETE Comment (RPC) took ${Date.now() - start}ms`);
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        console.error('删除评论异常:', error);
         return NextResponse.json({ error: '服务器错误' }, { status: 500 });
     }
 }

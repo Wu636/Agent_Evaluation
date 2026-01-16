@@ -39,8 +39,25 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "缺少必需的文件" }, { status: 400 });
         }
 
-        // 1. 解析教师文档
+        // 1. 解析教师文档 (混合输入)
+        // teacherDoc 是必需的 (主文档)
         const teacherDocInfo = await readFileInfo(teacherDoc);
+        let teacherDocName = teacherDocInfo.name;
+        let teacherDocContent = teacherDocInfo.content as string;
+
+        // 处理参考文档 (Reference Doc - 可选)
+        const referenceDocFile = formData.get("reference_doc") as File;
+        if (referenceDocFile) {
+            try {
+                const refDocInfo = await readFileInfo(referenceDocFile);
+                teacherDocContent += "\n\n【参考文档 / 补充资料】\n" + refDocInfo.content;
+                teacherDocName = `${teacherDocName} + ${refDocInfo.name}`;
+            } catch (e) {
+                console.error("参考文档解析失败:", e);
+                // 参考文档解析失败不阻断主流程，但可以在响应中提示? 
+                // 这里选择简单记录日志，尽量返回主文档内容
+            }
+        }
 
         // 2. 解析对话记录
         const dialogueBytes = await dialogueRecord.arrayBuffer();
@@ -66,8 +83,8 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
             teacherDoc: {
-                name: teacherDocInfo.name,
-                content: teacherDocInfo.content
+                name: teacherDocName,
+                content: teacherDocContent
             },
             dialogueRecord: {
                 name: dialogueRecord.name,

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { User, LogOut, ChevronDown } from 'lucide-react';
 import { useAuth } from './AuthProvider';
+import { NotificationBell } from './NotificationBell';
 
 interface UserMenuProps {
     onLoginClick: () => void;
@@ -32,16 +33,19 @@ export function UserMenu({ onLoginClick }: UserMenuProps) {
 
     if (!user || isGuest) {
         return (
-            <button
-                onClick={onLoginClick}
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${isGuest
-                    ? 'text-slate-700 bg-slate-200 hover:bg-slate-300'
-                    : 'text-white bg-indigo-600 hover:bg-indigo-700'
-                    }`}
-            >
-                <User className="w-4 h-4" />
-                {isGuest ? '游客模式' : '登录'}
-            </button>
+            <div className="flex items-center gap-4">
+                {isGuest && <NotificationBell />}
+                <button
+                    onClick={onLoginClick}
+                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${isGuest
+                        ? 'text-slate-700 bg-slate-200 hover:bg-slate-300'
+                        : 'text-white bg-indigo-600 hover:bg-indigo-700'
+                        }`}
+                >
+                    <User className="w-4 h-4" />
+                    {isGuest ? '游客模式' : '登录'}
+                </button>
+            </div>
         );
     }
 
@@ -49,48 +53,51 @@ export function UserMenu({ onLoginClick }: UserMenuProps) {
     const displayName = user.user_metadata?.name || user.email?.split('@')[0] || '用户';
 
     return (
-        <div className="relative" ref={menuRef}>
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors"
-            >
-                {avatarUrl ? (
-                    <img
-                        src={avatarUrl}
-                        alt={displayName}
-                        className="w-7 h-7 rounded-full object-cover"
-                    />
-                ) : (
-                    <div className="w-7 h-7 rounded-full bg-indigo-500 flex items-center justify-center text-white text-sm font-medium">
-                        {displayName[0].toUpperCase()}
+        <div className="flex items-center gap-4">
+            <NotificationBell />
+            <div className="relative" ref={menuRef}>
+                <button
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors"
+                >
+                    {avatarUrl ? (
+                        <img
+                            src={avatarUrl}
+                            alt={displayName}
+                            className="w-7 h-7 rounded-full object-cover"
+                        />
+                    ) : (
+                        <div className="w-7 h-7 rounded-full bg-indigo-500 flex items-center justify-center text-white text-sm font-medium">
+                            {displayName[0].toUpperCase()}
+                        </div>
+                    )}
+                    <span className="text-sm font-medium text-slate-700 max-w-[100px] truncate">
+                        {displayName}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Dropdown Menu */}
+                {isOpen && (
+                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-100 py-2 animate-in fade-in slide-in-from-top-2 duration-150 z-50">
+                        <div className="px-4 py-2 border-b border-slate-100">
+                            <p className="text-sm font-medium text-slate-900 truncate">{displayName}</p>
+                            <p className="text-xs text-slate-500 truncate">{user.email}</p>
+                        </div>
+
+                        <button
+                            onClick={() => {
+                                setIsOpen(false);
+                                signOut();
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                            <LogOut className="w-4 h-4 text-slate-400" />
+                            退出登录
+                        </button>
                     </div>
                 )}
-                <span className="text-sm font-medium text-slate-700 max-w-[100px] truncate">
-                    {displayName}
-                </span>
-                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {/* Dropdown Menu */}
-            {isOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-100 py-2 animate-in fade-in slide-in-from-top-2 duration-150 z-50">
-                    <div className="px-4 py-2 border-b border-slate-100">
-                        <p className="text-sm font-medium text-slate-900 truncate">{displayName}</p>
-                        <p className="text-xs text-slate-500 truncate">{user.email}</p>
-                    </div>
-
-                    <button
-                        onClick={() => {
-                            setIsOpen(false);
-                            signOut();
-                        }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-                    >
-                        <LogOut className="w-4 h-4 text-slate-400" />
-                        退出登录
-                    </button>
-                </div>
-            )}
+            </div>
         </div>
     );
 }

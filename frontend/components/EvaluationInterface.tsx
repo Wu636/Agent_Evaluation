@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Loader2, History, Settings, ArrowLeft } from 'lucide-react';
+import { Sparkles, Loader2, History, Settings, ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react';
 import { FileUpload } from '@/components/FileUpload';
 import { ReportView } from '@/components/ReportView';
 import { SettingsModal } from '@/components/SettingsModal';
@@ -26,6 +26,8 @@ interface EvaluationInterfaceProps {
 export function EvaluationInterface({ currentView: externalView, onViewChange }: EvaluationInterfaceProps) {
     const { user, session } = useAuth();
     const [teacherDoc, setTeacherDoc] = useState<File | null>(null);
+    const [referenceDoc, setReferenceDoc] = useState<File | null>(null);
+    const [isRefDocExpanded, setIsRefDocExpanded] = useState(false);
     const [dialogueRecord, setDialogueRecord] = useState<File | null>(null);
     const [report, setReport] = useState<EvaluationReport | null>(null);
     const [loading, setLoading] = useState(false);
@@ -90,6 +92,9 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
             setCurrentDimension("正在解析文档...");
             const formData = new FormData();
             formData.append("teacher_doc", teacherDoc);
+            if (referenceDoc) {
+                formData.append("reference_doc", referenceDoc);
+            }
             formData.append("dialogue_record", dialogueRecord);
 
             const parseRes = await fetch("/api/evaluate/parse", {
@@ -416,9 +421,9 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
         setCurrentDimension('');  // 清空当前维度显示
     };
 
-    // 清空所有文件（用户主动清空时调用）
     const handleClearFiles = async () => {
         setTeacherDoc(null);
+        setReferenceDoc(null);
         setDialogueRecord(null);
         setReport(null);
         setStep('upload');
@@ -546,14 +551,61 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                             <div className="space-y-6">
                                 <div>
                                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 ml-1">教师指导文档</h4>
-                                    <FileUpload
-                                        label="上传教师手册"
-                                        accept=".doc,.docx,.md"
-                                        description="上传 .doc, .docx 或 .md 格式的指导文档"
-                                        onChange={handleTeacherDocChange}
-                                        currentFile={teacherDoc}
-                                        stepNumber={1}
-                                    />
+
+                                    {/* Teacher Doc (Primary) */}
+                                    <div className="mb-4">
+                                        <FileUpload
+                                            label="上传教师手册"
+                                            accept=".doc,.docx,.md"
+                                            description="上传或直接粘贴教师指导文档内容"
+                                            onChange={handleTeacherDocChange}
+                                            currentFile={teacherDoc}
+                                            stepNumber={1}
+                                        />
+                                    </div>
+
+                                    {/* Reference File (Optional - Collapsible) */}
+                                    <div className="rounded-xl overflow-hidden transition-all duration-300">
+                                        <button
+                                            onClick={() => setIsRefDocExpanded(!isRefDocExpanded)}
+                                            className={`w-full flex items-center justify-between p-4 transition-all duration-300 group ${isRefDocExpanded
+                                                ? 'bg-slate-50 border-b border-slate-100 rounded-t-xl'
+                                                : 'bg-white border border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/10 rounded-xl'
+                                                }`}
+                                        >
+                                            <div className="flex items-center gap-3 text-sm">
+                                                <div className={`p-1 rounded-md transition-colors ${isRefDocExpanded ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-50 group-hover:text-indigo-500'}`}>
+                                                    {isRefDocExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                                </div>
+                                                <span className={`font-medium transition-colors ${isRefDocExpanded ? 'text-slate-900' : 'text-slate-500 group-hover:text-indigo-600'}`}>
+                                                    参考文档 (可选)
+                                                </span>
+                                            </div>
+                                            {referenceDoc && !isRefDocExpanded && (
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-slate-500 max-w-[150px] truncate">
+                                                        {referenceDoc.name}
+                                                    </span>
+                                                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">
+                                                        已就绪
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </button>
+
+                                        {isRefDocExpanded && (
+                                            <div className="p-4 bg-white border-x border-b border-slate-100 rounded-b-xl animate-in fade-in slide-in-from-top-1 duration-200">
+                                                <FileUpload
+                                                    label="上传参考资料"
+                                                    accept=".doc,.docx,.md,.txt,.pdf"
+                                                    description="上传额外的参考文档或能力训练资料"
+                                                    onChange={(file) => setReferenceDoc(file)}
+                                                    currentFile={referenceDoc}
+                                                    stepNumber={0} // 0 means no number badge
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
                                 <div className="flex items-center justify-center">

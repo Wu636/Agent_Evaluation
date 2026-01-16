@@ -14,6 +14,7 @@ import { saveToHistory } from '@/lib/client-history';
 import { saveFile, loadFile, clearAllFiles, TEACHER_DOC_ID, DIALOGUE_RECORD_ID } from '@/lib/file-storage';
 import { DIMENSIONS } from '@/lib/config';
 import { supabase } from '@/lib/supabase';
+import { EvaluationTemplate, DEFAULT_DIMENSIONS, getEnabledSubDimensions, calculateTotalScore } from '@/lib/templates';
 
 // 添加工作流配置文件 ID
 const WORKFLOW_CONFIG_ID = 'workflow_config';
@@ -37,6 +38,31 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
     const [showSettings, setShowSettings] = useState(false);
     const [showLoginModal, setShowLoginModal] = useState(false);
     const [currentDimension, setCurrentDimension] = useState<string>('');
+    const [templates, setTemplates] = useState<EvaluationTemplate[]>([]);
+    const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+
+    // 加载模板列表
+    useEffect(() => {
+        const fetchTemplates = async () => {
+            try {
+                const res = await fetch('/api/templates');
+                const data = await res.json();
+                if (data.templates && data.templates.length > 0) {
+                    setTemplates(data.templates);
+                    // 自动选中系统默认模板
+                    const defaultTemplate = data.templates.find((t: any) => t.is_default);
+                    if (defaultTemplate) {
+                        setSelectedTemplateId(defaultTemplate.id);
+                    } else {
+                        setSelectedTemplateId(data.templates[0].id);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to fetch templates:', error);
+            }
+        };
+        fetchTemplates();
+    }, []);
 
     // 从 IndexedDB 加载已保存的文件
     useEffect(() => {
@@ -107,19 +133,37 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
             const { teacherDoc: tDoc, dialogueRecord: dRec, workflowConfig: wCfg } = await parseRes.json();
 
             // 2. 准备评测任务
-            const tasks: Array<{ dimKey: string, subKey: string, dimName: string, subName: string }> = [];
+            const tasks: Array<{ dimKey: string, subKey: string, dimName: string, subName: string, fullScore: number }> = [];
             let totalSubDimensions = 0;
 
-            Object.entries(DIMENSIONS).forEach(([dKey, dConfig]) => {
-                dConfig.subDimensions.forEach(sub => {
+            // 获取选中的模板或使用默认配置
+            // 注意: 如果没有选中模板，使用 DEFAULT_DIMENSIONS 构造一个临时的模板对象结构
+            let currentTemplateDimensions = DEFAULT_DIMENSIONS;
+            if (selectedTemplateId) {
+                const selected = templates.find(t => t.id === selectedTemplateId);
+                if (selected) {
+                    currentTemplateDimensions = selected.dimensions;
+                }
+            }
+
+            // 使用帮助函数获取所有启用的子维度
+            const enabledSubs = getEnabledSubDimensions(currentTemplateDimensions);
+
+            enabledSubs.forEach(sub => {
+                // 从静态配置中获取显示名称 (因为 Template JSON 中不存储名称)
+                const dimConfig = DIMENSIONS[sub.dimension];
+                const subDimConfig = dimConfig?.subDimensions.find(s => s.key === sub.subDimension);
+
+                if (dimConfig && subDimConfig) {
                     tasks.push({
-                        dimKey: dKey,
-                        subKey: sub.key,
-                        dimName: dConfig.name,
-                        subName: sub.name
+                        dimKey: sub.dimension,
+                        subKey: sub.subDimension,
+                        dimName: dimConfig.name,
+                        subName: subDimConfig.name,
+                        fullScore: sub.fullScore
                     });
                     totalSubDimensions++;
-                });
+                }
             });
 
             // 3. 并发评测 - 使用动态并发池优化性能
@@ -144,6 +188,7 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                             body: JSON.stringify({
                                 dimensionKey: task.dimKey,
                                 subDimensionKey: task.subKey,
+                                fullScore: task.fullScore, // 传递自定义满分
                                 teacherDocContent: tDoc.content,
                                 dialogueData: dRec.data,
                                 workflowConfigContent: wCfg?.content,
@@ -255,8 +300,16 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
 
             // 4. 聚合结果
             const dimensionScores = Object.entries(DIMENSIONS).map(([dKey, dConfig]) => {
+                // 检查该维度在当前模板中是否启用
+                const templateDim = currentTemplateDimensions[dKey];
+                if (!templateDim || !templateDim.enabled) return null;
+
                 const subScores: any[] = [];
                 dConfig.subDimensions.forEach(sub => {
+                    // 检查子维度是否启用
+                    const templateSub = templateDim.subDimensions[sub.key];
+                    if (!templateSub || !templateSub.enabled) return;
+
                     const res = results.get(`${dKey}-${sub.key}`);
                     if (res) subScores.push(res);
                 });
@@ -273,23 +326,33 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                 else if (totalScore >= dConfig.fullScore * 0.75) level = "良好";
                 else if (totalScore < dConfig.fullScore * 0.6) level = "不合格";
 
+                // 根据模板中的满分计算 (其实 subScores 里的 score 已经是根据自定义满分打的了)
+                // 这里我们要使用模板里定义的该维度的总权重(如果有)或者直接求和
+                // 目前模板结构里: dimension 有 weight 和 fullScore (但 fullScore 需要从 subDimensions 累加)
+
+                // templateDim.subDimensions has the scores configuration
+                const currentFullScore = calculateTotalScore({ [dKey]: templateDim });
+
                 return {
                     dimension: dConfig.name,
                     score: totalScore,
-                    full_score: dConfig.fullScore,
-                    weight: dConfig.weight,
+                    full_score: currentFullScore,
+                    weight: dConfig.weight, // 暂时沿用静态配置的权重，如果模板支持自定义权重则需修改
                     level,
                     analysis,
                     sub_scores: subScores,
                     isVeto: dConfig.isVeto && dConfig.vetoThreshold !== undefined && totalScore < dConfig.vetoThreshold,
                     weighted_score: totalScore
                 };
-            });
+            }).filter((d): d is NonNullable<typeof d> => d !== null);
 
             // 计算总分
             const finalTotalScore = dimensionScores.reduce((sum, d) => sum + d.weighted_score, 0);
 
-            // 确定否决和评级
+            // 计算总满分
+            const totalPossibleScore = dimensionScores.reduce((sum, d) => sum + d.full_score, 0);
+
+            // 确定否决和评级 (基于百分比)
             const vetoReasons: string[] = [];
             dimensionScores.forEach(d => {
                 if (d.isVeto) vetoReasons.push(`${d.dimension}得分低于阈值`);
@@ -297,16 +360,17 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
 
             let finalLevel = "不合格";
             let passCriteriaMet = false;
+            const scoreRatio = totalPossibleScore > 0 ? finalTotalScore / totalPossibleScore : 0;
 
             if (vetoReasons.length > 0) {
                 finalLevel = "一票否决";
-            } else if (finalTotalScore >= 90) {
+            } else if (scoreRatio >= 0.9) {
                 finalLevel = "优秀";
                 passCriteriaMet = true;
-            } else if (finalTotalScore >= 75) {
+            } else if (scoreRatio >= 0.75) {
                 finalLevel = "良好";
                 passCriteriaMet = true;
-            } else if (finalTotalScore >= 60) {
+            } else if (scoreRatio >= 0.6) {
                 finalLevel = "合格";
                 passCriteriaMet = true;
             }
@@ -470,6 +534,7 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                             onClick={handleClearFiles}
                             className="flex items-center gap-2 px-4 py-2 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium"
                         >
+                            <span className="text-xl">×</span>
                             清空文件
                         </button>
                     )}
@@ -487,18 +552,6 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                         <Settings className="w-4 h-4" />
                         设置
                     </button>
-
-                    {/* 探索广场 */}
-                    <a
-                        href="/explore"
-                        className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors text-sm font-medium"
-                    >
-                        <Sparkles className="w-4 h-4" />
-                        探索
-                    </a>
-
-                    {/* 用户菜单 */}
-                    <UserMenu onLoginClick={() => setShowLoginModal(true)} />
                 </div>
             )}
 
@@ -623,6 +676,22 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                                         currentFile={dialogueRecord}
                                         stepNumber={2}
                                     />
+                                </div>
+
+                                {/* Template Selector */}
+                                <div>
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1">评测模板</h4>
+                                    <select
+                                        value={selectedTemplateId}
+                                        onChange={(e) => setSelectedTemplateId(e.target.value)}
+                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer hover:border-indigo-300"
+                                    >
+                                        {templates.map(t => (
+                                            <option key={t.id} value={t.id}>
+                                                {t.name}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
 

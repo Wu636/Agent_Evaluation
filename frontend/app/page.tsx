@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { PortfolioNavbar } from "@/components/PortfolioNavbar"
 import { EvaluationInterface } from "@/components/EvaluationInterface"
 
 export default function Page() {
@@ -9,11 +8,7 @@ export default function Page() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <PortfolioNavbar
-        currentView={currentView}
-        onNavigate={setCurrentView}
-      />
-      <main className="flex-1 pt-20">
+      <main className="flex-1">
         <EvaluationInterface
           currentView={currentView}
           onViewChange={setCurrentView}

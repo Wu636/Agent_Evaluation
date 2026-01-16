@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { User, LogOut, ChevronDown } from 'lucide-react';
+import { User, LogOut, ChevronDown, Settings } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import { NotificationBell } from './NotificationBell';
+import { ProfileSettingsModal } from './ProfileSettingsModal';
 
 interface UserMenuProps {
     onLoginClick: () => void;
@@ -12,7 +13,23 @@ interface UserMenuProps {
 export function UserMenu({ onLoginClick }: UserMenuProps) {
     const { user, loading, signOut, isGuest } = useAuth();
     const [isOpen, setIsOpen] = useState(false);
+    const [showProfileSettings, setShowProfileSettings] = useState(false);
+    const [profileName, setProfileName] = useState<string | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
+
+    // Fetch profile name from database
+    useEffect(() => {
+        if (user && !isGuest) {
+            fetch('/api/profile')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.profile?.name) {
+                        setProfileName(data.profile.name);
+                    }
+                })
+                .catch(err => console.error('Failed to load profile name:', err));
+        }
+    }, [user, isGuest]);
 
     // 点击外部关闭菜单
     useEffect(() => {
@@ -50,7 +67,7 @@ export function UserMenu({ onLoginClick }: UserMenuProps) {
     }
 
     const avatarUrl = user.user_metadata?.avatar_url;
-    const displayName = user.user_metadata?.name || user.email?.split('@')[0] || '用户';
+    const displayName = profileName || user.user_metadata?.name || user.email?.split('@')[0] || '用用户';
 
     return (
         <div className="flex items-center gap-4">
@@ -88,6 +105,17 @@ export function UserMenu({ onLoginClick }: UserMenuProps) {
                         <button
                             onClick={() => {
                                 setIsOpen(false);
+                                setShowProfileSettings(true);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                            <Settings className="w-4 h-4 text-slate-400" />
+                            个人资料
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                setIsOpen(false);
                                 signOut();
                             }}
                             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
@@ -98,6 +126,12 @@ export function UserMenu({ onLoginClick }: UserMenuProps) {
                     </div>
                 )}
             </div>
+
+            {/* Profile Settings Modal */}
+            <ProfileSettingsModal
+                isOpen={showProfileSettings}
+                onClose={() => setShowProfileSettings(false)}
+            />
         </div>
     );
 }

@@ -254,6 +254,9 @@ export function ReportView({ report, onReset, isPublic = false }: ReportViewProp
             weighted_score: value.score
         }));
 
+    // Calculate dynamic full score
+    const totalFullScore = dimensionsList.reduce((sum, dim) => sum + dim.full_score, 0);
+
     const radarData = dimensionsList.map((dim) => ({
         subject: dim.dimension,
         A: (dim.score / dim.full_score) * 100, // 转换为百分比用于雷达图
@@ -303,10 +306,10 @@ export function ReportView({ report, onReset, isPublic = false }: ReportViewProp
                                 {report.total_score.toFixed(0)}
                             </span>
                             <div className="flex flex-col items-start">
-                                <span className={clsx("px-3 py-1 rounded-full text-sm font-bold border", getScoreColor(report.total_score, 100))}>
-                                    {getScoreLabel(report.total_score, 100)}
+                                <span className={clsx("px-3 py-1 rounded-full text-sm font-bold border", getScoreColor(report.total_score, totalFullScore))}>
+                                    {getScoreLabel(report.total_score, totalFullScore)}
                                 </span>
-                                <span className="text-slate-400 text-sm font-medium mt-1">/ 100 分</span>
+                                <span className="text-slate-400 text-sm font-medium mt-1">/ {totalFullScore} 分</span>
                             </div>
                         </div>
                         {report.veto_reasons && report.veto_reasons.length > 0 && (
@@ -590,14 +593,7 @@ export function ReportView({ report, onReset, isPublic = false }: ReportViewProp
                             </div>
                         </div>
 
-                        {/* 评分标准说明 */}
-                        <div className="bg-blue-50/50 rounded-2xl p-5 border border-blue-100 text-sm text-blue-800 leading-relaxed">
-                            <h4 className="font-bold flex items-center gap-2 mb-2">
-                                <Sparkles className="w-4 h-4" />
-                                关于新版评分标准
-                            </h4>
-                            <p>本次评测采用分数段限定版标准，包含5个一级维度和21个二级维度。</p>
-                        </div>
+
 
                         {/* Action Buttons */}
 

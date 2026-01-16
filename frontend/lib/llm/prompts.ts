@@ -1554,6 +1554,34 @@ export function buildSubDimensionPrompt(
 }
 
 /**
+ * 构建动态子维度评测的提示词 (支持自定义满分)
+ */
+export function buildDynamicPrompt(
+  dimensionKey: string,
+  subDimensionKey: string,
+  fullScore: number,
+  context: PromptContext
+): string {
+  const basePrompt = buildSubDimensionPrompt(dimensionKey, subDimensionKey, context);
+
+  // 如果满分不是默认值，需要替换提示词中的分数标准
+  // 这里做一个简单的正则替换，将 "满分: X分" 替换为 "满分: {fullScore}分"
+  // 并尝试调整分数段描述（这比较复杂，目前的简单方案是仅替换总分说明，
+  // LLM 会尝试根据总分调整，但为了更准确，最好后续让 LLM 重新生成分数段表格）
+
+  // 简单替换方案:
+  let dynamicPrompt = basePrompt.replace(/满分: \d+分/g, `满分: ${fullScore}分`);
+
+  // 替换 JSON 输出示例中的 full_score
+  dynamicPrompt = dynamicPrompt.replace(/"full_score": \d+,/g, `"full_score": ${fullScore},`);
+
+  // TODO: 更高级的方案是根据比例重写分数段表格，但这需要更复杂的逻辑
+  // 目前依靠 LLM 的理解能力，它看到满分变了，通常会按比例打分
+
+  return dynamicPrompt;
+}
+
+/**
  * 获取所有子维度的键名列表
  */
 export function getAllSubDimensions(): Record<string, string[]> {

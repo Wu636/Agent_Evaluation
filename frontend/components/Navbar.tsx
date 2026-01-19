@@ -21,7 +21,13 @@ export function Navbar() {
                     </Link>
 
                     <nav className="hidden md:flex items-center gap-1">
-                        <NavLink href="/" icon={<Sparkles className="w-4 h-4" />}>评测</NavLink>
+                        <button
+                            onClick={() => { window.location.href = '/'; }}
+                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors"
+                        >
+                            <Sparkles className="w-4 h-4" />
+                            <span>评测</span>
+                        </button>
                         <NavLink href="/templates" icon={<FileText className="w-4 h-4" />}>模板库</NavLink>
                         <NavLink href="/explore" icon={<History className="w-4 h-4" />}>探索</NavLink>
                     </nav>

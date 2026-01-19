@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, Loader2, History, Settings, ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react';
 import { FileUpload } from '@/components/FileUpload';
 import { ReportView } from '@/components/ReportView';
@@ -40,6 +40,11 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
     const [currentDimension, setCurrentDimension] = useState<string>('');
     const [templates, setTemplates] = useState<EvaluationTemplate[]>([]);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+
+    // 用于取消进行中的评估
+    const abortControllerRef = useRef<AbortController | null>(null);
+    // 用于标识当前评估会话，避免旧回调影响新评估
+    const evaluationSessionRef = useRef<number>(0);
 
     // 加载模板列表
     useEffect(() => {
@@ -102,6 +107,13 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
     const handleStartEvaluation = async () => {
         if (!teacherDoc || !dialogueRecord) return;
 
+        // 取消之前的评估（如果有）
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
+        const currentSession = ++evaluationSessionRef.current;
+
         setStep('processing');
         setLoading(true);
         setError(null);
@@ -112,7 +124,7 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
             // Load API config from localStorage
             const savedSettings = localStorage.getItem('llm-eval-settings');
             const apiConfig = savedSettings ? JSON.parse(savedSettings) : {};
-            const selectedModel = apiConfig.model || 'gpt-4o';
+            const selectedModel = apiConfig.model || 'claude-sonnet-4.5';
 
             // 1. 调用解析 API
             setCurrentDimension("正在解析文档...");
@@ -172,6 +184,9 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
             let completed = 0;
 
             const executeTask = async (task: typeof tasks[0]) => {
+                // 检查当前会话是否仍然有效
+                const isCurrentSession = () => evaluationSessionRef.current === currentSession;
+
                 const MAX_RETRIES = 2;
                 let success = false;
 
@@ -185,6 +200,7 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                         const res = await fetch("/api/evaluate/dimension", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
+                            signal: abortControllerRef.current?.signal,
                             body: JSON.stringify({
                                 dimensionKey: task.dimKey,
                                 subDimensionKey: task.subKey,
@@ -256,6 +272,10 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                             break;
                         }
                     } catch (e) {
+                        // 如果是用户主动取消，静默退出
+                        if (e instanceof Error && e.name === 'AbortError') {
+                            return;
+                        }
                         if (attempt === MAX_RETRIES) {
                             console.error(`请求异常: ${task.subName}`, e);
                         }
@@ -263,9 +283,12 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                 }
 
                 completed++;
-                const pct = (completed / totalSubDimensions) * 100;
-                setProgress(pct);
-                setCurrentDimension(`${task.dimName} - ${task.subName} (${completed}/${totalSubDimensions})`);
+                // 只有当前会话有效时才更新进度
+                if (isCurrentSession()) {
+                    const pct = (completed / totalSubDimensions) * 100;
+                    setProgress(pct);
+                    setCurrentDimension(`${task.dimName} - ${task.subName} (${completed}/${totalSubDimensions})`);
+                }
             };
 
             // 手动实现动态并发控制 (Promise Pool)
@@ -295,6 +318,12 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
 
             // 等待剩余的任务完成
             await Promise.all(executing);
+
+            // 检查会话是否仍然有效，如果用户已取消则退出
+            if (evaluationSessionRef.current !== currentSession) {
+                console.log('[Evaluation] Session cancelled, aborting report generation');
+                return;
+            }
 
             setCurrentDimension("正在生成最终报告...");
 
@@ -404,6 +433,12 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                 dialogue_doc_content: JSON.stringify(dRec.data, null, 2)
             };
 
+            // 再次检查会话有效性（在保存历史前）
+            if (evaluationSessionRef.current !== currentSession) {
+                console.log('[Evaluation] Session cancelled before saving history');
+                return;
+            }
+
             // 5. 保存历史
             try {
                 const saveRes = await fetch("/api/evaluate/history", {
@@ -463,6 +498,12 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                 console.log("[Supabase] 用户未登录，跳过云端保存");
             }
 
+            // 最终检查会话有效性（在设置结果前）
+            if (evaluationSessionRef.current !== currentSession) {
+                console.log('[Evaluation] Session cancelled before showing results');
+                return;
+            }
+
             setReport(finalReport);
             setStep('results');
         } catch (err: any) {
@@ -476,6 +517,14 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
 
     // 返回到上传界面（保留文件）
     const handleReset = () => {
+        // 取消所有进行中的 API 请求
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
+        // 递增会话 ID，使旧回调失效
+        evaluationSessionRef.current += 1;
+
         // 不清空文件，让用户可以用不同模型测试相同文件
         setReport(null);
         setStep('upload');

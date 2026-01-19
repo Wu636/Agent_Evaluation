@@ -12,7 +12,7 @@ interface SettingsModalProps {
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const [apiKey, setApiKey] = useState('');
     const [apiUrl, setApiUrl] = useState('http://llm-service.polymas.com/api/openai/v1/chat/completions');
-    const [model, setModel] = useState('gpt-4o');
+    const [model, setModel] = useState('claude-sonnet-4.5');
     const [models, setModels] = useState<ModelInfo[]>([]);
 
     // Load settings from localStorage on mount
@@ -22,7 +22,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             const settings = JSON.parse(saved);
             setApiKey(settings.apiKey || '');
             setApiUrl(settings.apiUrl || 'http://llm-service.polymas.com/api/openai/v1/chat/completions');
-            setModel(settings.model || 'gpt-4o');
+            setModel(settings.model || 'claude-sonnet-4.5');
         }
 
         // Fetch available models
@@ -115,7 +115,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                     </option>
                                 ))
                             ) : (
-                                <option value="gpt-4o">GPT-4o - Most capable</option>
+                                <option value="claude-sonnet-4.5">Claude Sonnet 4.5 - Newest Sonnet</option>
                             )}
                         </select>
                     </div>

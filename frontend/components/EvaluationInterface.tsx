@@ -140,7 +140,22 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                 body: formData
             });
 
-            if (!parseRes.ok) throw new Error("文件解析失败");
+            if (!parseRes.ok) {
+                let errorMessage = "文件解析失败";
+                try {
+                    const errorData = await parseRes.json();
+                    if (errorData.error) {
+                        errorMessage = errorData.error;
+                        // 移除即使是用户友好的错误前缀，保持界面整洁
+                        if (errorMessage.startsWith('DOCX_CONTAINS_IMAGES:')) {
+                            errorMessage = errorMessage.replace('DOCX_CONTAINS_IMAGES: ', '');
+                        }
+                    }
+                } catch (e) {
+                    console.error("Failed to parse error response", e);
+                }
+                throw new Error(errorMessage);
+            }
 
             const { teacherDoc: tDoc, dialogueRecord: dRec, workflowConfig: wCfg } = await parseRes.json();
 

@@ -7,7 +7,7 @@ import { NextRequest } from "next/server";
 import { parseTxtDialogue } from "@/lib/txt-converter";
 import { convertDocxToMarkdown } from "@/lib/converters/docx-converter";
 import { DIMENSIONS, MODEL_NAME_MAPPING } from "@/lib/config";
-import { buildSubDimensionPrompt } from "@/lib/llm/prompts";
+import { buildSubDimensionPrompt, STANDARD_SCORES } from "@/lib/llm/prompts";
 import { formatDialogueForLLM, parseLLMResponse, callLLM } from "@/lib/llm/utils";
 import { saveEvaluation } from "@/lib/history-manager";
 import type {
@@ -60,6 +60,16 @@ export async function POST(request: NextRequest) {
 
                 // 读取文件
                 const teacherDocInfo = await readFileInfo(teacherDoc);
+
+                // 安全检查：记录文本长度，过长时截断以防止 API 超限
+                const MAX_TEACHER_DOC_LENGTH = 50000; // 约 50k 字符
+                let teacherDocContent = teacherDocInfo.content as string;
+                if (teacherDocContent.length > MAX_TEACHER_DOC_LENGTH) {
+                    console.warn(`[警告] 教师文档过长 (${teacherDocContent.length} 字符), 截断到 ${MAX_TEACHER_DOC_LENGTH} 字符`);
+                    teacherDocContent = teacherDocContent.substring(0, MAX_TEACHER_DOC_LENGTH) + "\n\n[...内容过长已截断...]";
+                    teacherDocInfo.content = teacherDocContent;
+                }
+                console.log(`[INFO] 教师文档长度: ${teacherDocContent.length} 字符`);
 
                 const dialogueBytes = await dialogueRecord.arrayBuffer();
                 const dialogueBuffer = Buffer.from(dialogueBytes);
@@ -142,7 +152,7 @@ export async function POST(request: NextRequest) {
                     // 并行执行当前批次
                     await Promise.all(batch.map(async (task) => {
                         try {
-                            // 构造提示词
+                            // 构造提示词 (不传 fullScore，后处理缩放)
                             const prompt = buildSubDimensionPrompt(
                                 task.dimConfig.name,
                                 task.subDim.name,
@@ -175,10 +185,17 @@ export async function POST(request: NextRequest) {
                                     highlights: []
                                 });
                             } else {
+                                // 后处理：数学缩放得分
+                                // LLM按标准分评分，我们按比例换算到用户自定义满分
+                                const standardScore = STANDARD_SCORES[task.subDim.name] || 10;
+                                const userFullScore = task.subDim.fullScore;
+                                const scaleRatio = userFullScore / standardScore;
+                                const scaledScore = Math.round(result.score * scaleRatio * 10) / 10; // 保留1位小数
+
                                 results.set(`${task.dimKey}-${task.subDim.key}`, {
                                     sub_dimension: task.subDim.name,
-                                    score: result.score,
-                                    full_score: task.subDim.fullScore,
+                                    score: scaledScore,
+                                    full_score: userFullScore,
                                     rating: result.rating || "未知",
                                     score_range: result.score_range || "",
                                     judgment_basis: result.judgment_basis || "",

@@ -234,17 +234,12 @@ export function TemplateEditor({ initialTemplate, onSave, onCancel }: TemplateEd
                                                 </div>
 
                                                 <div className="flex items-center gap-4">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-xs text-slate-400">满分值</span>
-                                                        <input
-                                                            type="number"
-                                                            min="1"
-                                                            max="20"
-                                                            value={subConfig.fullScore}
-                                                            onChange={(e) => handleScoreChange(dimKey, subKey, parseInt(e.target.value) || 0)}
-                                                            disabled={!subConfig.enabled}
-                                                            className="w-16 px-2 py-1 text-center text-sm border border-slate-200 rounded-md disabled:bg-slate-100"
-                                                        />
+                                                    {/* 分值显示 (已锁定，不可修改) */}
+                                                    <div className="flex items-center gap-2" title="子维度分值固定，暂不支持自定义修改">
+                                                        <span className="text-xs text-slate-400">分值</span>
+                                                        <span className="w-16 px-2 py-1 text-center text-sm bg-slate-100 text-slate-600 border border-slate-200 rounded-md cursor-not-allowed">
+                                                            {subConfig.fullScore}
+                                                        </span>
                                                     </div>
                                                 </div>
                                             </div>

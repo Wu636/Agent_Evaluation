@@ -202,15 +202,20 @@ function HighSeverityIssuesList({ issues, dimensions }: { issues: IssueItem[], d
     );
 }
 
+import { SaveReportButton } from './SaveReportButton';
+
+// ...
+
 // --- Main Component ---
 
 interface ReportViewProps {
     report: EvaluationReport;
     onReset: () => void;
     isPublic?: boolean;
+    isSaved?: boolean;
 }
 
-export function ReportView({ report, onReset, isPublic = false }: ReportViewProps) {
+export function ReportView({ report, onReset, isPublic = false, isSaved = false }: ReportViewProps) {
     const [expandedDim, setExpandedDim] = useState<string | null>(null);
     const [sidebarExpandedDims, setSidebarExpandedDims] = useState<Set<string>>(new Set());
 
@@ -295,6 +300,17 @@ export function ReportView({ report, onReset, isPublic = false }: ReportViewProp
             {/* Header / Score Card */}
             <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden relative">
                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+
+                {/* Save Button */}
+                {report.task_id && (
+                    <div className="absolute top-6 right-6 md:top-8 md:right-10 z-10">
+                        <SaveReportButton
+                            evaluationId={report.task_id}
+                            initialIsSaved={isSaved}
+                            className="bg-white/80 backdrop-blur shadow-sm border border-slate-200 hover:border-indigo-300 px-4 py-2"
+                        />
+                    </div>
+                )}
 
                 <div className="p-8 md:p-10 grid lg:grid-cols-3 gap-10 items-center">
 

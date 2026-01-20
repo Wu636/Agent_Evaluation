@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { User, LogOut, ChevronDown, Settings } from 'lucide-react';
+import { User, LogOut, ChevronDown, Settings, Bookmark } from 'lucide-react';
+import Link from 'next/link';
 import { useAuth } from './AuthProvider';
 import { NotificationBell } from './NotificationBell';
 import { ProfileSettingsModal } from './ProfileSettingsModal';
@@ -112,6 +113,15 @@ export function UserMenu({ onLoginClick }: UserMenuProps) {
                             <Settings className="w-4 h-4 text-slate-400" />
                             个人资料
                         </button>
+
+                        <Link
+                            href="/saved"
+                            onClick={() => setIsOpen(false)}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                            <Bookmark className="w-4 h-4 text-slate-400" />
+                            我的收藏
+                        </Link>
 
                         <button
                             onClick={() => {

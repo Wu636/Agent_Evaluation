@@ -19,6 +19,7 @@ interface Evaluation {
     veto_reasons: string[];
     created_at: string;
     is_public: boolean;
+    is_saved?: boolean;
 }
 
 export default function SharedReportPage() {
@@ -137,6 +138,7 @@ export default function SharedReportPage() {
                     report={report}
                     onReset={() => { }}
                     isPublic={evaluation.is_public}
+                    isSaved={evaluation.is_saved}
                 />
             </div>
         </div>

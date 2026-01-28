@@ -3,8 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, FileText, Trash2, Eye, ArrowLeft, Share2, Lock, Unlock, Copy, Check, Edit2, X as CloseIcon, Save as SaveIcon } from 'lucide-react';
 import clsx from 'clsx';
-import { ReportView } from './ReportView';
-import { EvaluationReport } from '@/lib/api';
+import { useRouter } from 'next/navigation';
 import { useAuth } from './AuthProvider';
 
 interface CloudEvaluation {
@@ -28,11 +27,10 @@ interface HistoryViewProps {
 }
 
 export function HistoryView({ onBack }: HistoryViewProps) {
+    const router = useRouter();
     const { session, isGuest } = useAuth();
     const [history, setHistory] = useState<CloudEvaluation[]>([]);
     const [loading, setLoading] = useState(true);
-    const [selectedReport, setSelectedReport] = useState<EvaluationReport | null>(null);
-    const [selectedEvaluation, setSelectedEvaluation] = useState<CloudEvaluation | null>(null);
     const [copiedId, setCopiedId] = useState<string | null>(null);
 
     // Rename state
@@ -98,26 +96,8 @@ export function HistoryView({ onBack }: HistoryViewProps) {
     };
 
     const handleViewReport = (evaluation: CloudEvaluation) => {
-        const report: EvaluationReport = {
-            task_id: evaluation.id,
-            total_score: evaluation.total_score,
-            dimensions: evaluation.dimensions,
-            analysis: '',
-            issues: [],
-            suggestions: [],
-            final_level: evaluation.final_level as any,
-            pass_criteria_met: evaluation.total_score >= 60,
-            veto_reasons: evaluation.veto_reasons || [],
-            // 注入源文档内容
-            teacher_doc_name: evaluation.teacher_doc_name,
-            teacher_doc_content: evaluation.teacher_doc_content,
-            dialogue_doc_name: evaluation.dialogue_record_name,
-            dialogue_doc_content: typeof evaluation.dialogue_data === 'string'
-                ? evaluation.dialogue_data
-                : JSON.stringify(evaluation.dialogue_data, null, 2)
-        };
-        setSelectedReport(report);
-        setSelectedEvaluation(evaluation);
+        // Navigate to the report detail page instead of inline rendering
+        router.push(`/report/${evaluation.id}`);
     };
 
     const handleStartRename = (item: CloudEvaluation) => {
@@ -245,18 +225,6 @@ export function HistoryView({ onBack }: HistoryViewProps) {
         if (score >= 60) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
         return 'text-red-600 bg-red-50 border-red-200';
     };
-
-    // If viewing a specific report
-    if (selectedReport) {
-        return (
-            <div className="w-full">
-                <ReportView report={selectedReport} onReset={() => {
-                    setSelectedReport(null);
-                    setSelectedEvaluation(null);
-                }} />
-            </div>
-        );
-    }
 
     // Not logged in and not guest
     if (!session && !isGuest) {

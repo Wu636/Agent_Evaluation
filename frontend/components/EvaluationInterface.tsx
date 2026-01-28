@@ -4,8 +4,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, Loader2, History, Settings, ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react';
 import { FileUpload } from '@/components/FileUpload';
 import { ReportView } from '@/components/ReportView';
-import { SettingsModal } from '@/components/SettingsModal';
-import { HistoryView } from '@/components/HistoryView';
 import { EnhancedLoginModal } from '@/components/EnhancedLoginModal';
 import { UserMenu } from '@/components/UserMenu';
 import { useAuth } from '@/components/AuthProvider';
@@ -19,12 +17,7 @@ import { EvaluationTemplate, DEFAULT_DIMENSIONS, getEnabledSubDimensions, calcul
 // 添加工作流配置文件 ID
 const WORKFLOW_CONFIG_ID = 'workflow_config';
 
-interface EvaluationInterfaceProps {
-    currentView?: 'main' | 'history';
-    onViewChange?: (view: 'main' | 'history') => void;
-}
-
-export function EvaluationInterface({ currentView: externalView, onViewChange }: EvaluationInterfaceProps) {
+export function EvaluationInterface() {
     const { user, session } = useAuth();
     const [teacherDoc, setTeacherDoc] = useState<File | null>(null);
     const [referenceDoc, setReferenceDoc] = useState<File | null>(null);
@@ -34,8 +27,6 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [step, setStep] = useState<'upload' | 'processing' | 'results'>('upload');
-    const [internalView, setInternalView] = useState<'main' | 'history'>('main');
-    const [showSettings, setShowSettings] = useState(false);
     const [showLoginModal, setShowLoginModal] = useState(false);
     const [currentDimension, setCurrentDimension] = useState<string>('');
     const [templates, setTemplates] = useState<EvaluationTemplate[]>([]);
@@ -100,9 +91,7 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
         }
     };
 
-    // Use external view if provided, otherwise use internal state
-    const currentView = externalView ?? internalView;
-    const setCurrentView = onViewChange ?? setInternalView;
+
 
     const handleStartEvaluation = async () => {
         if (!teacherDoc || !dialogueRecord) return;
@@ -569,22 +558,12 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
         }
     }, [step]);
 
-    // Render History View
-    if (currentView === 'history') {
-        return (
-            <div className="w-full max-w-7xl mx-auto px-4 py-8">
-                <HistoryView onBack={() => setCurrentView('main')} />
-            </div>
-        );
-    }
+
 
 
     // Render Main View
     return (
         <div className="w-full max-w-7xl mx-auto px-4 py-8 flex flex-col items-center">
-
-            {/* Settings Modal */}
-            <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
             {/* Login Modal */}
             <EnhancedLoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
@@ -602,23 +581,8 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                             清空文件
                         </button>
                     )}
-                    <button
-                        onClick={() => setCurrentView('history')}
-                        className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors text-sm font-medium"
-                    >
-                        <History className="w-4 h-4" />
-                        历史记录
-                    </button>
-                    <button
-                        onClick={() => setShowSettings(true)}
-                        className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors text-sm font-medium"
-                    >
-                        <Settings className="w-4 h-4" />
-                        设置
-                    </button>
                 </div>
             )}
-
             {step === 'upload' && (
                 <div className="w-full grid lg:grid-cols-2 gap-16 items-center animate-in fade-in slide-in-from-bottom-8 duration-700 mt-8">
 
@@ -860,10 +824,12 @@ export function EvaluationInterface({ currentView: externalView, onViewChange }:
                 </div>
             )}
 
-            {step === 'results' && report && (
-                <ReportView report={report} onReset={handleReset} />
-            )}
+            {
+                step === 'results' && report && (
+                    <ReportView report={report} onReset={handleReset} />
+                )
+            }
 
-        </div>
+        </div >
     );
 }

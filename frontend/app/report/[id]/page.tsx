@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { ReportView } from '@/components/ReportView';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
@@ -24,6 +24,7 @@ interface Evaluation {
 
 export default function SharedReportPage() {
     const params = useParams();
+    const router = useRouter();
     const id = params.id as string;
 
     const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
@@ -136,7 +137,7 @@ export default function SharedReportPage() {
             <div className="max-w-7xl mx-auto px-4 py-6">
                 <ReportView
                     report={report}
-                    onReset={() => { }}
+                    onReset={() => router.push('/')}
                     isPublic={evaluation.is_public}
                     isSaved={evaluation.is_saved}
                 />

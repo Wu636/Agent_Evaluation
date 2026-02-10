@@ -58,10 +58,33 @@ export async function POST(request: NextRequest) {
         if (USE_REMOTE_API) {
           const formData = await request.formData();
           
+          // 重新构建FormData，只包含Railway API需要的字段
+          const railwayFormData = new FormData();
+          const file = formData.get("file") as File;
+          if (!file) {
+            sseEvent(controller, "error", { message: "请上传题卷文件" });
+            controller.close();
+            return;
+          }
+          
+          railwayFormData.append("file", file);
+          railwayFormData.append("authorization", (formData.get("authorization") as string) || "");
+          railwayFormData.append("cookie", (formData.get("cookie") as string) || "");
+          railwayFormData.append("instance_nid", (formData.get("instance_nid") as string) || "");
+          railwayFormData.append("levels", (formData.get("levels") as string) || "");
+          
+          // 可选参数
+          const llmApiKey = formData.get("llm_api_key") as string;
+          const llmApiUrl = formData.get("llm_api_url") as string;
+          const llmModel = formData.get("llm_model") as string;
+          if (llmApiKey) railwayFormData.append("llm_api_key", llmApiKey);
+          if (llmApiUrl) railwayFormData.append("llm_api_url", llmApiUrl);
+          if (llmModel) railwayFormData.append("llm_model", llmModel);
+          
           // 转发到Railway API
           const response = await fetch(`${RAILWAY_API_URL}/api/generate`, {
             method: "POST",
-            body: formData,
+            body: railwayFormData,
           });
 
           if (!response.ok) {

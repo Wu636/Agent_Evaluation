@@ -164,7 +164,7 @@ async def review_answers(
     authorization: str = Form(...),
     cookie: str = Form(...),
     instance_nid: str = Form(...),
-    task_id: str = Form(...),
+    task_id: Optional[str] = Form(None),
     attempts: int = Form(5),
     max_workers: int = Form(3),
     llm_api_key: Optional[str] = Form(None),
@@ -202,11 +202,12 @@ async def review_answers(
         "AUTHORIZATION": authorization,
         "COOKIE": cookie,
         "INSTANCE_NID": instance_nid,
-        "TASK_ID": task_id,
         "LLM_API_KEY": llm_api_key or os.getenv("LLM_API_KEY", ""),
         "LLM_API_URL": llm_api_url or os.getenv("LLM_API_URL", ""),
         "LLM_MODEL": llm_model or os.getenv("LLM_MODEL", ""),
     })
+    if task_id:
+        env["TASK_ID"] = task_id
     
     # 构建命令
     cmd = [

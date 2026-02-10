@@ -1,4 +1,10 @@
+# 现有依赖
 python-docx>=1.0.0
 openpyxl>=3.0.0
 requests>=2.28.0
 python-dotenv>=0.19.0
+
+# FastAPI 服务依赖
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6

@@ -34,6 +34,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const handleSave = () => {
         const settings = { apiKey, apiUrl, model };
         localStorage.setItem('llm-eval-settings', JSON.stringify(settings));
+        // 触发自定义事件通知其他组件更新
+        window.dispatchEvent(new Event('llm-settings-updated'));
         onClose();
     };
 

@@ -7,9 +7,10 @@ import crypto from "crypto";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-// process.cwd() = frontend/，所以 .. 是项目根 Agent_Evaluation/
-const PROJECT_ROOT = path.resolve(process.cwd(), "..");
-const HOMEWORK_REVIEW_DIR = path.join(PROJECT_ROOT, "homework_review");
+// 在Vercel serverless环境使用/tmp目录（可写）
+const IS_VERCEL = process.env.VERCEL === "1";
+const BASE_DIR = IS_VERCEL ? "/tmp" : path.resolve(process.cwd(), "..");
+const HOMEWORK_REVIEW_DIR = IS_VERCEL ? path.join(BASE_DIR, "homework_review") : path.join(BASE_DIR, "homework_review");
 const RUNTIME_DIR = path.join(HOMEWORK_REVIEW_DIR, "runtime");
 const UPLOADS_DIR = path.join(RUNTIME_DIR, "uploads");
 const OUTPUTS_DIR = path.join(RUNTIME_DIR, "outputs");
@@ -53,6 +54,15 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
+        // 检查是否在Vercel环境中
+        if (IS_VERCEL) {
+          sseEvent(controller, "error", {
+            message: "❌ 作业批阅功能需要Python环境，暂不支持在Vercel serverless环境运行。请在本地开发环境使用此功能。"
+          });
+          controller.close();
+          return;
+        }
+
         await ensureDirs();
 
         const formData = await request.formData();

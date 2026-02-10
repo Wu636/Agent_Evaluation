@@ -366,6 +366,25 @@ export function HomeworkReviewInterface() {
     setInstanceNid(creds.instanceNid);
     setLlmInfo(loadLLMSettings());
     refreshHistory();
+
+    // 监听localStorage变化（设置更新）
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "llm-eval-settings") {
+        setLlmInfo(loadLLMSettings());
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+
+    // 监听自定义事件（同页面设置更新）
+    const handleSettingsUpdate = () => {
+      setLlmInfo(loadLLMSettings());
+    };
+    window.addEventListener("llm-settings-updated", handleSettingsUpdate);
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("llm-settings-updated", handleSettingsUpdate);
+    };
   }, [refreshHistory]);
 
   // 日志自动滚到底部

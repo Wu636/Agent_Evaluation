@@ -5,7 +5,7 @@ import path from "path";
 import crypto from "crypto";
 
 export const runtime = "nodejs";
-export const maxDuration = 600;
+export const maxDuration = 300; // Vercel Hobby计划最大值
 
 const PROJECT_ROOT = path.resolve(process.cwd(), "..");
 const HOMEWORK_REVIEW_DIR = path.join(PROJECT_ROOT, "homework_review");

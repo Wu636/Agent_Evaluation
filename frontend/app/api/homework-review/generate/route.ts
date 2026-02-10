@@ -68,12 +68,18 @@ export async function POST(request: NextRequest) {
           }
           
           railwayFormData.append("file", file);
-          railwayFormData.append("authorization", (formData.get("authorization") as string) || "");
-          railwayFormData.append("cookie", (formData.get("cookie") as string) || "");
-          railwayFormData.append("instance_nid", (formData.get("instance_nid") as string) || "");
-          railwayFormData.append("levels", (formData.get("levels") as string) || "");
           
-          // 可选参数
+          // 认证参数（仅存在时才发送）
+          const auth = formData.get("authorization") as string;
+          const ck = formData.get("cookie") as string;
+          const nid = formData.get("instance_nid") as string;
+          const lvls = formData.get("levels") as string;
+          if (auth) railwayFormData.append("authorization", auth);
+          if (ck) railwayFormData.append("cookie", ck);
+          if (nid) railwayFormData.append("instance_nid", nid);
+          if (lvls) railwayFormData.append("levels", lvls);
+          
+          // 可选LLM参数
           const llmApiKey = formData.get("llm_api_key") as string;
           const llmApiUrl = formData.get("llm_api_url") as string;
           const llmModel = formData.get("llm_model") as string;

@@ -62,13 +62,13 @@ async def test():
 @app.post("/api/generate")
 async def generate_answers(
     file: UploadFile = File(...),
-    authorization: str = Form(...),
-    cookie: str = Form(...),
-    instance_nid: str = Form(...),
+    authorization: Optional[str] = Form(None),
+    cookie: Optional[str] = Form(None),
+    instance_nid: Optional[str] = Form(None),
     llm_api_key: Optional[str] = Form(None),
     llm_api_url: Optional[str] = Form(None),
     llm_model: Optional[str] = Form(None),
-    levels: str = Form(...),
+    levels: Optional[str] = Form(None),
 ):
     """生成学生答案 - 调用Python脚本"""
     
@@ -81,21 +81,24 @@ async def generate_answers(
     exam_file.write_bytes(content)
     
     # 解析等级配置
-    try:
-        levels_data = json.loads(levels)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="levels参数格式错误")
+    levels_data = []
+    if levels:
+        try:
+            levels_data = json.loads(levels)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="levels参数格式错误")
     
     # 创建环境变量
     env = os.environ.copy()
-    env.update({
-        "AUTHORIZATION": authorization,
-        "COOKIE": cookie,
-        "INSTANCE_NID": instance_nid,
-        "LLM_API_KEY": llm_api_key or os.getenv("LLM_API_KEY", ""),
-        "LLM_API_URL": llm_api_url or os.getenv("LLM_API_URL", ""),
-        "LLM_MODEL": llm_model or os.getenv("LLM_MODEL", ""),
-    })
+    if authorization:
+        env["AUTHORIZATION"] = authorization
+    if cookie:
+        env["COOKIE"] = cookie
+    if instance_nid:
+        env["INSTANCE_NID"] = instance_nid
+    env["LLM_API_KEY"] = llm_api_key or os.getenv("LLM_API_KEY", "")
+    env["LLM_API_URL"] = llm_api_url or os.getenv("LLM_API_URL", "")
+    env["LLM_MODEL"] = llm_model or os.getenv("LLM_MODEL", "")
     
     # 构建命令行参数
     cmd = [
@@ -161,9 +164,9 @@ async def generate_answers(
 async def review_answers(
     files: List[UploadFile] = File(None),
     server_paths: Optional[str] = Form(None),
-    authorization: str = Form(...),
-    cookie: str = Form(...),
-    instance_nid: str = Form(...),
+    authorization: Optional[str] = Form(None),
+    cookie: Optional[str] = Form(None),
+    instance_nid: Optional[str] = Form(None),
     task_id: Optional[str] = Form(None),
     attempts: int = Form(5),
     max_workers: int = Form(3),
@@ -198,14 +201,15 @@ async def review_answers(
     
     # 创建环境变量
     env = os.environ.copy()
-    env.update({
-        "AUTHORIZATION": authorization,
-        "COOKIE": cookie,
-        "INSTANCE_NID": instance_nid,
-        "LLM_API_KEY": llm_api_key or os.getenv("LLM_API_KEY", ""),
-        "LLM_API_URL": llm_api_url or os.getenv("LLM_API_URL", ""),
-        "LLM_MODEL": llm_model or os.getenv("LLM_MODEL", ""),
-    })
+    if authorization:
+        env["AUTHORIZATION"] = authorization
+    if cookie:
+        env["COOKIE"] = cookie
+    if instance_nid:
+        env["INSTANCE_NID"] = instance_nid
+    env["LLM_API_KEY"] = llm_api_key or os.getenv("LLM_API_KEY", "")
+    env["LLM_API_URL"] = llm_api_url or os.getenv("LLM_API_URL", "")
+    env["LLM_MODEL"] = llm_model or os.getenv("LLM_MODEL", "")
     if task_id:
         env["TASK_ID"] = task_id
     

@@ -48,6 +48,10 @@ package.json
 !components.json
 !tsconfig.json
 
+# Homework review runtime artifacts
+homework_review/runtime/outputs/
+homework_review/runtime/uploads/
+
 # 临时文件
 temp_*
 *.tmp

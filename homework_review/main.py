@@ -28,7 +28,8 @@ app.add_middleware(
 
 # 获取当前脚本目录
 SCRIPT_DIR = Path(__file__).parent
-REVIEWER_SCRIPT = SCRIPT_DIR / "homework_reviewer_v2.py"
+GENERATE_SCRIPT = SCRIPT_DIR / "generate_and_review_service.py"
+REVIEW_SCRIPT = SCRIPT_DIR / "review_service.py"
 
 
 @app.get("/")
@@ -54,8 +55,10 @@ async def test():
             "LLM_API_KEY": "已设置" if os.getenv("LLM_API_KEY") else "未设置",
             "AUTHORIZATION": "前端传递" if not os.getenv("AUTHORIZATION") else "已设置"
         },
-        "reviewer_script": str(REVIEWER_SCRIPT),
-        "script_exists": REVIEWER_SCRIPT.exists()
+        "generate_script": str(GENERATE_SCRIPT),
+        "generate_script_exists": GENERATE_SCRIPT.exists(),
+        "review_script": str(REVIEW_SCRIPT),
+        "review_script_exists": REVIEW_SCRIPT.exists(),
     }
 
 
@@ -70,26 +73,31 @@ async def generate_answers(
     llm_model: Optional[str] = Form(None),
     levels: Optional[str] = Form(None),
 ):
-    """生成学生答案 - 调用Python脚本"""
+    """生成学生答案 - 调用 generate_and_review_service.py"""
     
     # 创建临时目录
     temp_dir = Path(tempfile.mkdtemp(prefix="homework_"))
     exam_file = temp_dir / file.filename
+    output_root = temp_dir / "output"
+    output_root.mkdir(exist_ok=True)
     
     # 保存上传的文件
     content = await file.read()
     exam_file.write_bytes(content)
     
-    # 解析等级配置
-    levels_data = []
+    # 解析等级 - 前端发送的是字符串数组 ["优秀的回答", "良好的回答", ...]
+    levels_list = ["优秀的回答", "良好的回答", "中等的回答", "合格的回答", "较差的回答"]
     if levels:
         try:
-            levels_data = json.loads(levels)
+            parsed = json.loads(levels)
+            if isinstance(parsed, list) and len(parsed) > 0:
+                levels_list = parsed
         except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="levels参数格式错误")
+            pass
     
     # 创建环境变量
     env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
     if authorization:
         env["AUTHORIZATION"] = authorization
     if cookie:
@@ -100,21 +108,20 @@ async def generate_answers(
     env["LLM_API_URL"] = llm_api_url or os.getenv("LLM_API_URL", "")
     env["LLM_MODEL"] = llm_model or os.getenv("LLM_MODEL", "")
     
-    # 构建命令行参数
+    # 构建命令行参数 - 与前端本地模式一致
     cmd = [
-        "python3",
-        str(REVIEWER_SCRIPT),
-        "--generate",
-        "--exam-file", str(exam_file),
-        "--output-dir", str(temp_dir),
+        "python3", "-u",
+        str(GENERATE_SCRIPT),
+        "--input", str(exam_file),
+        "--output-root", str(output_root),
+        "--levels", *levels_list,
+        "--llm-api-key", llm_api_key or os.getenv("LLM_API_KEY", ""),
+        "--llm-api-url", llm_api_url or os.getenv("LLM_API_URL", ""),
+        "--llm-model", llm_model or os.getenv("LLM_MODEL", ""),
     ]
     
-    # 添加等级配置
-    for lv in levels_data:
-        cmd.extend(["--level", f"{lv['level']}:{lv['label']}:{lv['requirement']}"])
-    
     async def event_stream():
-        """SSE流式响应"""
+        """SSE流式响应 - 读取子进程的JSON行协议输出"""
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -124,29 +131,33 @@ async def generate_answers(
                 cwd=str(SCRIPT_DIR)
             )
             
-            yield f'data: {json.dumps({"type": "log", "message": "开始生成学生答案..."})}\n\n'
-            
-            # 读取输出
+            # 读取stdout（JSON行协议）
             while True:
                 line = await process.stdout.readline()
                 if not line:
                     break
                 msg = line.decode().strip()
-                if msg:
-                    yield f'data: {json.dumps({"type": "log", "message": msg})}\n\n'
+                if not msg:
+                    continue
+                # generate_and_review_service.py 输出JSON行协议
+                # 直接转发为SSE
+                try:
+                    data = json.loads(msg)
+                    yield f'data: {json.dumps(data, ensure_ascii=False)}\n\n'
+                except json.JSONDecodeError:
+                    # 非JSON行作为日志
+                    yield f'data: {json.dumps({"type": "log", "message": msg}, ensure_ascii=False)}\n\n'
             
             await process.wait()
             
-            if process.returncode == 0:
-                # 查找生成的文件
-                generated_files = list(temp_dir.glob("*.docx"))
-                yield f'data: {json.dumps({"type": "generate_complete", "files": [str(f) for f in generated_files]})}\n\n'
-            else:
+            if process.returncode != 0:
                 stderr = await process.stderr.read()
-                yield f'data: {json.dumps({"type": "error", "message": stderr.decode()})}\n\n'
+                err_msg = stderr.decode().strip()
+                if err_msg:
+                    yield f'data: {json.dumps({"type": "error", "message": err_msg}, ensure_ascii=False)}\n\n'
                 
         except Exception as e:
-            yield f'data: {json.dumps({"type": "error", "message": str(e)})}\n\n'
+            yield f'data: {json.dumps({"type": "error", "message": str(e)}, ensure_ascii=False)}\n\n'
         finally:
             yield f'data: {json.dumps({"type": "done"})}\n\n'
     
@@ -170,23 +181,29 @@ async def review_answers(
     task_id: Optional[str] = Form(None),
     attempts: int = Form(5),
     max_workers: int = Form(3),
+    output_format: str = Form("json"),
+    max_concurrency: int = Form(5),
+    local_parse: bool = Form(False),
     llm_api_key: Optional[str] = Form(None),
     llm_api_url: Optional[str] = Form(None),
     llm_model: Optional[str] = Form(None),
 ):
-    """批阅学生答案 - 调用Python脚本"""
+    """批阅学生答案 - 调用 review_service.py"""
     
     # 创建临时目录
     temp_dir = Path(tempfile.mkdtemp(prefix="homework_"))
+    output_root = temp_dir / "output"
+    output_root.mkdir(exist_ok=True)
     student_files = []
     
     # 保存上传的文件
     if files:
         for f in files:
-            target = temp_dir / f.filename
-            content = await f.read()
-            target.write_bytes(content)
-            student_files.append(str(target))
+            if f.filename:
+                target = temp_dir / f.filename
+                content = await f.read()
+                target.write_bytes(content)
+                student_files.append(str(target))
     
     # 或使用服务器路径
     if server_paths:
@@ -201,6 +218,7 @@ async def review_answers(
     
     # 创建环境变量
     env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
     if authorization:
         env["AUTHORIZATION"] = authorization
     if cookie:
@@ -213,16 +231,18 @@ async def review_answers(
     if task_id:
         env["TASK_ID"] = task_id
     
-    # 构建命令
+    # 构建命令 - 与前端本地模式一致，调用 review_service.py
     cmd = [
-        "python3",
-        str(REVIEWER_SCRIPT),
-        "--review",
-        "--output-dir", str(temp_dir),
-        "--attempts", str(attempts),
-        "--max-workers", str(max_workers),
+        "python3", "-u",
+        str(REVIEW_SCRIPT),
+        "--inputs", json.dumps(student_files),
+        "--attempts", str(max(1, attempts)),
+        "--output-format", output_format,
+        "--output-root", str(output_root),
+        "--max-concurrency", str(max(1, max_concurrency)),
     ]
-    cmd.extend(student_files)
+    if local_parse:
+        cmd.append("--local-parse")
     
     async def event_stream():
         """SSE流式响应"""
@@ -235,25 +255,30 @@ async def review_answers(
                 cwd=str(SCRIPT_DIR)
             )
             
-            yield f'data: {json.dumps({"type": "log", "message": f"开始批阅{len(student_files)}份答案..."})}\n\n'
-            
-            # 读取输出
+            # 读取stdout
             while True:
                 line = await process.stdout.readline()
                 if not line:
                     break
                 msg = line.decode().strip()
-                if msg:
-                    yield f'data: {json.dumps({"type": "log", "message": msg})}\n\n'
+                if not msg:
+                    continue
+                try:
+                    data = json.loads(msg)
+                    yield f'data: {json.dumps(data, ensure_ascii=False)}\n\n'
+                except json.JSONDecodeError:
+                    yield f'data: {json.dumps({"type": "log", "message": msg}, ensure_ascii=False)}\n\n'
             
             await process.wait()
             
             if process.returncode != 0:
                 stderr = await process.stderr.read()
-                yield f'data: {json.dumps({"type": "error", "message": stderr.decode()})}\n\n'
+                err_msg = stderr.decode().strip()
+                if err_msg:
+                    yield f'data: {json.dumps({"type": "error", "message": err_msg}, ensure_ascii=False)}\n\n'
                 
         except Exception as e:
-            yield f'data: {json.dumps({"type": "error", "message": str(e)})}\n\n'
+            yield f'data: {json.dumps({"type": "error", "message": str(e)}, ensure_ascii=False)}\n\n'
         finally:
             yield f'data: {json.dumps({"type": "done"})}\n\n'
     

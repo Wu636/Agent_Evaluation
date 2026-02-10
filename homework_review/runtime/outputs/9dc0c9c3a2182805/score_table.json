@@ -1,0 +1,410 @@
+{
+  "attempts": 5,
+  "students": [
+    {
+      "name": "第1套_等级一_优秀_学生答案",
+      "full_mark": 100,
+      "total_scores": [
+        93,
+        91,
+        92,
+        93,
+        92
+      ],
+      "mean": 92.2,
+      "variance": 0.56,
+      "categories": [
+        {
+          "name": "单项选择题",
+          "total": 20,
+          "scores": [
+            20,
+            20,
+            20,
+            20,
+            20
+          ],
+          "mean": 20.0,
+          "variance": 0.0
+        },
+        {
+          "name": "判断题",
+          "total": 20,
+          "scores": [
+            14,
+            14,
+            14,
+            16,
+            14
+          ],
+          "mean": 14.4,
+          "variance": 0.64
+        },
+        {
+          "name": "简答题",
+          "total": 20,
+          "scores": [
+            20,
+            20,
+            20,
+            20,
+            20
+          ],
+          "mean": 20.0,
+          "variance": 0.0
+        },
+        {
+          "name": "论述题",
+          "total": 20,
+          "scores": [
+            20,
+            20,
+            20,
+            20,
+            20
+          ],
+          "mean": 20.0,
+          "variance": 0.0
+        },
+        {
+          "name": "案例分析题",
+          "total": 20,
+          "scores": [
+            19,
+            17,
+            18,
+            17,
+            18
+          ],
+          "mean": 17.8,
+          "variance": 0.56
+        }
+      ],
+      "dimensions": []
+    },
+    {
+      "name": "第1套_等级二_良好_学生答案",
+      "full_mark": 100,
+      "total_scores": [
+        89,
+        87,
+        88,
+        89,
+        89.5
+      ],
+      "mean": 88.5,
+      "variance": 0.8,
+      "categories": [
+        {
+          "name": "单项选择题",
+          "total": 20,
+          "scores": [
+            20,
+            20,
+            20,
+            20,
+            20
+          ],
+          "mean": 20.0,
+          "variance": 0.0
+        },
+        {
+          "name": "判断题",
+          "total": 20,
+          "scores": [
+            14,
+            14,
+            14,
+            14,
+            14
+          ],
+          "mean": 14.0,
+          "variance": 0.0
+        },
+        {
+          "name": "简答题",
+          "total": 20,
+          "scores": [
+            20,
+            20,
+            20,
+            20,
+            20
+          ],
+          "mean": 20.0,
+          "variance": 0.0
+        },
+        {
+          "name": "论述题",
+          "total": 20,
+          "scores": [
+            20,
+            20,
+            20,
+            20,
+            20
+          ],
+          "mean": 20.0,
+          "variance": 0.0
+        },
+        {
+          "name": "案例分析题",
+          "total": 20,
+          "scores": [
+            15,
+            13,
+            14,
+            15,
+            15.5
+          ],
+          "mean": 14.5,
+          "variance": 0.8
+        }
+      ],
+      "dimensions": []
+    },
+    {
+      "name": "第1套_等级三_中等_学生答案",
+      "full_mark": 100,
+      "total_scores": [
+        79,
+        79,
+        78,
+        79,
+        79
+      ],
+      "mean": 78.8,
+      "variance": 0.16,
+      "categories": [
+        {
+          "name": "单项选择题",
+          "total": 20,
+          "scores": [
+            20,
+            20,
+            20,
+            20,
+            20
+          ],
+          "mean": 20.0,
+          "variance": 0.0
+        },
+        {
+          "name": "判断题",
+          "total": 20,
+          "scores": [
+            14,
+            14,
+            14,
+            14,
+            14
+          ],
+          "mean": 14.0,
+          "variance": 0.0
+        },
+        {
+          "name": "简答题",
+          "total": 20,
+          "scores": [
+            20,
+            20,
+            20,
+            20,
+            20
+          ],
+          "mean": 20.0,
+          "variance": 0.0
+        },
+        {
+          "name": "论述题",
+          "total": 20,
+          "scores": [
+            20,
+            20,
+            20,
+            20,
+            20
+          ],
+          "mean": 20.0,
+          "variance": 0.0
+        },
+        {
+          "name": "案例分析题",
+          "total": 20,
+          "scores": [
+            5,
+            5,
+            4,
+            5,
+            5
+          ],
+          "mean": 4.8,
+          "variance": 0.16
+        }
+      ],
+      "dimensions": []
+    },
+    {
+      "name": "第1套_等级四_合格_学生答案",
+      "full_mark": 100,
+      "total_scores": [
+        74,
+        74,
+        74,
+        74,
+        74
+      ],
+      "mean": 74.0,
+      "variance": 0.0,
+      "categories": [
+        {
+          "name": "单项选择题",
+          "total": 20,
+          "scores": [
+            20,
+            20,
+            20,
+            20,
+            20
+          ],
+          "mean": 20.0,
+          "variance": 0.0
+        },
+        {
+          "name": "判断题",
+          "total": 20,
+          "scores": [
+            14,
+            14,
+            14,
+            14,
+            14
+          ],
+          "mean": 14.0,
+          "variance": 0.0
+        },
+        {
+          "name": "简答题",
+          "total": 20,
+          "scores": [
+            20,
+            20,
+            20,
+            20,
+            20
+          ],
+          "mean": 20.0,
+          "variance": 0.0
+        },
+        {
+          "name": "论述题",
+          "total": 20,
+          "scores": [
+            20,
+            20,
+            20,
+            20,
+            20
+          ],
+          "mean": 20.0,
+          "variance": 0.0
+        },
+        {
+          "name": "案例分析题",
+          "total": 20,
+          "scores": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "mean": 0.0,
+          "variance": 0.0
+        }
+      ],
+      "dimensions": []
+    },
+    {
+      "name": "第1套_等级五_较差_学生答案",
+      "full_mark": 100,
+      "total_scores": [
+        19,
+        18.5,
+        18.75,
+        18.75,
+        23.25
+      ],
+      "mean": 19.65,
+      "variance": 3.26,
+      "categories": [
+        {
+          "name": "单项选择题",
+          "total": 20,
+          "scores": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "mean": 2.0,
+          "variance": 0.0
+        },
+        {
+          "name": "判断题",
+          "total": 20,
+          "scores": [
+            4,
+            4,
+            6,
+            6,
+            6
+          ],
+          "mean": 5.2,
+          "variance": 0.96
+        },
+        {
+          "name": "简答题",
+          "total": 20,
+          "scores": [
+            10.0,
+            10.5,
+            8.75,
+            8.75,
+            11.25
+          ],
+          "mean": 9.85,
+          "variance": 0.97
+        },
+        {
+          "name": "论述题",
+          "total": 20,
+          "scores": [
+            3,
+            2,
+            2,
+            2,
+            4
+          ],
+          "mean": 2.6,
+          "variance": 0.64
+        },
+        {
+          "name": "案例分析题",
+          "total": 20,
+          "scores": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "mean": 0.0,
+          "variance": 0.0
+        }
+      ],
+      "dimensions": []
+    }
+  ]
+}

@@ -7,6 +7,10 @@ import crypto from "crypto";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+// Railway API配置
+const RAILWAY_API_URL = process.env.NEXT_PUBLIC_HOMEWORK_API_URL;
+const USE_REMOTE_API = !!RAILWAY_API_URL;
+
 // 在Vercel serverless环境使用/tmp目录（可写）
 const IS_VERCEL = process.env.VERCEL === "1";
 const BASE_DIR = IS_VERCEL ? "/tmp" : path.resolve(process.cwd(), "..");
@@ -54,10 +58,39 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        // 检查是否在Vercel环境中
-        if (IS_VERCEL) {
+        // 如果配置了Railway API，使用远程服务
+        if (USE_REMOTE_API) {
+          const formData = await request.formData();
+          
+          // 转发到Railway API
+          const response = await fetch(`${RAILWAY_API_URL}/api/review`, {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!response.ok) {
+            sseEvent(controller, "error", { message: `Railway API错误: ${response.statusText}` });
+            controller.close();
+            return;
+          }
+
+          // 转发SSE流
+          const reader = response.body?.getReader();
+          if (reader) {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              controller.enqueue(value);
+            }
+          }
+          controller.close();
+          return;
+        }
+
+        // 本地模式：使用spawn Python
+        if (IS_VERCEL && !USE_REMOTE_API) {
           sseEvent(controller, "error", {
-            message: "❌ 作业批阅功能需要Python环境，暂不支持在Vercel serverless环境运行。请在本地开发环境使用此功能。"
+            message: "❌ 未配置Railway API且无法在Vercel运行Python。请设置NEXT_PUBLIC_HOMEWORK_API_URL环境变量。"
           });
           controller.close();
           return;

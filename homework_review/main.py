@@ -281,6 +281,25 @@ async def review_answers(
                 msg = line.decode().strip()
                 if not msg:
                     continue
+                
+                # 识别 __RESULT__ 标记（review_service.py 的最终输出）
+                if msg.startswith("__RESULT__"):
+                    try:
+                        payload = json.loads(msg[len("__RESULT__"):])
+                        # 转换为前端期望的 "complete" 事件格式
+                        complete_event = {
+                            "type": "complete",
+                            "jobId": "",
+                            "outputFiles": payload.get("output_files", []),
+                            "summary": payload.get("result", {}),
+                            "scoreTable": payload.get("score_table", None),
+                            "downloadBaseUrl": "/api/homework-review/download",
+                        }
+                        yield f'data: {json.dumps(complete_event, ensure_ascii=False)}\n\n'
+                    except json.JSONDecodeError:
+                        yield f'data: {json.dumps({"type": "log", "message": msg}, ensure_ascii=False)}\n\n'
+                    continue
+                
                 try:
                     data = json.loads(msg)
                     yield f'data: {json.dumps(data, ensure_ascii=False)}\n\n'

@@ -7,6 +7,7 @@ import {
   Table2, FolderOpen, Clock, Trash2, Eye, EyeOff
 } from "lucide-react";
 import clsx from "clsx";
+import { MODEL_NAME_MAPPING } from "@/lib/config";
 
 const STORAGE_KEY = "homework-review-credentials";
 const HISTORY_KEY = "homework-review-history";
@@ -508,7 +509,10 @@ export function HomeworkReviewInterface() {
       // LLM 设置
       if (llm.apiKey) formData.append("llm_api_key", llm.apiKey);
       if (llm.apiUrl) formData.append("llm_api_url", llm.apiUrl);
-      if (llm.model) formData.append("llm_model", llm.model);
+      if (llm.model) {
+        const mappedModel = MODEL_NAME_MAPPING[llm.model] || llm.model;
+        formData.append("llm_model", mappedModel);
+      }
       
       // 认证参数（仅需要时才传）
       if (needsAuth) {
@@ -698,7 +702,10 @@ export function HomeworkReviewInterface() {
       const llm = loadLLMSettings();
       if (llm.apiKey) formData.append("llm_api_key", llm.apiKey);
       if (llm.apiUrl) formData.append("llm_api_url", llm.apiUrl);
-      if (llm.model) formData.append("llm_model", llm.model);
+      if (llm.model) {
+        const mappedModel = MODEL_NAME_MAPPING[llm.model] || llm.model;
+        formData.append("llm_model", mappedModel);
+      }
 
       formData.append("attempts", String(attempts));
       formData.append("output_format", outputFormat);

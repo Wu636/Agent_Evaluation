@@ -118,10 +118,17 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 ))
                             ) : (
                                 <>
-                                    <option value="gpt-4o">GPT-4o</option>
-                                    <option value="gpt-4o-mini">GPT-4o Mini</option>
-                                    <option value="qwen2_5-34b-instruct">Qwen 2.5 34B</option>
-                                    <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                                    <option value="gpt-4o">GPT-4o - Most capable</option>
+                                    <option value="gpt-4o-mini">GPT-4o Mini - Faster, cost-effective</option>
+                                    <option value="gpt-4.1">GPT-4.1 - Latest GPT-4 version</option>
+                                    <option value="gpt-4.1-mini">GPT-4.1 Mini - Compact GPT-4.1</option>
+                                    <option value="gpt-4.1-nano">GPT-4.1 Nano - Ultra-compact</option>
+                                    <option value="gemini-2.5-pro">Gemini 2.5 Pro - Google&apos;s flagship</option>
+                                    <option value="gemini-2.5-flash">Gemini 2.5 Flash - Fast Gemini</option>
+                                    <option value="claude-sonnet-4.5">Claude Sonnet 4.5 - Newest Sonnet</option>
+                                    <option value="claude-haiku-4.5">Claude Haiku 4.5 - Latest Haiku</option>
+                                    <option value="claude-opus-4">Claude Opus 4 - Most capable Claude</option>
+                                    <option value="grok-4">Grok-4 - xAI&apos;s model</option>
                                 </>
                             )}
                         </select>

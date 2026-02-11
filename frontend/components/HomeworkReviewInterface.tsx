@@ -283,6 +283,9 @@ function buildScoreTableFromSummary(summary: any): ScoreTable | null {
 }
 
 export function HomeworkReviewInterface() {
+  // Railway API 直连（绕过 Vercel 300秒超时限制）
+  const RAILWAY_API = process.env.NEXT_PUBLIC_HOMEWORK_API_URL || "";
+
   // 模式选择: generate=仅生成答案, review=批阅评测, generate-and-review=生成并评测
   const [mode, setMode] = useState<"generate" | "review" | "generate-and-review">("generate");
   const [selectedLevels, setSelectedLevels] = useState<string[]>(LEVEL_OPTIONS);
@@ -519,7 +522,9 @@ export function HomeworkReviewInterface() {
 
       if (mode === "generate" || mode === "generate-and-review") {
         // 生成答案（或生成并评测）→ 都走 generate API
-        apiUrl = "/api/homework-review/generate";
+        apiUrl = RAILWAY_API
+          ? `${RAILWAY_API}/api/generate`
+          : "/api/homework-review/generate";
         formData.append("file", files[0]);
         formData.append("levels", JSON.stringify(selectedLevels));
         if (mode === "generate-and-review") {
@@ -527,7 +532,9 @@ export function HomeworkReviewInterface() {
         }
       } else if (hasGeneratedFiles && !hasUploadedFiles) {
         // 批阅模式 + 从生成 Tab 带过来的文件（走 server_paths）
-        apiUrl = "/api/homework-review";
+        apiUrl = RAILWAY_API
+          ? `${RAILWAY_API}/api/review`
+          : "/api/homework-review";
         formData.append("server_paths", JSON.stringify(generatedFiles.map((f) => f.path)));
         formData.append("output_format", outputFormat);
         formData.append("local_parse", String(localParse));
@@ -535,7 +542,9 @@ export function HomeworkReviewInterface() {
         appendLog(`📂 使用已生成的 ${generatedFiles.length} 份答案进行批阅`);
       } else {
         // 批阅模式 + 用户上传的文件
-        apiUrl = "/api/homework-review";
+        apiUrl = RAILWAY_API
+          ? `${RAILWAY_API}/api/review`
+          : "/api/homework-review";
         files.forEach((file) => formData.append("files", file));
         formData.append("output_format", outputFormat);
         formData.append("local_parse", String(localParse));
@@ -699,7 +708,12 @@ export function HomeworkReviewInterface() {
       // 将生成的文件路径作为 server_paths 传递（避免重新上传）
       formData.append("server_paths", JSON.stringify(reviewTargets.map((f) => f.path)));
 
-      const res = await fetch("/api/homework-review", {
+      // 直接调用Railway API绕过Vercel 300秒超时
+      const reviewUrl = RAILWAY_API
+        ? `${RAILWAY_API}/api/review`
+        : "/api/homework-review";
+
+      const res = await fetch(reviewUrl, {
         method: "POST",
         body: formData,
       });

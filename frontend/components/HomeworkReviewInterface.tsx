@@ -490,20 +490,42 @@ export function HomeworkReviewInterface() {
   };
 
   const handleClearAll = () => {
-    // 只清当前 Tab 的数据
+    if (!confirm(`确定清空当前Tab「${mode === 'generate' ? '生成答案' : mode === 'review' ? '批阅评测' : '生成并评测'}」的所有数据？`)) return;
+    
+    // 清空文件
     setFiles([]);
+    if (inputRef.current) inputRef.current.value = "";
+    if (folderRef.current) folderRef.current.value = "";
+    
+    // 清空日志和结果
+    setLogs([]);
     setResult(null);
     setError(null);
-    setLogs([]);
-    // 如果当前 Tab 涉及生成，也清除生成文件
-    if (mode === "generate" || mode === "generate-and-review") {
+    
+    // 如果是生成答案tab，还要清空生成的文件
+    if (mode === "generate") {
       setGeneratedFiles([]);
       setGeneratedJobId("");
       setGeneratedOutputRoot("");
       setGenPhase("idle");
     }
-    if (inputRef.current) inputRef.current.value = "";
-    if (folderRef.current) folderRef.current.value = "";
+    
+    // 更新sessionStorage
+    const saved = loadSessionState() || {} as SessionState;
+    if (mode === "generate") {
+      saved.generateLogs = [];
+      saved.generatedFiles = [];
+      saved.generatedJobId = "";
+      saved.generatedOutputRoot = "";
+      saved.genPhase = "idle";
+    } else if (mode === "review") {
+      saved.reviewLogs = [];
+      saved.reviewResult = null;
+    } else {
+      saved.genAndReviewLogs = [];
+      saved.genAndReviewResult = null;
+    }
+    saveSessionState(saved);
   };
 
   const startReview = async () => {
@@ -1164,9 +1186,20 @@ export function HomeworkReviewInterface() {
                 </div>
                 <div className="space-y-1.5 mb-3 max-h-40 overflow-auto">
                   {generatedFiles.map((f, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs text-emerald-700 bg-white rounded px-3 py-1.5">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                      <span className="truncate">{f.name}</span>
+                    <div key={i} className="flex items-center justify-between gap-2 text-xs text-emerald-700 bg-white rounded px-3 py-1.5">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                        <span className="truncate">{f.name}</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setGeneratedFiles(prev => prev.filter((_, idx) => idx !== i));
+                        }}
+                        className="text-slate-400 hover:text-red-500 flex-shrink-0"
+                        title="删除此答案"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -1289,29 +1322,39 @@ export function HomeworkReviewInterface() {
               </div>
             )}
 
-            <button
-              onClick={startReview}
-              disabled={loading}
-              className={clsx(
-                "w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition",
-                loading
-                  ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                  : "bg-indigo-600 text-white hover:bg-indigo-700"
-              )}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {genPhase === "generating" ? "生成中" : genPhase === "reviewing" ? "批阅中" : "处理中"} ({formatTime(elapsedSeconds)})
-                </>
-              ) : mode === "generate" ? (
-                "生成学生答案"
-              ) : mode === "generate-and-review" ? (
-                "生成并评测"
-              ) : (
-                "开始批阅"
-              )}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleClearAll}
+                disabled={loading}
+                className="flex-shrink-0 px-4 py-2.5 rounded-lg text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                title="清空当前Tab所有数据"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <button
+                onClick={startReview}
+                disabled={loading}
+                className={clsx(
+                  "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition",
+                  loading
+                    ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                    : "bg-indigo-600 text-white hover:bg-indigo-700"
+                )}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {genPhase === "generating" ? "生成中" : genPhase === "reviewing" ? "批阅中" : "处理中"} ({formatTime(elapsedSeconds)})
+                  </>
+                ) : mode === "generate" ? (
+                  "生成学生答案"
+                ) : mode === "generate-and-review" ? (
+                  "生成并评测"
+                ) : (
+                  "开始批阅"
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1692,11 +1735,36 @@ function OutputFilesSection({
   downloadLink: (file: string) => string;
 }) {
   const [showAllFiles, setShowAllFiles] = useState(false);
+  const [previewingJson, setPreviewingJson] = useState<string | null>(null);
+  const [jsonContent, setJsonContent] = useState<any>(null);
+  const [jsonLoading, setJsonLoading] = useState(false);
 
   /** 从绝对路径提取文件名用于显示 */
   const displayName = (file: string) => {
     const parts = file.split("/");
     return parts[parts.length - 1] || file;
+  };
+
+  /** 预览JSON文件 */
+  const previewJson = async (file: string) => {
+    if (previewingJson === file) {
+      setPreviewingJson(null);
+      setJsonContent(null);
+      return;
+    }
+    setPreviewingJson(file);
+    setJsonLoading(true);
+    setJsonContent(null);
+    try {
+      const response = await fetch(downloadLink(file));
+      if (!response.ok) throw new Error("Failed to fetch JSON");
+      const data = await response.json();
+      setJsonContent(data);
+    } catch (error) {
+      setJsonContent({ error: "无法加载JSON文件" });
+    } finally {
+      setJsonLoading(false);
+    }
   };
 
   // 将文件分为 "重要" 和 "其他"
@@ -1761,16 +1829,36 @@ function OutputFilesSection({
           {showAllFiles && (
             <div className="mt-2 space-y-1.5 pl-2 border-l-2 border-slate-100">
               {otherFiles.map((file) => (
-                <a
-                  key={file}
-                  href={downloadLink(file)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 hover:bg-slate-100 transition"
-                >
-                  <span className="truncate">{displayName(file)}</span>
-                  <FileDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                </a>
+                <div key={file}>
+                  <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 hover:bg-slate-100 transition">
+                    <button
+                      onClick={() => file.toLowerCase().endsWith('.json') ? previewJson(file) : window.open(downloadLink(file), '_blank')}
+                      className="flex-1 flex items-center justify-between text-xs text-slate-600"
+                    >
+                      <span className="truncate">{displayName(file)}</span>
+                      {file.toLowerCase().endsWith('.json') ? (
+                        <Eye className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                      ) : (
+                        <FileDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                      )}
+                    </button>
+                  </div>
+                  {/* JSON预览内容 */}
+                  {previewingJson === file && (
+                    <div className="mt-2 ml-4 bg-slate-900 rounded-lg p-3 max-h-96 overflow-auto">
+                      {jsonLoading ? (
+                        <div className="flex items-center gap-2 text-slate-400 text-xs">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          加载中...
+                        </div>
+                      ) : (
+                        <pre className="text-xs text-green-400 font-mono">
+                          {JSON.stringify(jsonContent, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           )}

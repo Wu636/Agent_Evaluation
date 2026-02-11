@@ -4,7 +4,7 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import {
   Upload, X, CheckCircle2, Loader2, FileDown, AlertCircle,
   Key, ChevronDown, ChevronUp, Settings2, Info, Terminal,
-  Table2, FolderOpen, Clock, Trash2, Eye, EyeOff
+  Table2, FolderOpen, Clock, Trash2, Eye, EyeOff, RefreshCw
 } from "lucide-react";
 import clsx from "clsx";
 import { MODEL_NAME_MAPPING } from "@/lib/config";
@@ -640,23 +640,42 @@ export function HomeworkReviewInterface() {
         formData.append("max_concurrency", String(maxConcurrency));
       }
 
-      const res = await fetch(apiUrl, {
-        method: "POST",
-        body: formData,
-      });
+      // SSE 连接 + 自动重试（网络中断最多重试2次）
+      const MAX_FETCH_RETRIES = 2;
+      let fetchRetry = 0;
+      let res: Response | null = null;
+      while (fetchRetry <= MAX_FETCH_RETRIES) {
+        try {
+          res = await fetch(apiUrl, {
+            method: "POST",
+            body: formData,
+          });
+          break; // 成功建立连接
+        } catch (fetchErr) {
+          fetchRetry++;
+          if (fetchRetry > MAX_FETCH_RETRIES) throw fetchErr;
+          const retryDelay = fetchRetry * 3;
+          appendLog(`⚠️ 网络连接失败，${retryDelay}秒后第${fetchRetry}次重试...`);
+          await new Promise(r => setTimeout(r, retryDelay * 1000));
+          appendLog(`🔄 正在重新连接...`);
+        }
+      }
+      if (!res) throw new Error("无法建立连接");
 
       if (!res.ok && !res.headers.get("content-type")?.includes("text/event-stream")) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "操作失败");
       }
 
-      // 读取 SSE 流
+      // 读取 SSE 流（增强网络中断检测）
       const reader = res.body?.getReader();
       if (!reader) throw new Error("无法读取响应流");
 
       const decoder = new TextDecoder();
       let buffer = "";
+      let streamCompleted = false;
 
+      try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -727,6 +746,15 @@ export function HomeworkReviewInterface() {
               }
             }
           } catch { /* ignore parse errors */ }
+        }
+      }
+      streamCompleted = true;
+      } catch (streamErr) {
+        // SSE 流读取中断（网络断开等）
+        if (!streamCompleted) {
+          const streamMsg = streamErr instanceof Error ? streamErr.message : "流读取中断";
+          appendLog(`⚠️ 数据流中断: ${streamMsg}`);
+          throw new Error(`网络中断: ${streamMsg}。请点击"重试"按钮继续。`);
         }
       }
     } catch (e) {
@@ -805,10 +833,27 @@ export function HomeworkReviewInterface() {
         ? `${RAILWAY_API}/api/review`
         : "/api/homework-review";
 
-      const res = await fetch(reviewUrl, {
-        method: "POST",
-        body: formData,
-      });
+      // SSE 连接 + 自动重试（网络中断最多重试2次）
+      const MAX_FETCH_RETRIES = 2;
+      let fetchRetry = 0;
+      let res: Response | null = null;
+      while (fetchRetry <= MAX_FETCH_RETRIES) {
+        try {
+          res = await fetch(reviewUrl, {
+            method: "POST",
+            body: formData,
+          });
+          break;
+        } catch (fetchErr) {
+          fetchRetry++;
+          if (fetchRetry > MAX_FETCH_RETRIES) throw fetchErr;
+          const retryDelay = fetchRetry * 3;
+          appendLog(`⚠️ 网络连接失败，${retryDelay}秒后第${fetchRetry}次重试...`);
+          await new Promise(r => setTimeout(r, retryDelay * 1000));
+          appendLog(`🔄 正在重新连接...`);
+        }
+      }
+      if (!res) throw new Error("无法建立连接");
 
       if (!res.ok && !res.headers.get("content-type")?.includes("text/event-stream")) {
         const data = await res.json().catch(() => ({}));
@@ -820,7 +865,9 @@ export function HomeworkReviewInterface() {
 
       const decoder = new TextDecoder();
       let buffer = "";
+      let streamCompleted = false;
 
+      try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -868,6 +915,14 @@ export function HomeworkReviewInterface() {
               }
             }
           } catch { /* ignore */ }
+        }
+      }
+      streamCompleted = true;
+      } catch (streamErr) {
+        if (!streamCompleted) {
+          const streamMsg = streamErr instanceof Error ? streamErr.message : "流读取中断";
+          appendLog(`⚠️ 数据流中断: ${streamMsg}`);
+          throw new Error(`网络中断: ${streamMsg}。请点击"重试"按钮继续。`);
         }
       }
     } catch (e) {
@@ -1326,7 +1381,16 @@ export function HomeworkReviewInterface() {
             {error && (
               <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>{error}</span>
+                <span className="flex-1">{error}</span>
+                <button
+                  onClick={() => { setError(null); startReview(); }}
+                  disabled={loading}
+                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-md transition disabled:opacity-50"
+                  title="重试"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  重试
+                </button>
               </div>
             )}
 

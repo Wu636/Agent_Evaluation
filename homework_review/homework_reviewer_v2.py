@@ -972,9 +972,9 @@ async def async_execute_agent_text(text_input: str, context: dict, semaphore: as
 async def evaluate_and_save(file_path: Path, file_info: dict, text_input: str, context: dict, output_dir: Path, attempt_index: int, attempt_total: int, output_format: str, semaphore: asyncio.Semaphore):
     print(f"⏳ 批改中: {file_info['fileName']} ({attempt_index}/{attempt_total})")
     
-    # 批改重试机制
-    max_retries = 3
-    retry_delay = 3  # 秒
+    # 批改重试机制（增强版 - 5次重试 + 指数退避）
+    max_retries = 5
+    base_delay = 3  # 基础延迟秒数
     success = False
     result = None
     
@@ -984,17 +984,30 @@ async def evaluate_and_save(file_path: Path, file_info: dict, text_input: str, c
         if success:
             break
         
-        # 检查是否为可重试的错误（SSL/网络错误）
-        error_msg = str(result.get("error", "")) if isinstance(result, dict) else ""
+        # 检查是否为可重试的错误
+        error_msg = str(result.get("error", "")) if isinstance(result, dict) else str(result)
+        error_msg_lower = error_msg.lower()
         is_retryable = any(keyword in error_msg for keyword in [
             "SSLError", "ConnectionError", "TimeoutError", "Max retries exceeded",
-            "EOF occurred", "Connection reset", "Connection refused"
+            "EOF occurred", "Connection reset", "Connection refused",
+            "BadStatusLine", "RemoteDisconnected", "BrokenPipeError",
+            "ChunkedEncodingError", "IncompleteRead",
+        ]) or any(keyword in error_msg_lower for keyword in [
+            "rate limit", "too many requests", "429",
+            "500", "502", "503", "504",
+            "internal server error", "bad gateway", "service unavailable", "gateway timeout",
+            "network", "timeout", "connection", "reset", "broken pipe",
         ])
         
         if is_retryable and retry < max_retries - 1:
-            print(f"🔄 批改重试 ({retry + 1}/{max_retries - 1}): {file_info['fileName']} ({attempt_index}/{attempt_total})")
-            await asyncio.sleep(retry_delay)
+            # 指数退避：3s, 6s, 12s, 24s
+            delay = base_delay * (2 ** retry)
+            print(f"🔄 批改重试 ({retry + 1}/{max_retries - 1}): {file_info['fileName']} ({attempt_index}/{attempt_total}) - 等待{delay}s")
+            print(f"   原因: {error_msg[:200]}")
+            await asyncio.sleep(delay)
         else:
+            if retry > 0:
+                print(f"❌ 重试{retry}次后仍失败: {file_info['fileName']} ({attempt_index}/{attempt_total})")
             break
     
     output_path = save_output(output_dir, file_info, attempt_index, attempt_total, success, result, output_format)

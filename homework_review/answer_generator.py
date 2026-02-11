@@ -213,7 +213,7 @@ async def generate_answer_content(prompt: str, context: dict) -> Optional[str]:
     # 构建流式URL：普通URL + /stream 后缀（避免代理服务器120秒网关超时）
     stream_url = api_url.rstrip("/") + "/stream" if not api_url.endswith("/stream") else api_url
     
-    max_retries = 2
+    max_retries = 3
     for attempt in range(max_retries + 1):
         try:
             # 使用流式接口，逐块读取响应，避免 Nginx 504 Gateway Timeout

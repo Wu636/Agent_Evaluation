@@ -230,20 +230,29 @@ async def generate_answer_content(prompt: str, context: dict) -> Optional[str]:
                     )
                 
                 # 从SSE流中拼接完整内容
+                # 兼容两种格式：
+                #   标准 OpenAI: "data: {...}" + choices[0].delta.content
+                #   代理服务器: "data:{...}"  + choices[0].message.content
                 full_content = []
                 for line in resp.iter_lines(decode_unicode=True):
-                    if not line or not line.startswith("data: "):
+                    if not line:
                         continue
-                    data_str = line[6:].strip()
+                    # 兼容 "data: {...}" 和 "data:{...}" 两种格式
+                    if line.startswith("data:"):
+                        data_str = line[5:].strip()
+                    else:
+                        continue
                     if data_str == "[DONE]":
                         break
                     try:
                         chunk = json.loads(data_str)
                         choices = chunk.get("choices", [])
                         if choices:
-                            delta = choices[0].get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
+                            choice = choices[0]
+                            # 兼容 delta.content（标准）和 message.content（代理）
+                            delta = choice.get("delta") or choice.get("message") or {}
+                            content = delta.get("content")
+                            if content:  # 跳过 null 和空字符串
                                 full_content.append(content)
                     except json.JSONDecodeError:
                         continue

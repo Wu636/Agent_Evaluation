@@ -70,6 +70,37 @@ async def download_file(path: str = Query(..., description="文件路径")):
     )
 
 
+@app.get("/api/preview")
+async def preview_file(path: str = Query(..., description="文件路径")):
+    """预览docx文件 - 提取纯文本内容返回HTML"""
+    file_path = Path(path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"文件不存在: {path}")
+    if not str(file_path.resolve()).startswith("/tmp/"):
+        raise HTTPException(status_code=403, detail="只允许访问临时文件")
+    
+    ext = file_path.suffix.lower()
+    if ext not in (".docx", ".doc"):
+        raise HTTPException(status_code=400, detail="仅支持预览 .docx 文件")
+    
+    try:
+        from docx import Document
+        doc = Document(str(file_path))
+        paragraphs = []
+        for p in doc.paragraphs:
+            text = p.text.strip()
+            if text:
+                # 简单样式处理
+                if p.style and p.style.name and "Heading" in p.style.name:
+                    paragraphs.append(f"<h3>{text}</h3>")
+                else:
+                    paragraphs.append(f"<p>{text}</p>")
+        html = "\n".join(paragraphs) if paragraphs else "<p>文档内容为空</p>"
+        return {"html": html, "fileName": file_path.name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"预览失败: {str(e)}")
+
+
 @app.get("/test")
 async def test():
     """测试环境变量"""

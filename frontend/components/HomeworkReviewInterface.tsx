@@ -798,7 +798,7 @@ export function HomeworkReviewInterface() {
     }
   };
 
-  /** 预览生成的 docx 文件（调用 /api/homework-review/preview 转为 HTML） */
+  /** 预览生成的 docx 文件（调用预览接口转为 HTML） */
   const previewDocx = async (file: { name: string; path: string }) => {
     if (previewingFile === file.name) {
       // 点击已展开的文件 → 折叠
@@ -810,9 +810,13 @@ export function HomeworkReviewInterface() {
     setPreviewLoading(true);
     setPreviewHtml("");
     try {
-      const res = await fetch(`/api/homework-review/preview?path=${encodeURIComponent(file.path)}`);
+      // Railway 上的文件走 Railway 预览接口，本地文件走 Vercel
+      const previewUrl = RAILWAY_API && file.path.startsWith("/tmp/")
+        ? `${RAILWAY_API}/api/preview?path=${encodeURIComponent(file.path)}`
+        : `/api/homework-review/preview?path=${encodeURIComponent(file.path)}`;
+      const res = await fetch(previewUrl);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "预览失败");
+      if (!res.ok) throw new Error(data.error || data.detail || "预览失败");
       setPreviewHtml(data.html || "<p>文档内容为空</p>");
     } catch (e) {
       setPreviewHtml(`<p style="color:red">预览失败: ${e instanceof Error ? e.message : "未知错误"}</p>`);
@@ -823,7 +827,10 @@ export function HomeworkReviewInterface() {
 
   /** 下载生成的 docx 文件 */
   const downloadGeneratedFile = (file: { name: string; path: string }) => {
-    const url = `/api/homework-review/preview?path=${encodeURIComponent(file.path)}&download=1`;
+    // Railway 上的文件走 Railway 下载接口
+    const url = RAILWAY_API && file.path.startsWith("/tmp/")
+      ? `${RAILWAY_API}/api/files?path=${encodeURIComponent(file.path)}`
+      : `/api/homework-review/preview?path=${encodeURIComponent(file.path)}&download=1`;
     window.open(url, "_blank");
   };
 

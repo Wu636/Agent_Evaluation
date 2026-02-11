@@ -69,11 +69,38 @@ export async function POST(request: NextRequest) {
           const files = formData.getAll("files") as File[];
           const serverPaths = formData.get("server_paths") as string;
           
-          if (files && files.length > 0) {
+          if (files && files.length > 0 && files[0].size > 0) {
+            // 用户直接上传的文件 → 直接转发
             files.forEach(file => railwayFormData.append("files", file));
-          }
-          if (serverPaths) {
-            railwayFormData.append("server_paths", serverPaths);
+          } else if (serverPaths) {
+            // server_paths 是 Railway 内部路径，需要先从 Railway 下载文件再上传
+            try {
+              const paths: string[] = JSON.parse(serverPaths);
+              sseEvent(controller, "log", { message: `📥 正在从服务器下载 ${paths.length} 份生成文件...` });
+              
+              for (const filePath of paths) {
+                const downloadUrl = `${RAILWAY_API_URL}/api/files?path=${encodeURIComponent(filePath)}`;
+                const fileResp = await fetch(downloadUrl);
+                
+                if (!fileResp.ok) {
+                  sseEvent(controller, "error", {
+                    message: `❌ 无法下载文件: ${filePath.split('/').pop()}\n可能服务已重新部署，临时文件已丢失。请重新“生成答案”后再批阅。`
+                  });
+                  controller.close();
+                  return;
+                }
+                
+                const blob = await fileResp.blob();
+                const fileName = filePath.split('/').pop() || 'file.docx';
+                railwayFormData.append("files", blob, fileName);
+              }
+              
+              sseEvent(controller, "log", { message: `✅ 文件下载完成，开始批阅...` });
+            } catch (e: any) {
+              sseEvent(controller, "error", { message: `文件下载失败: ${e.message}` });
+              controller.close();
+              return;
+            }
           }
           
           // 必需参数

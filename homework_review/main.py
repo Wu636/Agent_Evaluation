@@ -11,9 +11,9 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 
 app = FastAPI(title="作业批阅API", version="1.0.0")
 
@@ -49,6 +49,25 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@app.get("/api/files")
+async def download_file(path: str = Query(..., description="文件路径")):
+    """下载服务器上的临时文件（用于生成后的批阅流程）"""
+    file_path = Path(path)
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=404, 
+            detail=f"文件不存在（可能服务已重启）: {path}"
+        )
+    # 安全检查：只允许下载/tmp目录下的文件
+    if not str(file_path.resolve()).startswith("/tmp/"):
+        raise HTTPException(status_code=403, detail="只允许访问临时文件")
+    return FileResponse(
+        file_path,
+        filename=file_path.name,
+        media_type="application/octet-stream",
+    )
 
 
 @app.get("/test")

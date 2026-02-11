@@ -152,9 +152,14 @@ async def generate_answers(
                 cwd=str(SCRIPT_DIR)
             )
             
-            # 读取stdout（JSON行协议）
+            # 读取stdout（JSON行协议），带心跳保活防止Railway空闲超时
             while True:
-                line = await process.stdout.readline()
+                try:
+                    line = await asyncio.wait_for(process.stdout.readline(), timeout=15)
+                except asyncio.TimeoutError:
+                    # 子进程无输出时发送SSE心跳注释，防止Railway 60秒空闲断连
+                    yield ": heartbeat\n\n"
+                    continue
                 if not line:
                     break
                 msg = line.decode().strip()
@@ -273,9 +278,14 @@ async def review_answers(
                 cwd=str(SCRIPT_DIR)
             )
             
-            # 读取stdout
+            # 读取stdout，带心跳保活防止Railway空闲超时
             while True:
-                line = await process.stdout.readline()
+                try:
+                    line = await asyncio.wait_for(process.stdout.readline(), timeout=15)
+                except asyncio.TimeoutError:
+                    # 子进程无输出时发送SSE心跳注释，防止Railway 60秒空闲断连
+                    yield ": heartbeat\n\n"
+                    continue
                 if not line:
                     break
                 msg = line.decode().strip()

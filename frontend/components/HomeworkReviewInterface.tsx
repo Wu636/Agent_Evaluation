@@ -531,6 +531,7 @@ export function HomeworkReviewInterface() {
           : "/api/homework-review/generate";
         formData.append("file", files[0]);
         formData.append("levels", JSON.stringify(selectedLevels));
+        appendLog(`📋 选择等级: ${selectedLevels.join(", ")}（共${selectedLevels.length}个）`);
         if (mode === "generate-and-review") {
           formData.append("auto_review", "true");
         }
@@ -836,6 +837,11 @@ export function HomeworkReviewInterface() {
 
   const downloadLink = (file: string) => {
     if (!result) return "#";
+    // Railway 模式：outputFiles 是 /tmp/xxx 绝对路径，走 Railway /api/files 下载
+    if (RAILWAY_API && file.startsWith("/tmp/")) {
+      return `${RAILWAY_API}/api/files?path=${encodeURIComponent(file)}`;
+    }
+    // 本地模式：走 Vercel 的 download endpoint
     const url = new URL(result.downloadBaseUrl, window.location.origin);
     url.searchParams.set("jobId", result.jobId);
     url.searchParams.set("file", file);
@@ -1484,7 +1490,15 @@ function ScoreTableView({ scoreTable }: { scoreTable: ScoreTable }) {
                   <td className="px-3 py-2.5 text-center font-bold text-indigo-700 bg-indigo-50/50">
                     {student.mean ?? "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-center font-medium text-amber-600 bg-indigo-50/50">
+                  <td className={clsx(
+                    "px-3 py-2.5 text-center font-medium",
+                    student.variance != null && student.variance > 5
+                      ? "bg-red-100 text-red-600 font-bold"
+                      : "text-amber-600 bg-indigo-50/50"
+                  )}>
+                    {student.variance != null && student.variance > 5 && (
+                      <span title="方差过大，评分一致性较差" className="mr-0.5">⚠️</span>
+                    )}
                     {student.variance ?? "—"}
                   </td>
                 </tr>
@@ -1515,7 +1529,15 @@ function ScoreTableView({ scoreTable }: { scoreTable: ScoreTable }) {
                     <td className="px-3 py-2 text-center font-medium text-indigo-600">
                       {cat.mean ?? "—"}
                     </td>
-                    <td className="px-3 py-2 text-center text-amber-600">
+                    <td className={clsx(
+                      "px-3 py-2 text-center",
+                      cat.variance != null && cat.variance > 5
+                        ? "bg-red-100 text-red-600 font-bold"
+                        : "text-amber-600"
+                    )}>
+                      {cat.variance != null && cat.variance > 5 && (
+                        <span title="方差过大" className="mr-0.5">⚠️</span>
+                      )}
                       {cat.variance ?? "—"}
                     </td>
                   </tr>
@@ -1544,7 +1566,15 @@ function ScoreTableView({ scoreTable }: { scoreTable: ScoreTable }) {
                     <td className="px-3 py-2 text-center font-medium text-indigo-600">
                       {dim.mean ?? "—"}
                     </td>
-                    <td className="px-3 py-2 text-center text-amber-600">
+                    <td className={clsx(
+                      "px-3 py-2 text-center",
+                      dim.variance != null && dim.variance > 5
+                        ? "bg-red-100 text-red-600 font-bold"
+                        : "text-amber-600"
+                    )}>
+                      {dim.variance != null && dim.variance > 5 && (
+                        <span title="方差过大" className="mr-0.5">⚠️</span>
+                      )}
                       {dim.variance ?? "—"}
                     </td>
                   </tr>
@@ -1598,6 +1628,12 @@ function OutputFilesSection({
 }) {
   const [showAllFiles, setShowAllFiles] = useState(false);
 
+  // 提取文件名（可能是绝对路径或相对文件名）
+  const displayName = (f: string) => {
+    const idx = f.lastIndexOf("/");
+    return idx >= 0 ? f.slice(idx + 1) : f;
+  };
+
   // 将文件分为 "重要" 和 "其他"
   const importantExts = [".xlsx", ".pdf", ".csv"];
   const importantFiles = result.outputFiles.filter((f) =>
@@ -1629,11 +1665,13 @@ function OutputFilesSection({
             <a
               key={file}
               href={downloadLink(file)}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center justify-between bg-indigo-50 rounded-lg px-4 py-3 text-sm text-indigo-700 font-medium hover:bg-indigo-100 transition border border-indigo-100"
             >
               <span className="truncate flex items-center gap-2">
                 <FileDown className="w-4 h-4 flex-shrink-0" />
-                {file}
+                {displayName(file)}
               </span>
               <span className="text-xs bg-indigo-200 text-indigo-800 px-2 py-0.5 rounded-full flex-shrink-0 ml-2">
                 下载
@@ -1661,9 +1699,11 @@ function OutputFilesSection({
                 <a
                   key={file}
                   href={downloadLink(file)}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 hover:bg-slate-100 transition"
                 >
-                  <span className="truncate">{file}</span>
+                  <span className="truncate">{displayName(file)}</span>
                   <FileDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                 </a>
               ))}

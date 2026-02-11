@@ -210,34 +210,71 @@ async def generate_answer_content(prompt: str, context: dict) -> Optional[str]:
         "temperature": 0.5,
     }
     
-    try:
-        # 使用 run_in_executor 进行异步调用
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None, 
-            lambda: requests.post(api_url, headers=headers, json=payload, timeout=180)
-        )
-        
-        if response.status_code != 200:
-            body_preview = response.text[:500] if response.text else "(empty)"
-            print(f"❌ LLM API 返回 {response.status_code}: {body_preview}")
-            print(f"   请求 URL: {api_url}")
+    # 构建流式URL：普通URL + /stream 后缀（避免代理服务器120秒网关超时）
+    stream_url = api_url.rstrip("/") + "/stream" if not api_url.endswith("/stream") else api_url
+    
+    max_retries = 2
+    for attempt in range(max_retries + 1):
+        try:
+            # 使用流式接口，逐块读取响应，避免 Nginx 504 Gateway Timeout
+            loop = asyncio.get_event_loop()
+            
+            def stream_request():
+                """流式请求LLM API，拼接完整内容返回"""
+                resp = requests.post(stream_url, headers=headers, json=payload, timeout=300, stream=True)
+                if resp.status_code != 200:
+                    body_preview = resp.text[:500] if resp.text else "(empty)"
+                    raise requests.exceptions.HTTPError(
+                        f"LLM API 返回 {resp.status_code}: {body_preview}",
+                        response=resp
+                    )
+                
+                # 从SSE流中拼接完整内容
+                full_content = []
+                for line in resp.iter_lines(decode_unicode=True):
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data_str = line[6:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        choices = chunk.get("choices", [])
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                full_content.append(content)
+                    except json.JSONDecodeError:
+                        continue
+                return "".join(full_content)
+            
+            result = await loop.run_in_executor(None, stream_request)
+            if result:
+                return result
+            
+            print(f"⚠️ LLM 流式响应内容为空")
+            return None
+            
+        except requests.exceptions.HTTPError as e:
+            print(f"❌ LLM API 错误: {e}")
+            print(f"   请求 URL: {stream_url}")
             print(f"   请求 Model: {model}")
             print(f"   API Key 前缀: {api_key[:10]}..." if len(api_key) > 10 else f"   API Key: (len={len(api_key)})")
-            response.raise_for_status()
-        
-        result = response.json()
-        
-        if "choices" in result and len(result["choices"]) > 0:
-            return result["choices"][0]["message"]["content"]
-        print(f"⚠️ LLM 响应中没有 choices: {json.dumps(result, ensure_ascii=False)[:300]}")
-        return None
-    except requests.exceptions.HTTPError:
-        # 已在上面打印详细信息
-        return None
-    except Exception as e:
-        print(f"❌ LLM 生成失败: {type(e).__name__}: {e}")
-        return None
+            if attempt < max_retries:
+                wait = 5 * (attempt + 1)
+                print(f"   ⏳ 第 {attempt + 1} 次重试（等待 {wait}s）...")
+                await asyncio.sleep(wait)
+                continue
+            return None
+        except Exception as e:
+            print(f"❌ LLM 生成失败: {type(e).__name__}: {e}")
+            if attempt < max_retries:
+                wait = 5 * (attempt + 1)
+                print(f"   ⏳ 第 {attempt + 1} 次重试（等待 {wait}s）...")
+                await asyncio.sleep(wait)
+                continue
+            return None
 
 
 def create_answer_docx(content: str, output_path: Path, title: str, level: str, level_desc: str):

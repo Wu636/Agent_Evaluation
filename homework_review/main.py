@@ -180,7 +180,8 @@ async def generate_answers(
                 env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=str(SCRIPT_DIR)
+                cwd=str(SCRIPT_DIR),
+                limit=10 * 1024 * 1024,  # 10MB行缓冲，防止大JSON超限
             )
             
             # 读取stdout（JSON行协议），带心跳保活防止Railway空闲超时
@@ -306,7 +307,8 @@ async def review_answers(
                 env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=str(SCRIPT_DIR)
+                cwd=str(SCRIPT_DIR),
+                limit=10 * 1024 * 1024,  # 10MB行缓冲，防止__RESULT__大JSON超限
             )
             
             # 读取stdout，带心跳保活防止Railway空闲超时

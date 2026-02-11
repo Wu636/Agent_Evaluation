@@ -11,9 +11,40 @@ import { MODEL_NAME_MAPPING } from "@/lib/config";
 
 const STORAGE_KEY = "homework-review-credentials";
 const HISTORY_KEY = "homework-review-history";
+const SESSION_STATE_KEY = "homework-review-session";
 const MAX_HISTORY = 30;
 
 const LEVEL_OPTIONS = ["优秀的回答", "良好的回答", "中等的回答", "合格的回答", "较差的回答"];
+
+// ─── Session 持久化（刷新不丢失） ───
+interface SessionState {
+  mode: "generate" | "review" | "generate-and-review";
+  generatedFiles: { name: string; path: string; relative: string }[];
+  generatedJobId: string;
+  generatedOutputRoot: string;
+  genPhase: "idle" | "generating" | "preview" | "reviewing";
+  generateLogs: string[];
+  reviewLogs: string[];
+  genAndReviewLogs: string[];
+  reviewResult: ReviewResult | null;
+  genAndReviewResult: ReviewResult | null;
+  selectedLevels: string[];
+}
+
+function saveSessionState(state: Partial<SessionState>) {
+  try {
+    const existing = loadSessionState();
+    const merged = { ...existing, ...state };
+    sessionStorage.setItem(SESSION_STATE_KEY, JSON.stringify(merged));
+  } catch { /* quota exceeded, ignore */ }
+}
+
+function loadSessionState(): SessionState | null {
+  try {
+    const data = sessionStorage.getItem(SESSION_STATE_KEY);
+    return data ? JSON.parse(data) : null;
+  } catch { return null; }
+}
 
 // ─── 历史记录 ───
 interface ReviewHistoryItem {
@@ -287,33 +318,41 @@ export function HomeworkReviewInterface() {
   // Railway API 直连（绕过 Vercel 300秒超时限制）
   const RAILWAY_API = process.env.NEXT_PUBLIC_HOMEWORK_API_URL || "";
 
+  // 从 sessionStorage 恢复上次会话状态
+  const saved = useRef(loadSessionState());
+
   // 模式选择: generate=仅生成答案, review=批阅评测, generate-and-review=生成并评测
-  const [mode, setMode] = useState<"generate" | "review" | "generate-and-review">("generate");
-  const [selectedLevels, setSelectedLevels] = useState<string[]>(LEVEL_OPTIONS);
+  const [mode, setMode] = useState<"generate" | "review" | "generate-and-review">(saved.current?.mode || "generate");
+  const [selectedLevels, setSelectedLevels] = useState<string[]>(saved.current?.selectedLevels || LEVEL_OPTIONS);
 
   // 生成模式两步状态（跨 Tab 保留）
-  const [generatedFiles, setGeneratedFiles] = useState<{ name: string; path: string; relative: string }[]>([]);
-  const [generatedJobId, setGeneratedJobId] = useState<string>("");
-  const [generatedOutputRoot, setGeneratedOutputRoot] = useState<string>("");
-  const [genPhase, setGenPhase] = useState<"idle" | "generating" | "preview" | "reviewing">("idle");
+  const [generatedFiles, setGeneratedFiles] = useState<{ name: string; path: string; relative: string }[]>(saved.current?.generatedFiles || []);
+  const [generatedJobId, setGeneratedJobId] = useState<string>(saved.current?.generatedJobId || "");
+  const [generatedOutputRoot, setGeneratedOutputRoot] = useState<string>(saved.current?.generatedOutputRoot || "");
+  const [genPhase, setGenPhase] = useState<"idle" | "generating" | "preview" | "reviewing">(
+    // 恢复时如果之前在 generating/reviewing 中间刷新了，回退到上一个稳定态
+    saved.current?.genPhase === "generating" || saved.current?.genPhase === "reviewing"
+      ? "idle"
+      : saved.current?.genPhase || "idle"
+  );
 
   // 文档预览状态
   const [previewingFile, setPreviewingFile] = useState<string | null>(null); // 正在预览的文件名
   const [previewHtml, setPreviewHtml] = useState<string>("");
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // 各 Tab 独立的上传文件状态
+  // 各 Tab 独立的上传文件状态（File 对象不可序列化，无法持久化）
   const [generateFiles, setGenerateFiles] = useState<File[]>([]);         // 生成答案 Tab 的题卷
   const [reviewFiles, setReviewFiles] = useState<File[]>([]);             // 批阅评测 Tab 的作业文件
   const [genAndReviewFiles, setGenAndReviewFiles] = useState<File[]>([]); // 生成并评测 Tab 的题卷
 
-  // 各 Tab 独立的结果/日志状态
-  const [generateLogs, setGenerateLogs] = useState<string[]>([]);
-  const [reviewLogs, setReviewLogs] = useState<string[]>([]);
-  const [genAndReviewLogs, setGenAndReviewLogs] = useState<string[]>([]);
+  // 各 Tab 独立的结果/日志状态（从 session 恢复）
+  const [generateLogs, setGenerateLogs] = useState<string[]>(saved.current?.generateLogs || []);
+  const [reviewLogs, setReviewLogs] = useState<string[]>(saved.current?.reviewLogs || []);
+  const [genAndReviewLogs, setGenAndReviewLogs] = useState<string[]>(saved.current?.genAndReviewLogs || []);
 
-  const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);       // 批阅 Tab 结果
-  const [genAndReviewResult, setGenAndReviewResult] = useState<ReviewResult | null>(null); // 生成并评测 Tab 结果
+  const [reviewResult, setReviewResult] = useState<ReviewResult | null>(saved.current?.reviewResult || null);
+  const [genAndReviewResult, setGenAndReviewResult] = useState<ReviewResult | null>(saved.current?.genAndReviewResult || null);
 
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -395,6 +434,27 @@ export function HomeworkReviewInterface() {
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
+
+  // ─── 状态持久化：关键数据保存到 sessionStorage ───
+  useEffect(() => {
+    // 仅在非加载状态时保存，避免将中间状态写入
+    if (loading) return;
+    saveSessionState({
+      mode,
+      generatedFiles,
+      generatedJobId,
+      generatedOutputRoot,
+      genPhase,
+      generateLogs,
+      reviewLogs,
+      genAndReviewLogs,
+      reviewResult,
+      genAndReviewResult,
+      selectedLevels,
+    });
+  }, [mode, generatedFiles, generatedJobId, generatedOutputRoot, genPhase,
+      generateLogs, reviewLogs, genAndReviewLogs, reviewResult, genAndReviewResult,
+      selectedLevels, loading]);
 
   const appendLog = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
@@ -836,10 +896,21 @@ export function HomeworkReviewInterface() {
 
   const downloadLink = (file: string) => {
     if (!result) return "#";
+    // Railway 模式：outputFiles 是 /tmp/xxx 绝对路径，走 Railway /api/files 下载
+    if (RAILWAY_API && file.startsWith("/tmp/")) {
+      return `${RAILWAY_API}/api/files?path=${encodeURIComponent(file)}`;
+    }
+    // 本地模式：走 Vercel 的 download endpoint
     const url = new URL(result.downloadBaseUrl, window.location.origin);
     url.searchParams.set("jobId", result.jobId);
     url.searchParams.set("file", file);
     return url.toString();
+  };
+
+  /** 从绝对路径或相对路径提取文件名用于显示 */
+  const displayName = (file: string) => {
+    const parts = file.split("/");
+    return parts[parts.length - 1] || file;
   };
 
   const formatTime = (s: number) => {
@@ -1484,7 +1555,15 @@ function ScoreTableView({ scoreTable }: { scoreTable: ScoreTable }) {
                   <td className="px-3 py-2.5 text-center font-bold text-indigo-700 bg-indigo-50/50">
                     {student.mean ?? "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-center font-medium text-amber-600 bg-indigo-50/50">
+                  <td className={clsx(
+                    "px-3 py-2.5 text-center font-medium",
+                    student.variance != null && student.variance > 5
+                      ? "bg-red-100 text-red-600 font-bold"
+                      : "text-amber-600 bg-indigo-50/50"
+                  )}>
+                    {student.variance != null && student.variance > 5 && (
+                      <span title="方差过大，评分一致性较差" className="mr-0.5">⚠️</span>
+                    )}
                     {student.variance ?? "—"}
                   </td>
                 </tr>
@@ -1515,7 +1594,15 @@ function ScoreTableView({ scoreTable }: { scoreTable: ScoreTable }) {
                     <td className="px-3 py-2 text-center font-medium text-indigo-600">
                       {cat.mean ?? "—"}
                     </td>
-                    <td className="px-3 py-2 text-center text-amber-600">
+                    <td className={clsx(
+                      "px-3 py-2 text-center",
+                      cat.variance != null && cat.variance > 5
+                        ? "bg-red-100 text-red-600 font-bold"
+                        : "text-amber-600"
+                    )}>
+                      {cat.variance != null && cat.variance > 5 && (
+                        <span title="方差过大" className="mr-0.5">⚠️</span>
+                      )}
                       {cat.variance ?? "—"}
                     </td>
                   </tr>
@@ -1544,7 +1631,15 @@ function ScoreTableView({ scoreTable }: { scoreTable: ScoreTable }) {
                     <td className="px-3 py-2 text-center font-medium text-indigo-600">
                       {dim.mean ?? "—"}
                     </td>
-                    <td className="px-3 py-2 text-center text-amber-600">
+                    <td className={clsx(
+                      "px-3 py-2 text-center",
+                      dim.variance != null && dim.variance > 5
+                        ? "bg-red-100 text-red-600 font-bold"
+                        : "text-amber-600"
+                    )}>
+                      {dim.variance != null && dim.variance > 5 && (
+                        <span title="方差过大" className="mr-0.5">⚠️</span>
+                      )}
                       {dim.variance ?? "—"}
                     </td>
                   </tr>
@@ -1598,6 +1693,12 @@ function OutputFilesSection({
 }) {
   const [showAllFiles, setShowAllFiles] = useState(false);
 
+  /** 从绝对路径提取文件名用于显示 */
+  const displayName = (file: string) => {
+    const parts = file.split("/");
+    return parts[parts.length - 1] || file;
+  };
+
   // 将文件分为 "重要" 和 "其他"
   const importantExts = [".xlsx", ".pdf", ".csv"];
   const importantFiles = result.outputFiles.filter((f) =>
@@ -1629,11 +1730,13 @@ function OutputFilesSection({
             <a
               key={file}
               href={downloadLink(file)}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center justify-between bg-indigo-50 rounded-lg px-4 py-3 text-sm text-indigo-700 font-medium hover:bg-indigo-100 transition border border-indigo-100"
             >
               <span className="truncate flex items-center gap-2">
                 <FileDown className="w-4 h-4 flex-shrink-0" />
-                {file}
+                {displayName(file)}
               </span>
               <span className="text-xs bg-indigo-200 text-indigo-800 px-2 py-0.5 rounded-full flex-shrink-0 ml-2">
                 下载
@@ -1661,9 +1764,11 @@ function OutputFilesSection({
                 <a
                   key={file}
                   href={downloadLink(file)}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 hover:bg-slate-100 transition"
                 >
-                  <span className="truncate">{file}</span>
+                  <span className="truncate">{displayName(file)}</span>
                   <FileDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                 </a>
               ))}

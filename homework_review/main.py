@@ -127,6 +127,7 @@ async def generate_answers(
     llm_api_url: Optional[str] = Form(None),
     llm_model: Optional[str] = Form(None),
     levels: Optional[str] = Form(None),
+    auto_review: Optional[str] = Form(None),
 ):
     """生成学生答案 - 调用 generate_and_review_service.py"""
     
@@ -329,11 +330,14 @@ async def review_answers(
                 if msg.startswith("__RESULT__"):
                     try:
                         payload = json.loads(msg[len("__RESULT__"):])
+                        # 将相对路径转为绝对路径，前端用 /api/files?path= 下载
+                        rel_files = payload.get("output_files", [])
+                        abs_files = [str(output_root / f) for f in rel_files]
                         # 转换为前端期望的 "complete" 事件格式
                         complete_event = {
                             "type": "complete",
                             "jobId": "",
-                            "outputFiles": payload.get("output_files", []),
+                            "outputFiles": abs_files,
                             "summary": payload.get("result", {}),
                             "scoreTable": payload.get("score_table", None),
                             "downloadBaseUrl": "/api/homework-review/download",

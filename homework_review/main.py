@@ -31,6 +31,11 @@ SCRIPT_DIR = Path(__file__).parent
 GENERATE_SCRIPT = SCRIPT_DIR / "generate_and_review_service.py"
 REVIEW_SCRIPT = SCRIPT_DIR / "review_service.py"
 
+# 确保.env文件存在（子脚本会尝试加载它，不存在会报错）
+env_file = SCRIPT_DIR / ".env"
+if not env_file.exists():
+    env_file.touch()
+
 
 @app.get("/")
 async def root():
@@ -95,15 +100,12 @@ async def generate_answers(
         except json.JSONDecodeError:
             pass
     
-    # 创建环境变量
+    # 创建环境变量 - 始终设置认证变量（子脚本会检查这些变量来决定是否加载.env）
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
-    if authorization:
-        env["AUTHORIZATION"] = authorization
-    if cookie:
-        env["COOKIE"] = cookie
-    if instance_nid:
-        env["INSTANCE_NID"] = instance_nid
+    env["AUTHORIZATION"] = authorization or ""
+    env["COOKIE"] = cookie or ""
+    env["INSTANCE_NID"] = instance_nid or ""
     env["LLM_API_KEY"] = llm_api_key or os.getenv("LLM_API_KEY", "")
     env["LLM_API_URL"] = llm_api_url or os.getenv("LLM_API_URL", "")
     env["LLM_MODEL"] = llm_model or os.getenv("LLM_MODEL", "")
@@ -216,15 +218,12 @@ async def review_answers(
     if not student_files:
         raise HTTPException(status_code=400, detail="请提供至少一个学生答案文件")
     
-    # 创建环境变量
+    # 创建环境变量 - 始终设置认证变量（子脚本会检查这些变量来决定是否加载.env）
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
-    if authorization:
-        env["AUTHORIZATION"] = authorization
-    if cookie:
-        env["COOKIE"] = cookie
-    if instance_nid:
-        env["INSTANCE_NID"] = instance_nid
+    env["AUTHORIZATION"] = authorization or ""
+    env["COOKIE"] = cookie or ""
+    env["INSTANCE_NID"] = instance_nid or ""
     env["LLM_API_KEY"] = llm_api_key or os.getenv("LLM_API_KEY", "")
     env["LLM_API_URL"] = llm_api_url or os.getenv("LLM_API_URL", "")
     env["LLM_MODEL"] = llm_model or os.getenv("LLM_MODEL", "")

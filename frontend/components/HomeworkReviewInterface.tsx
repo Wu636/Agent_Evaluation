@@ -475,14 +475,17 @@ export function HomeworkReviewInterface() {
       if (newFiles.length > 0) {
         setFiles([newFiles[0]]);
       }
-      return;
+    } else {
+      setFiles((prev) => {
+        const existing = new Map(prev.map((f) => [f.name + f.size, f]));
+        newFiles.forEach((f) => existing.set(f.name + f.size, f));
+        return Array.from(existing.values());
+      });
     }
 
-    setFiles((prev) => {
-      const existing = new Map(prev.map((f) => [f.name + f.size, f]));
-      newFiles.forEach((f) => existing.set(f.name + f.size, f));
-      return Array.from(existing.values());
-    });
+    // 重置 input value，确保下次选同一文件仍可触发 onChange
+    if (inputRef.current) inputRef.current.value = "";
+    if (folderRef.current) folderRef.current.value = "";
   };
 
   const handleRemove = (file: File) => {
@@ -929,9 +932,12 @@ export function HomeworkReviewInterface() {
     return url.toString();
   };
 
-  /** 从绝对路径或相对路径提取文件名用于显示 */
+  /** 从绝对路径提取「上级目录/文件名」用于显示，方便区分不同等级 */
   const displayName = (file: string) => {
-    const parts = file.split("/");
+    const parts = file.split("/").filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+    }
     return parts[parts.length - 1] || file;
   };
 
@@ -1110,6 +1116,7 @@ export function HomeworkReviewInterface() {
               )}
             >
               <input
+                key={`file-${mode}`}
                 ref={inputRef}
                 type="file"
                 multiple={mode === "review"}
@@ -1118,6 +1125,7 @@ export function HomeworkReviewInterface() {
                 onChange={(e) => handleFilesSelected(e.target.files)}
               />
               <input
+                key={`folder-${mode}`}
                 // @ts-ignore
                 webkitdirectory="true"
                 ref={folderRef}
@@ -1739,9 +1747,12 @@ function OutputFilesSection({
   const [jsonContent, setJsonContent] = useState<any>(null);
   const [jsonLoading, setJsonLoading] = useState(false);
 
-  /** 从绝对路径提取文件名用于显示 */
+  /** 从绝对路径提取「上级目录/文件名」用于显示，方便区分不同等级 */
   const displayName = (file: string) => {
-    const parts = file.split("/");
+    const parts = file.split("/").filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+    }
     return parts[parts.length - 1] || file;
   };
 
@@ -1831,17 +1842,27 @@ function OutputFilesSection({
               {otherFiles.map((file) => (
                 <div key={file}>
                   <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 hover:bg-slate-100 transition">
-                    <button
-                      onClick={() => file.toLowerCase().endsWith('.json') ? previewJson(file) : window.open(downloadLink(file), '_blank')}
-                      className="flex-1 flex items-center justify-between text-xs text-slate-600"
-                    >
-                      <span className="truncate">{displayName(file)}</span>
-                      {file.toLowerCase().endsWith('.json') ? (
-                        <Eye className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                      ) : (
-                        <FileDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                    <span className="flex-1 text-xs text-slate-600 truncate mr-2">{displayName(file)}</span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {file.toLowerCase().endsWith('.json') && (
+                        <button
+                          onClick={() => previewJson(file)}
+                          className="p-1 rounded hover:bg-slate-200 transition"
+                          title="预览"
+                        >
+                          <Eye className={clsx("w-3.5 h-3.5", previewingJson === file ? "text-indigo-600" : "text-slate-400")} />
+                        </button>
                       )}
-                    </button>
+                      <a
+                        href={downloadLink(file)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1 rounded hover:bg-slate-200 transition"
+                        title="下载"
+                      >
+                        <FileDown className="w-3.5 h-3.5 text-slate-400" />
+                      </a>
+                    </div>
                   </div>
                   {/* JSON预览内容 */}
                   {previewingJson === file && (

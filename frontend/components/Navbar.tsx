@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Sparkles, History, Settings, FileText, ClipboardCheck, Wand2 } from 'lucide-react';
+import { Sparkles, History, Settings, FileText, ClipboardCheck, Wand2, BookOpen, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { UserMenu } from './UserMenu';
 import { SettingsModal } from './SettingsModal';
@@ -30,7 +30,6 @@ export function Navbar() {
                             <Sparkles className="w-4 h-4" />
                             <span>评测</span>
                         </button>
-                        <NavLink href="/templates" icon={<FileText className="w-4 h-4" />}>模板库</NavLink>
                         <NavLink href="/homework-review" icon={<ClipboardCheck className="w-4 h-4" />}>作业批阅</NavLink>
                         <NavLink href="/training-generate" icon={<Wand2 className="w-4 h-4" />}>训练配置</NavLink>
                         <NavLink href="/explore" icon={<History className="w-4 h-4" />}>探索</NavLink>
@@ -42,6 +41,14 @@ export function Navbar() {
                             <Settings className="w-4 h-4" />
                             <span>设置</span>
                         </button>
+                        <NavDropdown
+                            label="模板库"
+                            icon={<FileText className="w-4 h-4" />}
+                            items={[
+                                { href: '/templates', label: '评测模板库', icon: <FileText className="w-4 h-4" /> },
+                                { href: '/prompt-templates', label: 'Prompt 模板', icon: <BookOpen className="w-4 h-4" /> },
+                            ]}
+                        />
                     </nav>
                 </div>
 
@@ -72,5 +79,39 @@ function NavLink({ href, icon, children }: { href: string; icon: React.ReactNode
             {icon}
             <span>{children}</span>
         </Link>
+    );
+}
+
+interface DropdownItem {
+    href: string;
+    label: string;
+    icon: React.ReactNode;
+}
+
+function NavDropdown({ label, icon, items }: { label: string; icon: React.ReactNode; items: DropdownItem[] }) {
+    return (
+        <div className="relative group">
+            <button
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors"
+            >
+                {icon}
+                <span>{label}</span>
+                <ChevronDown className="w-3 h-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+            </button>
+            {/* Invisible bridge so mouse can move from button to dropdown */}
+            <div className="absolute left-0 top-full w-full h-2 hidden group-hover:block" />
+            <div className="absolute left-0 top-[calc(100%+0.5rem)] min-w-[180px] bg-white rounded-xl border border-slate-200 shadow-lg py-1.5 opacity-0 invisible group-hover:opacity-100 group-hover:visible translate-y-1 group-hover:translate-y-0 transition-all duration-150 z-50">
+                {items.map((item) => (
+                    <Link
+                        key={item.href}
+                        href={item.href}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 hover:text-indigo-600 hover:bg-indigo-50/50 transition-colors"
+                    >
+                        {item.icon}
+                        <span>{item.label}</span>
+                    </Link>
+                ))}
+            </div>
+        </div>
     );
 }

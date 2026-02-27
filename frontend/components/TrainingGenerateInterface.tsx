@@ -19,9 +19,13 @@ import {
     ClipboardList,
     ChevronDown,
     RotateCcw,
+    Save,
+    Globe,
+    Lock,
+    Sparkles,
 } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
-import { TrainingSSEEvent } from "@/lib/training-generator/types";
+import { TrainingSSEEvent, PromptTemplate } from "@/lib/training-generator/types";
 import {
     streamTrainingGenerate,
     isApiConfigured,
@@ -89,27 +93,132 @@ export function TrainingGenerateInterface() {
     const [showPromptEditor, setShowPromptEditor] = useState(false);
     const [activePromptTab, setActivePromptTab] = useState<"script" | "rubric">("script");
 
-    // --- Prompt 模板（从 localStorage 加载）---
+    // --- Prompt 模板（数据库 + localStorage fallback） ---
     const PROMPT_SETTINGS_KEY = "training-prompt-settings";
     const [scriptTemplate, setScriptTemplate] = useState<string>(() => {
         if (typeof window === "undefined") return DEFAULT_SCRIPT_TEMPLATE;
         try {
-            const saved = localStorage.getItem("training-prompt-settings");
+            const saved = localStorage.getItem(PROMPT_SETTINGS_KEY);
             return saved ? (JSON.parse(saved).scriptTemplate || DEFAULT_SCRIPT_TEMPLATE) : DEFAULT_SCRIPT_TEMPLATE;
         } catch { return DEFAULT_SCRIPT_TEMPLATE; }
     });
     const [rubricTemplate, setRubricTemplate] = useState<string>(() => {
         if (typeof window === "undefined") return DEFAULT_RUBRIC_TEMPLATE;
         try {
-            const saved = localStorage.getItem("training-prompt-settings");
+            const saved = localStorage.getItem(PROMPT_SETTINGS_KEY);
             return saved ? (JSON.parse(saved).rubricTemplate || DEFAULT_RUBRIC_TEMPLATE) : DEFAULT_RUBRIC_TEMPLATE;
         } catch { return DEFAULT_RUBRIC_TEMPLATE; }
     });
 
-    // 自动保存 Prompt 模板到 localStorage
+    // localStorage 持久化
     useEffect(() => {
         localStorage.setItem(PROMPT_SETTINGS_KEY, JSON.stringify({ scriptTemplate, rubricTemplate }));
     }, [scriptTemplate, rubricTemplate]);
+
+    // --- 数据库模板列表 ---
+    const [dbTemplates, setDbTemplates] = useState<PromptTemplate[]>([]);
+    const [selectedScriptTemplateId, setSelectedScriptTemplateId] = useState<string>("default");
+    const [selectedRubricTemplateId, setSelectedRubricTemplateId] = useState<string>("default");
+    const [templateLoading, setTemplateLoading] = useState(false);
+    const [saveModalOpen, setSaveModalOpen] = useState(false);
+    const [saveName, setSaveName] = useState("");
+    const [saveDesc, setSaveDesc] = useState("");
+    const [savePublic, setSavePublic] = useState(false);
+    const [saveTags, setSaveTags] = useState("");
+    const [saving, setSaving] = useState(false);
+
+    // 加载数据库模板列表
+    const loadTemplates = useCallback(async () => {
+        setTemplateLoading(true);
+        try {
+            const res = await fetch("/api/prompt-templates");
+            if (res.ok) {
+                const data = await res.json();
+                setDbTemplates(data.templates || []);
+            }
+        } catch {
+            // 静默失败（Supabase 未配置时）
+        } finally {
+            setTemplateLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { loadTemplates(); }, [loadTemplates]);
+
+    // 从模板市场跳转过来时，自动加载指定模板
+    useEffect(() => {
+        const raw = sessionStorage.getItem("use-prompt-template");
+        if (!raw) return;
+        sessionStorage.removeItem("use-prompt-template");
+        try {
+            const { id, type } = JSON.parse(raw) as { id: string; type: string };
+            if (id && type && dbTemplates.length > 0) {
+                handleSelectTemplate(id, type as "script" | "rubric");
+                setActivePromptTab(type as "script" | "rubric");
+                setShowPromptEditor(true);
+            }
+        } catch { /* ignore */ }
+    }, [dbTemplates]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // 选择模板时填充 textarea
+    const handleSelectTemplate = (templateId: string, tab: "script" | "rubric") => {
+        if (tab === "script") {
+            setSelectedScriptTemplateId(templateId);
+        } else {
+            setSelectedRubricTemplateId(templateId);
+        }
+
+        if (templateId === "default") {
+            if (tab === "script") setScriptTemplate(DEFAULT_SCRIPT_TEMPLATE);
+            else setRubricTemplate(DEFAULT_RUBRIC_TEMPLATE);
+            return;
+        }
+
+        const tpl = dbTemplates.find(t => t.id === templateId);
+        if (tpl) {
+            if (tab === "script") setScriptTemplate(tpl.prompt_template);
+            else setRubricTemplate(tpl.prompt_template);
+            // 递增使用计数（fire-and-forget）
+            fetch(`/api/prompt-templates/${tpl.id}/use`, { method: "POST" }).catch(() => {});
+        }
+    };
+
+    // 另存为我的模板
+    const handleSaveTemplate = async () => {
+        if (!saveName.trim()) return;
+        setSaving(true);
+        try {
+            const type = activePromptTab;
+            const template = type === "script" ? scriptTemplate : rubricTemplate;
+            const res = await fetch("/api/prompt-templates", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: saveName.trim(),
+                    description: saveDesc.trim() || undefined,
+                    type,
+                    prompt_template: template,
+                    is_public: savePublic,
+                    tags: saveTags.split(/[,，\s]+/).filter(Boolean),
+                }),
+            });
+            if (res.ok) {
+                setSaveModalOpen(false);
+                setSaveName("");
+                setSaveDesc("");
+                setSavePublic(false);
+                setSaveTags("");
+                await loadTemplates();
+            } else {
+                const err = await res.json();
+                alert(err.error || "保存失败");
+            }
+        } catch {
+            alert("保存失败");
+        } finally {
+            setSaving(false);
+        }
+    };
 
     // 获取文档内容（文本模式）或文件对象（文件模式）
     const getDocContent = useCallback(async (): Promise<{ content?: string; file?: File; name: string } | null> => {
@@ -469,10 +578,13 @@ export function TrainingGenerateInterface() {
                             className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors"
                         >
                             <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                                <Settings className="w-4 h-4 text-slate-400" />
-                                自定义 Prompt 模板
+                                <Sparkles className="w-4 h-4 text-indigo-400" />
+                                Prompt 模板
                                 {(scriptTemplate !== DEFAULT_SCRIPT_TEMPLATE || rubricTemplate !== DEFAULT_RUBRIC_TEMPLATE) && (
                                     <span className="px-1.5 py-0.5 bg-violet-100 text-violet-600 text-xs rounded-full">已修改</span>
+                                )}
+                                {dbTemplates.length > 0 && (
+                                    <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-xs rounded-full">{dbTemplates.length} 个可用</span>
                                 )}
                             </span>
                             <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showPromptEditor ? "rotate-180" : ""}`} />
@@ -509,21 +621,62 @@ export function TrainingGenerateInterface() {
                                 </div>
 
                                 <div className="p-4 space-y-3">
+                                    {/* 模板选择器 */}
+                                    <div className="flex items-center gap-2">
+                                        <select
+                                            value={activePromptTab === "script" ? selectedScriptTemplateId : selectedRubricTemplateId}
+                                            onChange={(e) => handleSelectTemplate(e.target.value, activePromptTab)}
+                                            className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+                                            disabled={templateLoading}
+                                        >
+                                            <option value="default">内置默认模板</option>
+                                            {dbTemplates
+                                                .filter(t => t.type === activePromptTab)
+                                                .map(t => (
+                                                    <option key={t.id} value={t.id}>
+                                                        {t.is_default ? "⭐ " : t.is_public ? "🌐 " : "🔒 "}
+                                                        {t.name}
+                                                        {t.use_count > 0 ? ` (${t.use_count}次使用)` : ""}
+                                                    </option>
+                                                ))
+                                            }
+                                        </select>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSaveName("");
+                                                setSaveDesc("");
+                                                setSavePublic(false);
+                                                setSaveTags("");
+                                                setSaveModalOpen(true);
+                                            }}
+                                            className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors whitespace-nowrap"
+                                            title="另存为我的模板"
+                                        >
+                                            <Save className="w-3.5 h-3.5" />
+                                            另存
+                                        </button>
+                                    </div>
+
                                     <p className="text-xs text-slate-500">
                                         使用 <code className="bg-slate-100 px-1 py-0.5 rounded text-violet-600">{'{teacherDoc}'}</code> 作为文档内容占位符，生成时会自动替换
                                     </p>
+
                                     {activePromptTab === "script" ? (
                                         <>
                                             <textarea
                                                 value={scriptTemplate}
-                                                onChange={(e) => setScriptTemplate(e.target.value)}
+                                                onChange={(e) => {
+                                                    setScriptTemplate(e.target.value);
+                                                    setSelectedScriptTemplateId("custom");
+                                                }}
                                                 rows={18}
                                                 className="w-full p-3 border border-slate-200 rounded-xl text-xs font-mono text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 resize-y transition-all"
                                                 spellCheck={false}
                                             />
                                             <button
                                                 type="button"
-                                                onClick={() => setScriptTemplate(DEFAULT_SCRIPT_TEMPLATE)}
+                                                onClick={() => { setScriptTemplate(DEFAULT_SCRIPT_TEMPLATE); setSelectedScriptTemplateId("default"); }}
                                                 className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors"
                                             >
                                                 <RotateCcw className="w-3 h-3" />
@@ -534,14 +687,17 @@ export function TrainingGenerateInterface() {
                                         <>
                                             <textarea
                                                 value={rubricTemplate}
-                                                onChange={(e) => setRubricTemplate(e.target.value)}
+                                                onChange={(e) => {
+                                                    setRubricTemplate(e.target.value);
+                                                    setSelectedRubricTemplateId("custom");
+                                                }}
                                                 rows={18}
                                                 className="w-full p-3 border border-slate-200 rounded-xl text-xs font-mono text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-300 resize-y transition-all"
                                                 spellCheck={false}
                                             />
                                             <button
                                                 type="button"
-                                                onClick={() => setRubricTemplate(DEFAULT_RUBRIC_TEMPLATE)}
+                                                onClick={() => { setRubricTemplate(DEFAULT_RUBRIC_TEMPLATE); setSelectedRubricTemplateId("default"); }}
                                                 className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors"
                                             >
                                                 <RotateCcw className="w-3 h-3" />
@@ -553,6 +709,88 @@ export function TrainingGenerateInterface() {
                             </div>
                         )}
                     </div>
+
+                    {/* 保存模板弹窗 */}
+                    {saveModalOpen && (
+                        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSaveModalOpen(false)}>
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                                <div className="bg-gradient-to-r from-indigo-600 to-violet-600 p-4 text-white">
+                                    <h3 className="font-bold text-lg flex items-center gap-2">
+                                        <Save className="w-5 h-5" />
+                                        保存为 Prompt 模板
+                                    </h3>
+                                    <p className="text-indigo-100 text-sm mt-1">
+                                        当前编辑的 {activePromptTab === "script" ? "剧本配置" : "评分标准"} Prompt
+                                    </p>
+                                </div>
+                                <div className="p-5 space-y-4">
+                                    <div>
+                                        <label className="text-sm font-medium text-slate-700 block mb-1">模板名称 *</label>
+                                        <input
+                                            type="text"
+                                            value={saveName}
+                                            onChange={e => setSaveName(e.target.value)}
+                                            placeholder="例如：心理咨询场景专用模板"
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-medium text-slate-700 block mb-1">简介</label>
+                                        <input
+                                            type="text"
+                                            value={saveDesc}
+                                            onChange={e => setSaveDesc(e.target.value)}
+                                            placeholder="简短描述模板的适用场景"
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-medium text-slate-700 block mb-1">标签（逗号分隔）</label>
+                                        <input
+                                            type="text"
+                                            value={saveTags}
+                                            onChange={e => setSaveTags(e.target.value)}
+                                            placeholder="例如：心理咨询, 护理, 贸易"
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+                                        />
+                                    </div>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={savePublic}
+                                            onChange={e => setSavePublic(e.target.checked)}
+                                            className="sr-only"
+                                        />
+                                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+                                            savePublic ? "bg-indigo-500 border-indigo-500" : "border-slate-300"
+                                        }`}>
+                                            {savePublic && <Check className="w-3.5 h-3.5 text-white" />}
+                                        </div>
+                                        <span className="text-sm text-slate-700 flex items-center gap-1.5">
+                                            {savePublic ? <Globe className="w-3.5 h-3.5 text-emerald-500" /> : <Lock className="w-3.5 h-3.5 text-slate-400" />}
+                                            {savePublic ? "公开（所有用户可见可用）" : "私有（仅自己可见）"}
+                                        </span>
+                                    </label>
+                                </div>
+                                <div className="flex gap-3 p-5 pt-0">
+                                    <button
+                                        onClick={() => setSaveModalOpen(false)}
+                                        className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                                    >
+                                        取消
+                                    </button>
+                                    <button
+                                        onClick={handleSaveTemplate}
+                                        disabled={!saveName.trim() || saving}
+                                        className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                                    >
+                                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                        {saving ? "保存中..." : "保存模板"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     {/* 操作按钮 */}
                     <div className="flex gap-3">
                         {phase === "generating" ? (

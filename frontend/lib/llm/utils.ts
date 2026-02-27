@@ -268,25 +268,28 @@ export async function callLLM(
 export async function* callLLMStream(
     prompt: string,
     config: ApiConfig & { model: string },
-    temperature: number = 0.1
+    temperature: number = 0.1,
+    systemPrompt?: string
 ): AsyncGenerator<string, void, unknown> {
     const { apiKey, baseUrl, model } = config;
 
     if (!apiKey) throw new Error("未配置 LLM API 密钥");
     if (!baseUrl) throw new Error("未配置 LLM API 地址");
 
-    const payload = {
-        maxTokens: 4000,
-        messages: [
-            {
-                role: "system",
-                content: `你是一位资深的教学质量评估专家。你的任务是分析教学智能体的对话质量并输出评分结果。
+    const defaultSystemPrompt = `你是一位资深的教学质量评估专家。你的任务是分析教学智能体的对话质量并输出评分结果。
 
 **重要规则：你必须只输出 JSON，不要输出任何其他内容！**
 - 不要写"为了..."、"首先..."、"让我..."等解释性文字
 - 不要写任何前言或总结
 - 直接输出 JSON 对象，以 { 开头，以 } 结尾
-- 如果需要思考，在心里思考，不要写出来`,
+- 如果需要思考，在心里思考，不要写出来`;
+
+    const payload = {
+        maxTokens: 16000,
+        messages: [
+            {
+                role: "system",
+                content: systemPrompt || defaultSystemPrompt,
             },
             {
                 role: "user",

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Sparkles, History, Settings, FileText, ClipboardCheck } from 'lucide-react';
+import { Sparkles, History, Settings, FileText, ClipboardCheck, Wand2 } from 'lucide-react';
 import Link from 'next/link';
 import { UserMenu } from './UserMenu';
 import { SettingsModal } from './SettingsModal';
@@ -32,6 +32,7 @@ export function Navbar() {
                         </button>
                         <NavLink href="/templates" icon={<FileText className="w-4 h-4" />}>模板库</NavLink>
                         <NavLink href="/homework-review" icon={<ClipboardCheck className="w-4 h-4" />}>作业批阅</NavLink>
+                        <NavLink href="/training-generate" icon={<Wand2 className="w-4 h-4" />}>训练配置</NavLink>
                         <NavLink href="/explore" icon={<History className="w-4 h-4" />}>探索</NavLink>
                         <NavLink href="/history" icon={<History className="w-4 h-4" />}>历史记录</NavLink>
                         <button

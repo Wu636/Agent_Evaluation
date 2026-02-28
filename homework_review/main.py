@@ -72,7 +72,7 @@ async def download_file(path: str = Query(..., description="文件路径")):
 
 @app.get("/api/preview")
 async def preview_file(path: str = Query(..., description="文件路径")):
-    """预览docx文件 - 提取纯文本内容返回HTML"""
+    """预览文件 - 支持 docx/pdf/ppt/pptx"""
     file_path = Path(path)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"文件不存在: {path}")
@@ -80,8 +80,26 @@ async def preview_file(path: str = Query(..., description="文件路径")):
         raise HTTPException(status_code=403, detail="只允许访问临时文件")
     
     ext = file_path.suffix.lower()
+    
+    if ext in (".ppt", ".pptx"):
+        # PPT 文件返回简要信息
+        try:
+            from pptx import Presentation
+            prs = Presentation(str(file_path))
+            slide_count = len(prs.slides)
+            html = f"<p>📊 PPT 文件: {file_path.name}</p><p>共 {slide_count} 页幻灯片</p><p style='color:#b45309;font-size:0.85em'>PPT 类型作业跳过 LLM 校验</p>"
+        except ImportError:
+            html = f"<p>📊 PPT 文件: {file_path.name}</p><p style='color:#b45309;font-size:0.85em'>PPT 类型作业跳过 LLM 校验</p>"
+        except Exception as e:
+            html = f"<p>📊 PPT 文件: {file_path.name}</p><p style='color:red'>预览失败: {str(e)}</p>"
+        return {"html": html, "fileName": file_path.name}
+    
+    if ext == ".pdf":
+        html = f"<p>📄 PDF 文件: {file_path.name}</p><p style='color:#6366f1;font-size:0.85em'>PDF 文件将通过云端解析</p>"
+        return {"html": html, "fileName": file_path.name}
+    
     if ext not in (".docx", ".doc"):
-        raise HTTPException(status_code=400, detail="仅支持预览 .docx 文件")
+        raise HTTPException(status_code=400, detail="仅支持预览 .docx/.pdf/.ppt/.pptx 文件")
     
     try:
         from docx import Document
@@ -128,6 +146,8 @@ async def generate_answers(
     llm_model: Optional[str] = Form(None),
     levels: Optional[str] = Form(None),
     auto_review: Optional[str] = Form(None),
+    custom_prompt: Optional[str] = Form(None),
+    custom_levels: Optional[str] = Form(None),
 ):
     """生成学生答案 - 调用 generate_and_review_service.py"""
     
@@ -160,6 +180,10 @@ async def generate_answers(
     env["LLM_API_KEY"] = llm_api_key or os.getenv("LLM_API_KEY", "")
     env["LLM_API_URL"] = llm_api_url or os.getenv("LLM_API_URL", "")
     env["LLM_MODEL"] = llm_model or os.getenv("LLM_MODEL", "")
+    if custom_prompt:
+        env["CUSTOM_PROMPT"] = custom_prompt
+    if custom_levels:
+        env["CUSTOM_LEVELS"] = custom_levels
     
     # 构建命令行参数 - 与前端本地模式一致
     cmd = [
@@ -246,6 +270,8 @@ async def review_answers(
     llm_api_key: Optional[str] = Form(None),
     llm_api_url: Optional[str] = Form(None),
     llm_model: Optional[str] = Form(None),
+    skip_llm_files: Optional[str] = Form(None),
+    file_groups: Optional[str] = Form(None),
 ):
     """批阅学生答案 - 调用 review_service.py"""
     
@@ -299,6 +325,10 @@ async def review_answers(
     ]
     if local_parse:
         cmd.append("--local-parse")
+    if skip_llm_files:
+        cmd.extend(["--skip-llm-files", skip_llm_files])
+    if file_groups:
+        cmd.extend(["--file-groups", file_groups])
     
     async def event_stream():
         """SSE流式响应"""

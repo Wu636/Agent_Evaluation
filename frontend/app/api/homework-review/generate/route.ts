@@ -86,6 +86,10 @@ export async function POST(request: NextRequest) {
           if (llmApiKey) railwayFormData.append("llm_api_key", llmApiKey);
           if (llmApiUrl) railwayFormData.append("llm_api_url", llmApiUrl);
           if (llmModel) railwayFormData.append("llm_model", llmModel);
+          const customPromptRailway = formData.get("custom_prompt") as string;
+          if (customPromptRailway) railwayFormData.append("custom_prompt", customPromptRailway);
+          const customLevelsRailway = formData.get("custom_levels") as string;
+          if (customLevelsRailway) railwayFormData.append("custom_levels", customLevelsRailway);
           
           // 转发到Railway API
           const response = await fetch(`${RAILWAY_API_URL}/api/generate`, {
@@ -147,6 +151,8 @@ export async function POST(request: NextRequest) {
           (formData.get("llm_api_url") as string) || ""
         ).trim() || (process.env.LLM_BASE_URL || "").trim();
         const llmModel = ((formData.get("llm_model") as string) || "").trim() || (process.env.LLM_MODEL || "").trim();
+        const customPrompt = (formData.get("custom_prompt") as string) || "";
+        const customLevels = (formData.get("custom_levels") as string) || "";
 
         const levelsJson = formData.get("levels") as string;
         let levels: string[] = [
@@ -205,6 +211,8 @@ export async function POST(request: NextRequest) {
         if (llmApiKey) envVars.LLM_API_KEY = llmApiKey;
         if (llmApiUrl) envVars.LLM_API_URL = llmApiUrl;
         if (llmModel) envVars.LLM_MODEL = llmModel;
+        if (customPrompt) envVars.CUSTOM_PROMPT = customPrompt;
+        if (customLevels) envVars.CUSTOM_LEVELS = customLevels;
 
         // ── 启动 Python 子进程 ──
         const pythonBin =

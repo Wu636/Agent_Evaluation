@@ -61,14 +61,14 @@ export async function POST(request: NextRequest) {
         // 如果配置了Railway API，使用远程服务
         if (USE_REMOTE_API) {
           const formData = await request.formData();
-          
+
           // 重新构建FormData，只包含Railway API需要的字段
           const railwayFormData = new FormData();
-          
+
           // 文件或路径
           const files = formData.getAll("files") as File[];
           const serverPaths = formData.get("server_paths") as string;
-          
+
           if (files && files.length > 0 && files[0].size > 0) {
             // 用户直接上传的文件 → 直接转发
             files.forEach(file => railwayFormData.append("files", file));
@@ -77,11 +77,11 @@ export async function POST(request: NextRequest) {
             try {
               const paths: string[] = JSON.parse(serverPaths);
               sseEvent(controller, "log", { message: `📥 正在从服务器下载 ${paths.length} 份生成文件...` });
-              
+
               for (const filePath of paths) {
                 const downloadUrl = `${RAILWAY_API_URL}/api/files?path=${encodeURIComponent(filePath)}`;
                 const fileResp = await fetch(downloadUrl);
-                
+
                 if (!fileResp.ok) {
                   sseEvent(controller, "error", {
                     message: `❌ 无法下载文件: ${filePath.split('/').pop()}\n可能服务已重新部署，临时文件已丢失。请重新“生成答案”后再批阅。`
@@ -89,12 +89,12 @@ export async function POST(request: NextRequest) {
                   controller.close();
                   return;
                 }
-                
+
                 const blob = await fileResp.blob();
                 const fileName = filePath.split('/').pop() || 'file.docx';
                 railwayFormData.append("files", blob, fileName);
               }
-              
+
               sseEvent(controller, "log", { message: `✅ 文件下载完成，开始批阅...` });
             } catch (e: any) {
               sseEvent(controller, "error", { message: `文件下载失败: ${e.message}` });
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
               return;
             }
           }
-          
+
           // 必需参数
           railwayFormData.append("authorization", (formData.get("authorization") as string) || "");
           railwayFormData.append("cookie", (formData.get("cookie") as string) || "");
@@ -110,15 +110,20 @@ export async function POST(request: NextRequest) {
           railwayFormData.append("task_id", (formData.get("task_id") as string) || "");
           railwayFormData.append("attempts", (formData.get("attempts") as string) || "5");
           railwayFormData.append("max_workers", "3");
-          
+
           // 可选参数
           const llmApiKey = formData.get("llm_api_key") as string;
           const llmApiUrl = formData.get("llm_api_url") as string;
           const llmModel = formData.get("llm_model") as string;
+          const skipLlmFiles = formData.get("skip_llm_files") as string;
           if (llmApiKey) railwayFormData.append("llm_api_key", llmApiKey);
           if (llmApiUrl) railwayFormData.append("llm_api_url", llmApiUrl);
           if (llmModel) railwayFormData.append("llm_model", llmModel);
-          
+          if (skipLlmFiles) railwayFormData.append("skip_llm_files", skipLlmFiles);
+
+          const fileGroupsJson = formData.get("file_groups") as string;
+          if (fileGroupsJson) railwayFormData.append("file_groups", fileGroupsJson);
+
           // 转发到Railway API
           const response = await fetch(`${RAILWAY_API_URL}/api/review`, {
             method: "POST",
@@ -236,6 +241,16 @@ export async function POST(request: NextRequest) {
           "--max-concurrency", String(Math.max(1, maxConcurrency)),
         ];
         if (localParse) scriptArgs.push("--local-parse");
+
+        const skipLlmFilesJson = (formData.get("skip_llm_files") as string || "").trim();
+        if (skipLlmFilesJson) {
+          scriptArgs.push("--skip-llm-files", skipLlmFilesJson);
+        }
+
+        const fileGroupsJson = (formData.get("file_groups") as string || "").trim();
+        if (fileGroupsJson) {
+          scriptArgs.push("--file-groups", fileGroupsJson);
+        }
 
         const childEnv = { ...process.env, ...envVars } as NodeJS.ProcessEnv;
 

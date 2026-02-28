@@ -1024,8 +1024,32 @@ async def evaluate_and_save(file_path: Path, file_info: dict, text_input: str, c
     }
 
 
-async def run_batch(file_paths, attempts: int, context: dict, output_root: Optional[Path], output_format: str, max_concurrency: int = 5, local_parse: bool = False):
+async def run_batch(file_paths, attempts: int, context: dict, output_root: Optional[Path], output_format: str, max_concurrency: int = 5, local_parse: bool = False, skip_llm_files: str = None, file_groups: str = None):
     semaphore = asyncio.Semaphore(max_concurrency)
+
+    # 解析需要跳过 LLM 校验的文件名列表
+    skip_llm_set: set = set()
+    if skip_llm_files:
+        try:
+            parsed = json.loads(skip_llm_files)
+            if isinstance(parsed, list):
+                skip_llm_set = set(parsed)
+                print(f"ℹ️ 以下文件将跳过 LLM 校验: {', '.join(skip_llm_set)}")
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # 解析文件分组信息
+    groups_map: dict = {}  # group_name -> [filename, ...]
+    if file_groups:
+        try:
+            groups_map = json.loads(file_groups)
+            if not isinstance(groups_map, dict):
+                groups_map = {}
+            else:
+                for gname, fnames in groups_map.items():
+                    print(f"📁 文件分组「{gname}」: {', '.join(fnames)}")
+        except (json.JSONDecodeError, TypeError):
+            groups_map = {}
 
     upload_tasks = [async_upload_file(str(path), semaphore) for path in file_paths]
     upload_results = await asyncio.gather(*upload_tasks)
@@ -1101,8 +1125,12 @@ async def run_batch(file_paths, attempts: int, context: dict, output_root: Optio
             analysis_path = save_analysis_result(file_output_dir, file_info, analysis_result, text_input)
             print(f"✅ 解析完成: {file_info.get('fileName')} -> {analysis_path}")
 
-            # LLM 校验补充空白答案
-            if LLM_CORRECTOR_AVAILABLE:
+            # LLM 校验补充空白答案（用户标记跳过的文件不走 LLM 校验）
+            file_name = file_info.get("fileName", "")
+            should_skip_llm = file_name in skip_llm_set
+            if should_skip_llm:
+                print(f"ℹ️ 用户已标记跳过 LLM 校验: {file_name}")
+            elif LLM_CORRECTOR_AVAILABLE:
                 try:
                     text_input = await async_correct_answers_with_llm(path, text_input)
                 except Exception as e:
@@ -1114,8 +1142,56 @@ async def run_batch(file_paths, attempts: int, context: dict, output_root: Optio
         print("\n❌ 没有成功解析的文件，无法执行批改")
         return
 
+    # ── 分组合并逻辑 ──
+    # 如果有分组信息，将同组文件的 text_input 合并为一份
+    eval_items = []  # (label_path, file_info, text_input, output_dir) — 用于评测
+
+    if groups_map:
+        # 建立 filename -> prepared_file 的映射
+        name_to_prepared = {}
+        for item in prepared_files:
+            path, file_info, text_input, file_output_dir = item
+            fname = file_info.get("fileName", path.name)
+            name_to_prepared[fname] = item
+
+        grouped_names = set()
+        for group_name, file_names in groups_map.items():
+            members = [name_to_prepared[fn] for fn in file_names if fn in name_to_prepared]
+            if len(members) < 2:
+                # 不足2个文件的组不需要合并，按独立文件处理
+                continue
+            grouped_names.update(fn for fn in file_names if fn in name_to_prepared)
+
+            # 合并 text_input
+            combined_parts = []
+            for path, file_info, text_input, _ in members:
+                fname = file_info.get("fileName", path.name)
+                combined_parts.append(f"--- 文件: {fname} ---\n{text_input}")
+            merged_text = "\n\n".join(combined_parts)
+
+            # 使用组名作为输出目录
+            group_output_dir = (output_root if output_root else (members[0][0].parent / "review_results")) / group_name
+            group_output_dir.mkdir(parents=True, exist_ok=True)
+
+            # 使用第一个文件的 file_info，但修改 fileName 为组名
+            group_file_info = dict(members[0][1])
+            group_file_info["fileName"] = group_name
+            group_file_info["_merged_files"] = [m[1].get("fileName", "") for m in members]
+
+            print(f"📎 已合并分组「{group_name}」: {', '.join(group_file_info['_merged_files'])}")
+            eval_items.append((members[0][0], group_file_info, merged_text, group_output_dir))
+
+        # 未分组的文件独立评测
+        for item in prepared_files:
+            path, file_info, text_input, file_output_dir = item
+            fname = file_info.get("fileName", path.name)
+            if fname not in grouped_names:
+                eval_items.append(item)
+    else:
+        eval_items = prepared_files
+
     tasks = []
-    for path, file_info, text_input, file_output_dir in prepared_files:
+    for path, file_info, text_input, file_output_dir in eval_items:
         for attempt_index in range(1, attempts + 1):
             tasks.append(
                 evaluate_and_save(
@@ -1134,11 +1210,11 @@ async def run_batch(file_paths, attempts: int, context: dict, output_root: Optio
     results = await asyncio.gather(*tasks)
     success_count = sum(1 for item in results if item and item.get("success"))
     print(f"\n✅ 已完成 {len(results)} 次测评（成功 {success_count}）")
-    generate_excel_summary(results, [item[0] for item in prepared_files], attempts, output_root)
+    generate_excel_summary(results, [item[0] for item in eval_items], attempts, output_root)
 
     return {
         "results": results,
-        "prepared_files": [str(item[0]) for item in prepared_files],
+        "prepared_files": [str(item[0]) for item in eval_items],
         "output_root": str(output_root) if output_root else None,
         "attempts": attempts,
         "output_format": output_format,

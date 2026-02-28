@@ -26,6 +26,8 @@ def parse_args():
     parser.add_argument("--output-root", required=True, help="输出目录")
     parser.add_argument("--max-concurrency", type=int, default=5)
     parser.add_argument("--local-parse", action="store_true")
+    parser.add_argument("--skip-llm-files", default=None, help="JSON array of filenames to skip LLM validation")
+    parser.add_argument("--file-groups", default=None, help="JSON object mapping group names to lists of filenames")
     return parser.parse_args()
 
 
@@ -227,6 +229,8 @@ def main():
                 args.output_format,
                 max_concurrency=args.max_concurrency,
                 local_parse=args.local_parse,
+                skip_llm_files=args.skip_llm_files,
+                file_groups=args.file_groups,
             )
         )
     except Exception as e:

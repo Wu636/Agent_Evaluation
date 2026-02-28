@@ -89,7 +89,16 @@ async def main():
         context["llm_api_url"] = llm_url
     if llm_model:
         context["llm_model"] = llm_model
+    # 自定义 Prompt（前端传入，通过环境变量传递）
+    custom_prompt = os.getenv("CUSTOM_PROMPT", "").strip()
+    if custom_prompt:
+        context["custom_prompt"] = custom_prompt
+        printer.log("📝 使用用户自定义 Prompt 模板")
 
+    custom_levels = os.getenv("CUSTOM_LEVELS", "").strip()
+    if custom_levels:
+        context["custom_levels"] = custom_levels
+        printer.log("📝 使用用户自定义等级描述")
     printer.log(f"🔧 LLM Key: {'已配置 (' + llm_key[:6] + '...)' if llm_key else '❌ 未配置'}")
     printer.log(f"🔧 LLM URL: {llm_url or '(默认)'}")
     printer.log(f"🔧 LLM Model: {llm_model or '(默认)'}")
@@ -105,6 +114,8 @@ async def main():
             output_dir=gen_output_dir,
             levels=args.levels,
             context=context,
+            custom_prompt=context.get("custom_prompt", ""),
+            custom_levels_json=context.get("custom_levels", ""),
         )
     except Exception as e:
         printer.error(f"生成阶段发生错误: {e}")

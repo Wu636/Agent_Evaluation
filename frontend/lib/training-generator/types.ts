@@ -38,6 +38,7 @@ export interface PromptTemplate {
     tags: string[];
     created_at: string;
     updated_at: string;
+    creator_name: string | null;
 }
 
 /** 创建/更新 Prompt 模板的请求体 */

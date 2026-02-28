@@ -636,7 +636,8 @@ export function TrainingGenerateInterface() {
                                                     <option key={t.id} value={t.id}>
                                                         {t.is_default ? "⭐ " : t.is_public ? "🌐 " : "🔒 "}
                                                         {t.name}
-                                                        {t.use_count > 0 ? ` (${t.use_count}次使用)` : ""}
+                                                        {t.creator_name ? ` — ${t.creator_name}` : t.is_default ? " — 系统内置" : ""}
+                                                        {t.use_count > 0 ? ` (${t.use_count}次)` : ""}
                                                     </option>
                                                 ))
                                             }

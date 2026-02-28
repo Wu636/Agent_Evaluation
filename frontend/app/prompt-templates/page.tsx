@@ -293,8 +293,7 @@ export default function PromptTemplatesPage() {
                                             )}
                                         </div>
                                         <span className="text-[10px] text-slate-400 whitespace-nowrap flex items-center gap-1">
-                                            <Users className="w-3 h-3" />
-                                            {t.use_count}
+                                            🔥 {t.use_count}
                                         </span>
                                     </div>
 
@@ -325,9 +324,23 @@ export default function PromptTemplatesPage() {
                                         </div>
                                     )}
 
-                                    <p className="text-[10px] text-slate-400">
-                                        更新于 {new Date(t.updated_at).toLocaleDateString("zh-CN")}
-                                    </p>
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-[10px] text-slate-400">
+                                            更新于 {new Date(t.updated_at).toLocaleDateString("zh-CN")}
+                                        </p>
+                                        {t.creator_name && (
+                                            <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                                <Users className="w-3 h-3" />
+                                                {t.creator_name}
+                                            </span>
+                                        )}
+                                        {t.is_default && !t.creator_name && (
+                                            <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                                <Star className="w-3 h-3" />
+                                                系统内置
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Card Actions */}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { PromptTemplatePayload } from "@/lib/training-generator/types";
 
 // GET: 获取 Prompt 模板列表
@@ -37,7 +38,30 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        return NextResponse.json({ templates: data || [] });
+        // 批量查询创建人用户名（用 admin client 绕过 RLS）
+        const userIds = [...new Set((data || []).map((t: any) => t.user_id).filter(Boolean))];
+        let profileMap: Record<string, string> = {};
+        if (userIds.length > 0) {
+            const { data: profiles } = await supabaseAdmin
+                .from("profiles")
+                .select("id, name, email")
+                .in("id", userIds);
+            if (profiles) {
+                profileMap = Object.fromEntries(
+                    profiles.map((p: any) => [
+                        p.id,
+                        p.name || (p.email ? p.email.split("@")[0] : null),
+                    ])
+                );
+            }
+        }
+
+        const templates = (data || []).map((t: any) => ({
+            ...t,
+            creator_name: t.user_id ? (profileMap[t.user_id] || null) : null,
+        }));
+
+        return NextResponse.json({ templates });
     } catch (e) {
         console.error("获取 Prompt 模板列表异常:", e);
         return NextResponse.json({ error: "服务器内部错误" }, { status: 500 });

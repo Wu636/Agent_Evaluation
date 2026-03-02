@@ -380,7 +380,8 @@ export function HomeworkReviewInterface() {
 4. 如果是案例分析类作业：结合案例进行分析论述
 5. 不要包含任何多余的开场白、解释或元评论，直接输出答案内容
 6. 答案的质量必须严格符合【{{level}}】水平的设定
-7. 如果是较低等级，应体现出知识理解不深入、存在错误或遗漏等特征`;
+7. 如果是较低等级，应体现出知识理解不深入、存在错误或遗漏等特征
+8. 绝对禁止使用 LaTeX 语法（如 $...$ 、\\begin 、\\frac 等），所有数学公式必须用纯文本表示，例如：用 A^(-1) 代替 $A^{-1}$，用空格和竖线画矩阵而不是 \\begin{pmatrix}`;
   const [generatePromptTemplate, setGeneratePromptTemplate] = useState(DEFAULT_GENERATE_PROMPT);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   // 等级描述定义（用户可自定义，例如调整分数范围）
@@ -1265,7 +1266,7 @@ export function HomeworkReviewInterface() {
                 ref={inputRef}
                 type="file"
                 multiple={mode === "review"}
-                accept=".doc,.docx,.pdf,.ppt,.pptx,.png,.jpg,.jpeg"
+                accept={mode === "review" ? ".doc,.docx,.pdf,.ppt,.pptx,.png,.jpg,.jpeg" : ".doc,.docx,.pdf"}
                 className="hidden"
                 onChange={(e) => handleFilesSelected(e.target.files)}
               />
@@ -1284,7 +1285,10 @@ export function HomeworkReviewInterface() {
                   <Upload className="w-6 h-6 text-indigo-600" />
                 </div>
                 <div className="text-sm text-slate-600">
-                  支持 doc/docx/pdf/ppt/pptx/png/jpg，支持多文件或文件夹
+                  {mode === "review"
+                    ? "支持 doc/docx/pdf/ppt/pptx/png/jpg，支持多文件或文件夹"
+                    : "支持 doc/docx/pdf 格式的题卷文件"
+                  }
                 </div>
                 <div className="flex gap-2">
                   <button

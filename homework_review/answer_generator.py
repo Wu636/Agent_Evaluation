@@ -18,6 +18,16 @@ try:
 except ImportError:
     Document = None
 
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
+
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
+
 import requests
 
 # Import Cloud API functions
@@ -114,10 +124,22 @@ def extract_questions_from_cloud(docx_path: Path, context: dict) -> Tuple[str, s
         return extract_questions_from_local(docx_path)
 
 
-def extract_questions_from_local(docx_path: Path) -> Tuple[str, str]:
+def extract_questions_from_local(file_path: Path) -> Tuple[str, str]:
     """
-    本地解析作为兜底
+    本地解析作为兜底，支持 .docx / .doc / .pdf
     """
+    ext = file_path.suffix.lower()
+    
+    if ext == ".pdf":
+        return _extract_from_pdf(file_path)
+    elif ext in (".doc", ".docx"):
+        return _extract_from_docx(file_path)
+    else:
+        raise ValueError(f"本地解析不支持 {ext} 格式，仅支持 .docx / .doc / .pdf。请配置智慧树认证信息以使用云端解析。")
+
+
+def _extract_from_docx(docx_path: Path) -> Tuple[str, str]:
+    """解析 .docx 文件"""
     if Document is None:
         raise ImportError("请安装 python-docx: pip install python-docx")
     
@@ -135,6 +157,37 @@ def extract_questions_from_local(docx_path: Path) -> Tuple[str, str]:
             full_text.append(p.text.strip())
             
     return title, "\n".join(full_text)
+
+
+def _extract_from_pdf(pdf_path: Path) -> Tuple[str, str]:
+    """解析 PDF 文件（使用 PyMuPDF）"""
+    if fitz is None:
+        raise ImportError("解析 PDF 需要 PyMuPDF，请安装: pip install PyMuPDF")
+    
+    doc = fitz.open(str(pdf_path))
+    page_count = len(doc)
+    
+    full_text = []
+    for page in doc:
+        text = page.get_text("text")
+        if text.strip():
+            full_text.append(text.strip())
+    doc.close()
+    
+    all_text = "\n".join(full_text)
+    
+    # 提取标题：取第一个非空行
+    title = ""
+    for line in all_text.split("\n"):
+        if line.strip():
+            title = line.strip()[:100]
+            break
+    
+    if not title:
+        title = pdf_path.stem
+    
+    print(f"✅ PDF 解析完成，共 {page_count} 页，提取 {len(all_text)} 字符")
+    return title, all_text
 
 
 def build_generation_prompt(title: str, exam_content: str, level: str, level_desc: str, custom_template: str = "") -> str:
@@ -165,6 +218,7 @@ def build_generation_prompt(title: str, exam_content: str, level: str, level_des
 5. 不要包含任何多余的开场白、解释或元评论，直接输出答案内容
 6. 答案的质量必须严格符合【{level}】水平的设定
 7. 如果是较低等级，应体现出知识理解不深入、存在错误或遗漏等特征
+8. 绝对禁止使用任何 LaTeX 或 Markdown 数学语法，所有数学公式必须用纯文本表示。例如写 A^(-1) 而不是 $A^{{-1}}$，写 x=2 而不是 $x=2$
 """
 
 
@@ -192,7 +246,7 @@ async def generate_answer_content(prompt: str, context: dict) -> Optional[str]:
         "messages": [
             {
                 "role": "system",
-                "content": "你是一个模拟真实学生作答的AI助手。你会根据指定的能力等级，生成符合该水平的试卷答案。"
+                "content": "你是一个模拟真实学生作答的AI助手。你会根据指定的能力等级，生成符合该水平的作业答案。重要规则：所有输出必须是纯文本格式，绝对禁止使用 LaTeX/Markdown 数学语法（如 $...$、\\begin{}、\\frac{} 等），因为输出将写入 Word 文档。"
             },
             {
                 "role": "user",

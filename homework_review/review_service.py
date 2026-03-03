@@ -80,6 +80,7 @@ def build_score_table(results: list, file_paths: list, attempts: int) -> dict:
     student_data: dict = {}
     dim_order_by_label: dict = {}
     cat_order_by_label: dict = {}
+    question_order_by_label: dict = {}  # 逐题评分顺序
 
     for item in (results or []):
         if not item or not item.get("success"):
@@ -94,9 +95,11 @@ def build_score_table(results: list, file_paths: list, attempts: int) -> dict:
             "total_scores": [None] * attempts,
             "categories": {},
             "dimensions": {},
+            "questions": {},  # 逐题评分：{"填空题第1题": {"scores": [...], "total": 3}}
         })
         dim_order = dim_order_by_label.setdefault(label, [])
         cat_order = cat_order_by_label.setdefault(label, [])
+        q_order = question_order_by_label.setdefault(label, [])
 
         ai = item.get("attempt_index", 0)
         if ai < 1 or ai > attempts:
@@ -116,6 +119,23 @@ def build_score_table(results: list, file_paths: list, attempts: int) -> dict:
             ce["scores"][ai - 1] = cat_scores.get("score")
             if cat_scores.get("total", 0) > ce["total"]:
                 ce["total"] = cat_scores.get("total", 0)
+
+        # Per-question scores (逐题评分)
+        for q in core.get("question_scores", []):
+            if not isinstance(q, dict):
+                continue
+            qname = q.get("name", "")
+            if not qname:
+                continue
+            if qname not in q_order:
+                q_order.append(qname)
+            qe = entry["questions"].setdefault(qname, {
+                "scores": [None] * attempts,
+                "total": q.get("totalScore", 0) or 0,
+            })
+            qe["scores"][ai - 1] = q.get("score")
+            if (q.get("totalScore", 0) or 0) > qe["total"]:
+                qe["total"] = q.get("totalScore", 0) or 0
 
         # Dimensions
         for dim in core.get("dimension_scores", []):
@@ -161,6 +181,20 @@ def build_score_table(results: list, file_paths: list, attempts: int) -> dict:
                 "variance": c_var,
             })
 
+        # 逐题评分
+        questions = []
+        for qn in question_order_by_label.get(label, []):
+            qe = entry["questions"].get(qn, {})
+            qs = qe.get("scores", [])
+            q_mean, q_var = stats(qs)
+            questions.append({
+                "name": qn,
+                "total": qe.get("total", 0),
+                "scores": qs,
+                "mean": q_mean,
+                "variance": q_var,
+            })
+
         dims = []
         for dn in dim_order_by_label.get(label, []):
             ds = entry["dimensions"].get(dn, [])
@@ -179,6 +213,7 @@ def build_score_table(results: list, file_paths: list, attempts: int) -> dict:
             "mean": t_mean,
             "variance": t_var,
             "categories": cats,
+            "questions": questions,
             "dimensions": dims,
         })
 

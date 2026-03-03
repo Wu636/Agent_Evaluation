@@ -764,6 +764,7 @@ def extract_core_data(result: dict) -> Optional[dict]:
         "dimension_scores": core_data.get("dimensionScores", []),
         "category_scores": category_data.get("scores", {}),
         "category_order": category_data.get("order", []),
+        "question_scores": question_scores,  # 原始逐题评分
     }
 
 

@@ -110,6 +110,7 @@ interface StudentScore {
   mean: number | null;
   variance: number | null;
   categories: ScoreEntry[];
+  questions?: ScoreEntry[];  // 逐题评分（详细展示用）
   dimensions: ScoreEntry[];
 }
 
@@ -160,6 +161,7 @@ function extractCoreData(result: any): {
   dimensionScores: any[];
   categoryScores: Record<string, { score: number; total: number }>;
   categoryOrder: string[];
+  rawQuestionScores: { name: string; score: number; total: number }[];
 } | null {
   if (!result || typeof result !== "object") return null;
 
@@ -180,6 +182,7 @@ function extractCoreData(result: any): {
   const questionScores: any[] = coreData.questionScores || [];
   const catScores: Record<string, { score: number; total: number }> = {};
   const catOrder: string[] = [];
+  const rawQs: { name: string; score: number; total: number }[] = [];
 
   for (const q of questionScores) {
     const cat = q.questionCategory || "未分类";
@@ -189,6 +192,9 @@ function extractCoreData(result: any): {
     }
     catScores[cat].score += q.questionScore ?? 0;
     catScores[cat].total += q.questionTotalScore ?? 0;
+    // 保留逐题数据
+    const qName = q.questionName || q.name || `${cat}(未命名)`;
+    rawQs.push({ name: qName, score: q.questionScore ?? q.score ?? 0, total: q.questionTotalScore ?? q.totalScore ?? 0 });
   }
 
   return {
@@ -197,6 +203,7 @@ function extractCoreData(result: any): {
     dimensionScores: coreData.dimensionScores || [],
     categoryScores: catScores,
     categoryOrder: catOrder,
+    rawQuestionScores: rawQs,
   };
 }
 
@@ -224,6 +231,8 @@ function buildScoreTableFromSummary(summary: any): ScoreTable | null {
       totalScores: (number | null)[];
       categories: Record<string, { scores: (number | null)[]; total: number }>;
       catOrder: string[];
+      questions: Record<string, { scores: (number | null)[]; total: number }>;
+      qOrder: string[];
       dimensions: Record<string, (number | null)[]>;
       dimOrder: string[];
     }> = {};
@@ -245,6 +254,8 @@ function buildScoreTableFromSummary(summary: any): ScoreTable | null {
           totalScores: Array(attempts).fill(null),
           categories: {},
           catOrder: [],
+          questions: {},
+          qOrder: [],
           dimensions: {},
           dimOrder: [],
         };
@@ -262,6 +273,17 @@ function buildScoreTableFromSummary(summary: any): ScoreTable | null {
           entry.categories[catName].scores[ai - 1] = cat.score;
           if (cat.total > entry.categories[catName].total) entry.categories[catName].total = cat.total;
         }
+      }
+
+      // 逐题评分
+      for (const q of core.rawQuestionScores) {
+        if (!q.name) continue;
+        if (!entry.questions[q.name]) {
+          entry.questions[q.name] = { scores: Array(attempts).fill(null), total: 0 };
+          entry.qOrder.push(q.name);
+        }
+        entry.questions[q.name].scores[ai - 1] = q.score;
+        if (q.total > entry.questions[q.name].total) entry.questions[q.name].total = q.total;
       }
 
       for (const dim of core.dimensionScores) {
@@ -307,6 +329,11 @@ function buildScoreTableFromSummary(summary: any): ScoreTable | null {
             const ce = entry.categories[cn];
             const cs = computeStats(ce.scores);
             return { name: cn, total: ce.total, scores: ce.scores, mean: cs.mean, variance: cs.variance };
+          }),
+          questions: entry.qOrder.map((qn) => {
+            const qe = entry.questions[qn];
+            const qs = computeStats(qe.scores);
+            return { name: qn, total: qe.total, scores: qe.scores, mean: qs.mean, variance: qs.variance };
           }),
           dimensions: entry.dimOrder.map((dn) => {
             const ds = entry.dimensions[dn];
@@ -1873,19 +1900,38 @@ export function HomeworkReviewInterface() {
       function ScoreTableView({scoreTable}: {scoreTable: ScoreTable }) {
   const {attempts, students} = scoreTable;
       const attemptCols = Array.from({length: attempts }, (_, i) => `第${i + 1}次`);
+      const [showDetailed, setShowDetailed] = React.useState(false);
+
+      // 检查是否有逐题评分数据
+      const hasQuestionData = students.some((s) => s.questions && s.questions.length > 0);
 
       return (
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="flex items-center gap-3 px-8 py-5 border-b border-slate-100">
-          <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center">
-            <Table2 className="w-5 h-5 text-emerald-600" />
+        <div className="flex items-center justify-between px-8 py-5 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center">
+              <Table2 className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">评分表</h2>
+              <p className="text-xs text-slate-500">
+                共 {students.length} 份作业，每份评测 {attempts} 次
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">评分表</h2>
-            <p className="text-xs text-slate-500">
-              共 {students.length} 份作业，每份评测 {attempts} 次
-            </p>
-          </div>
+          {hasQuestionData && (
+            <label className="flex items-center gap-2 cursor-pointer select-none group">
+              <input
+                type="checkbox"
+                checked={showDetailed}
+                onChange={(e) => setShowDetailed(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              />
+              <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">
+                展示逐题评分明细
+              </span>
+            </label>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -1913,10 +1959,11 @@ export function HomeworkReviewInterface() {
             </thead>
             <tbody>
               {students.map((student, si) => {
-                // 计算该学生总共占几行（总分 + 题型 + 维度）
                 const catRows = student.categories.length;
                 const dimRows = student.dimensions.length;
-                const totalRowCount = 1 + catRows + dimRows;
+                const questionRows = showDetailed ? (student.questions?.length ?? 0) : 0;
+                // 总分行 + 题型合并行 + 逐题明细行 + 维度行
+                const totalRowCount = 1 + catRows + questionRows + dimRows;
 
                 const rows: React.ReactNode[] = [];
 
@@ -1966,7 +2013,7 @@ export function HomeworkReviewInterface() {
                   </tr>
                 );
 
-                // 题型分行
+                // 题型分行（合并总分）
                 student.categories.forEach((cat, ci) => {
                   rows.push(
                     <tr
@@ -2005,6 +2052,48 @@ export function HomeworkReviewInterface() {
                     </tr>
                   );
                 });
+
+                // 逐题明细行（仅在勾选时显示）
+                if (showDetailed && student.questions) {
+                  student.questions.forEach((q, qi) => {
+                    rows.push(
+                      <tr
+                        key={`${si}-q-${qi}`}
+                        className={clsx(
+                          "border-b border-slate-50",
+                          si % 2 === 0 ? "bg-white" : "bg-slate-50/50"
+                        )}
+                      >
+                        <td className="px-4 py-1.5 text-slate-500 text-xs">
+                          <span className="inline-block px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 mr-1">小题</span>
+                          {q.name}
+                          {q.total != null && (
+                            <span className="text-slate-400 ml-1">({q.total}分)</span>
+                          )}
+                        </td>
+                        {q.scores.map((s, j) => (
+                          <td key={j} className="px-3 py-1.5 text-center text-slate-500 text-xs">
+                            {s ?? "—"}
+                          </td>
+                        ))}
+                        <td className="px-3 py-1.5 text-center font-medium text-teal-600 text-xs">
+                          {q.mean ?? "—"}
+                        </td>
+                        <td className={clsx(
+                          "px-3 py-1.5 text-center text-xs",
+                          q.variance != null && q.variance > 2
+                            ? "bg-red-50 text-red-500 font-bold"
+                            : "text-amber-500"
+                        )}>
+                          {q.variance != null && q.variance > 2 && (
+                            <span title="方差较大" className="mr-0.5">⚠️</span>
+                          )}
+                          {q.variance ?? "—"}
+                        </td>
+                      </tr>
+                    );
+                  });
+                }
 
                 // 评价维度行
                 student.dimensions.forEach((dim, di) => {

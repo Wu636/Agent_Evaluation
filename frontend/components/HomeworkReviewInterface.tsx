@@ -1616,7 +1616,6 @@ export function HomeworkReviewInterface() {
                       className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                     >
                       <option value="json">JSON</option>
-                      <option value="pdf">PDF</option>
                     </select>
                   </div>
                 )}

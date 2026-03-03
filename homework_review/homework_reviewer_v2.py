@@ -692,12 +692,15 @@ def save_output(output_dir: Path, file_info: dict, attempt_index: int, attempt_t
 
 
 def extract_category_from_name(name: str) -> str:
-    """从题目名称提取类型，如 '单项选择题第1题' → '单项选择题'"""
+    """从题目名称提取类型，如 '单项选择题第1题' → '单项选择题'，'一、选择题第3题' → '选择题'"""
     import re
     if not name:
         return ""
+    # 先去掉中文序号前缀：一、 二、 三、... 或 （一）（二）... 或 1. 2. ...
+    cleaned = re.sub(r'^[\u4e00-\u9fa5\d]+[\u3001.\uff0e\s]\s*', '', name)
+    cleaned = re.sub(r'^[\uff08(][\u4e00-\u9fa5\d]+[\uff09)]\s*', '', cleaned)
     # 匹配常见题型：单项选择题、判断题、简答题、论述题、案例分析题等
-    match = re.match(r'^([\u4e00-\u9fa5]+题)', name)
+    match = re.match(r'^([\u4e00-\u9fa5]+题)', cleaned)
     if match:
         return match.group(1)
     # 处理特殊格式如 "案例分析题第1问"

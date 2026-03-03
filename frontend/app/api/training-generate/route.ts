@@ -8,6 +8,7 @@ import { MODEL_NAME_MAPPING } from "@/lib/config";
 import { ApiConfig } from "@/lib/llm/types";
 import { generateTrainingScriptStream, generateTrainingRubricStream } from "@/lib/training-generator/generator";
 import { convertDocxToText } from "@/lib/converters/docx-converter";
+import WordExtractor from 'word-extractor';
 
 // Vercel 函数配置
 export const maxDuration = 300;
@@ -54,9 +55,14 @@ export async function POST(request: NextRequest) {
                     const buffer = Buffer.from(arrayBuffer);
                     const fileName = file.name.toLowerCase();
 
-                    if (fileName.endsWith(".docx") || fileName.endsWith(".doc")) {
+                    if (fileName.endsWith(".docx")) {
                         // 使用 mammoth 解析 docx
                         teacherDocContent = await convertDocxToText(buffer);
+                    } else if (fileName.endsWith(".doc")) {
+                        // 使用 word-extractor 解析旧版 .doc 格式
+                        const extractor = new WordExtractor();
+                        const extracted = await extractor.extract(buffer);
+                        teacherDocContent = extracted.getBody();
                     } else {
                         // txt / md 直接解码
                         teacherDocContent = buffer.toString("utf-8");

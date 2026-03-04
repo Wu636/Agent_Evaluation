@@ -197,9 +197,13 @@ function extractCoreData(result: any): {
     rawQs.push({ name: qName, score: q.questionScore ?? q.score ?? 0, total: q.questionTotalScore ?? q.totalScore ?? 0 });
   }
 
+  // 计算真实满分：优先用各题 totalScore 之和
+  const sumOfTotals = rawQs.reduce((acc, q) => acc + (q.total || 0), 0);
+  const realFullMark = sumOfTotals > 0 ? sumOfTotals : (coreData.fullMark || 100);
+
   return {
     totalScore: coreData.totalScore ?? null,
-    fullMark: coreData.fullMark || 100,
+    fullMark: realFullMark,
     dimensionScores: coreData.dimensionScores || [],
     categoryScores: catScores,
     categoryOrder: catOrder,

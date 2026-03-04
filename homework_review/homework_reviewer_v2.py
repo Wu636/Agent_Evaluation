@@ -758,9 +758,17 @@ def extract_core_data(result: dict) -> Optional[dict]:
     question_scores = core_data.get("questionScores", [])
     category_data = calculate_category_scores(question_scores)
 
+    # 计算真实满分：优先用各题 totalScore 之和，否则用 API 返回的 fullMark
+    api_full_mark = core_data.get("fullMark", 100)
+    sum_of_totals = sum(
+        (q.get("totalScore", 0) or 0) for q in question_scores if isinstance(q, dict)
+    )
+    # 如果能从题目中算出满分且大于0，使用计算值；否则回退到 API 值
+    real_full_mark = sum_of_totals if sum_of_totals > 0 else api_full_mark
+
     return {
         "total_score": core_data.get("totalScore"),
-        "full_mark": core_data.get("fullMark", 100),
+        "full_mark": real_full_mark,
         "dimension_scores": core_data.get("dimensionScores", []),
         "category_scores": category_data.get("scores", {}),
         "category_order": category_data.get("order", []),

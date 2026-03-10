@@ -34,6 +34,7 @@ import {
 } from "@/lib/training-generator/client";
 import { DEFAULT_SCRIPT_TEMPLATE, DEFAULT_RUBRIC_TEMPLATE } from "@/lib/training-generator/prompts";
 import { SettingsModal } from "./SettingsModal";
+import { InjectConfigModal } from "./InjectConfigModal";
 
 type GeneratePhase = "idle" | "generating" | "completed" | "error";
 type ResultTab = "script" | "rubric";
@@ -84,12 +85,13 @@ export function TrainingGenerateInterface() {
         if (phase === "idle" && (cached.script || cached.rubric)) {
             setPhase("completed");
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // --- UI ---
     const [copySuccess, setCopySuccess] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [showInjectModal, setShowInjectModal] = useState(false);
     const [showPromptEditor, setShowPromptEditor] = useState(false);
     const [activePromptTab, setActivePromptTab] = useState<"script" | "rubric">("script");
 
@@ -179,7 +181,7 @@ export function TrainingGenerateInterface() {
             if (tab === "script") setScriptTemplate(tpl.prompt_template);
             else setRubricTemplate(tpl.prompt_template);
             // 递增使用计数（fire-and-forget）
-            fetch(`/api/prompt-templates/${tpl.id}/use`, { method: "POST" }).catch(() => {});
+            fetch(`/api/prompt-templates/${tpl.id}/use`, { method: "POST" }).catch(() => { });
         }
     };
 
@@ -246,12 +248,12 @@ export function TrainingGenerateInterface() {
         const doc = await getDocContent();
         if (!doc) return;
 
-        // 重置状态
+        // 重置状态（只清除本次要生成的内容）
         setPhase("generating");
-        setScriptContent("");
-        setRubricContent("");
+        if (generateScript) setScriptContent("");
+        if (generateRubric) setRubricContent("");
         setErrorMessage("");
-        setTaskName("");
+        if (generateScript) setTaskName(""); // 仅生成剧本时才重置任务名
         setStatusMessage("准备中...");
         setCurrentGeneratingPhase(null);
 
@@ -336,6 +338,133 @@ export function TrainingGenerateInterface() {
     const handleCancel = useCallback(() => {
         abortRef.current?.abort();
     }, []);
+
+    // --- 重新生成逻辑 ---
+    const [regenContext, setRegenContext] = useState("");
+    const [isRegenerating, setIsRegenerating] = useState(false);
+    const [regenScript, setRegenScript] = useState(true);
+    const [regenRubric, setRegenRubric] = useState(true);
+
+    const handleRegenerate = async () => {
+        if (!regenContext.trim()) return;
+        if (!isApiConfigured()) {
+            setShowSettings(true);
+            return;
+        }
+
+        const shouldRegenScript = regenScript && generateScript;
+        const shouldRegenRubric = regenRubric && generateRubric;
+        if (!shouldRegenScript && !shouldRegenRubric) return;
+
+        // 构建重新生成的文档内容：
+        // 将已有的生成结果 + 用户的修改意见一起发给 LLM
+        // 这样 LLM 可以在已有结果的基础上进行修改，而不是从头生成
+        let regenDocContent = "";
+
+        // 先获取原始文档内容作为基础上下文
+        if (inputMode === "text" && textContent.trim()) {
+            regenDocContent += textContent.trim();
+        } else if (file) {
+            // 文件模式：读取文件文本内容
+            try {
+                regenDocContent += await file.text();
+            } catch {
+                regenDocContent += `（原始文档：${file.name}）`;
+            }
+        }
+
+        // 附加已生成的内容供 LLM 参考
+        if (shouldRegenScript && scriptContent) {
+            regenDocContent += `\n\n【以下是之前生成的训练剧本配置，请在此基础上根据用户要求进行修改】：\n${scriptContent}`;
+        }
+        if (shouldRegenRubric && rubricContent) {
+            regenDocContent += `\n\n【以下是之前生成的评分标准配置，请在此基础上根据用户要求进行修改】：\n${rubricContent}`;
+        }
+
+        // 附加用户的修改意见
+        regenDocContent += `\n\n【用户的修改要求，请严格按照以下指示修改上面的内容】：\n${regenContext}`;
+
+        // 设置状态
+        setPhase("generating");
+        if (shouldRegenScript) setScriptContent("");
+        if (shouldRegenRubric) setRubricContent("");
+        setErrorMessage("");
+        setStatusMessage("准备重新生成...");
+        setCurrentGeneratingPhase(null);
+        setIsRegenerating(true);
+
+        const controller = new AbortController();
+        abortRef.current = controller;
+
+        let tempScript = shouldRegenScript ? "" : scriptContent;
+        let tempRubric = shouldRegenRubric ? "" : rubricContent;
+
+        try {
+            // 始终使用文本模式发送（不再重新上传文件）
+            await streamTrainingGenerate({
+                teacherDocContent: regenDocContent,
+                teacherDocName: taskName || "重新生成",
+                generateScript: shouldRegenScript,
+                generateRubric: shouldRegenRubric,
+                scriptPromptTemplate: scriptTemplate !== DEFAULT_SCRIPT_TEMPLATE ? scriptTemplate : undefined,
+                rubricPromptTemplate: rubricTemplate !== DEFAULT_RUBRIC_TEMPLATE ? rubricTemplate : undefined,
+                signal: controller.signal,
+                onEvent: (event: TrainingSSEEvent) => {
+                    switch (event.type) {
+                        case "start":
+                            setCurrentGeneratingPhase(event.phase);
+                            setStatusMessage(event.message || `正在重新生成${event.phase === "script" ? "训练剧本" : "评分标准"}...`);
+                            break;
+                        case "chunk":
+                            if (event.phase === "script") {
+                                tempScript += event.content;
+                                setScriptContent(tempScript);
+                            } else {
+                                tempRubric += event.content;
+                                setRubricContent(tempRubric);
+                            }
+                            break;
+                        case "phase_complete":
+                            if (event.phase === "script") {
+                                tempScript = event.fullContent;
+                                setScriptContent(event.fullContent);
+                            } else {
+                                tempRubric = event.fullContent;
+                                setRubricContent(event.fullContent);
+                            }
+                            break;
+                        case "complete":
+                            setPhase("completed");
+                            setCurrentGeneratingPhase(null);
+                            setStatusMessage("");
+                            setTaskName(event.taskName || taskName || "训练配置");
+                            if (shouldRegenScript && !shouldRegenRubric) setActiveTab("script");
+                            else if (shouldRegenRubric && !shouldRegenScript) setActiveTab("rubric");
+                            break;
+                        case "error":
+                            setPhase("error");
+                            setErrorMessage(event.message);
+                            setCurrentGeneratingPhase(null);
+                            setStatusMessage("");
+                            break;
+                    }
+                },
+            });
+        } catch (err) {
+            if (err instanceof DOMException && err.name === "AbortError") {
+                setPhase(tempScript || tempRubric ? "completed" : "idle");
+                setStatusMessage("");
+            } else {
+                setPhase("error");
+                setErrorMessage(err instanceof Error ? err.message : "重新生成失败");
+            }
+        } finally {
+            abortRef.current = null;
+            setCurrentGeneratingPhase(null);
+            setIsRegenerating(false);
+            setRegenContext("");
+        }
+    };
 
     const handleReset = useCallback(() => {
         setPhase("idle");
@@ -426,22 +555,20 @@ export function TrainingGenerateInterface() {
                             <div className="flex bg-slate-100 rounded-lg p-0.5">
                                 <button
                                     onClick={() => setInputMode("file")}
-                                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${
-                                        inputMode === "file"
-                                            ? "bg-white text-indigo-600 shadow-sm"
-                                            : "text-slate-500 hover:text-slate-700"
-                                    }`}
+                                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${inputMode === "file"
+                                        ? "bg-white text-indigo-600 shadow-sm"
+                                        : "text-slate-500 hover:text-slate-700"
+                                        }`}
                                 >
                                     <Upload className="w-3.5 h-3.5" />
                                     文件
                                 </button>
                                 <button
                                     onClick={() => setInputMode("text")}
-                                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${
-                                        inputMode === "text"
-                                            ? "bg-white text-indigo-600 shadow-sm"
-                                            : "text-slate-500 hover:text-slate-700"
-                                    }`}
+                                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${inputMode === "text"
+                                        ? "bg-white text-indigo-600 shadow-sm"
+                                        : "text-slate-500 hover:text-slate-700"
+                                        }`}
                                 >
                                     <Type className="w-3.5 h-3.5" />
                                     粘贴
@@ -453,13 +580,12 @@ export function TrainingGenerateInterface() {
                             {inputMode === "file" ? (
                                 /* 文件上传区 */
                                 <div
-                                    className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${
-                                        isDragging
-                                            ? "border-indigo-400 bg-indigo-50"
-                                            : file
+                                    className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${isDragging
+                                        ? "border-indigo-400 bg-indigo-50"
+                                        : file
                                             ? "border-emerald-300 bg-emerald-50"
                                             : "border-slate-200 hover:border-indigo-300 hover:bg-slate-50"
-                                    }`}
+                                        }`}
                                     onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                                     onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
                                     onDrop={handleFileDrop}
@@ -516,11 +642,10 @@ export function TrainingGenerateInterface() {
                         <p className="text-sm font-semibold text-slate-700 mb-3">生成内容</p>
                         <div className="flex flex-col sm:flex-row gap-3">
                             <label
-                                className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all flex-1 ${
-                                    generateScript
-                                        ? "border-violet-300 bg-violet-50"
-                                        : "border-slate-200 hover:border-slate-300"
-                                }`}
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all flex-1 ${generateScript
+                                    ? "border-violet-300 bg-violet-50"
+                                    : "border-slate-200 hover:border-slate-300"
+                                    }`}
                             >
                                 <input
                                     type="checkbox"
@@ -528,9 +653,8 @@ export function TrainingGenerateInterface() {
                                     onChange={(e) => setGenerateScript(e.target.checked)}
                                     className="sr-only"
                                 />
-                                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
-                                    generateScript ? "bg-violet-500 border-violet-500" : "border-slate-300"
-                                }`}>
+                                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${generateScript ? "bg-violet-500 border-violet-500" : "border-slate-300"
+                                    }`}>
                                     {generateScript && <Check className="w-3.5 h-3.5 text-white" />}
                                 </div>
                                 <div>
@@ -543,11 +667,10 @@ export function TrainingGenerateInterface() {
                             </label>
 
                             <label
-                                className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all flex-1 ${
-                                    generateRubric
-                                        ? "border-amber-300 bg-amber-50"
-                                        : "border-slate-200 hover:border-slate-300"
-                                }`}
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all flex-1 ${generateRubric
+                                    ? "border-amber-300 bg-amber-50"
+                                    : "border-slate-200 hover:border-slate-300"
+                                    }`}
                             >
                                 <input
                                     type="checkbox"
@@ -555,9 +678,8 @@ export function TrainingGenerateInterface() {
                                     onChange={(e) => setGenerateRubric(e.target.checked)}
                                     className="sr-only"
                                 />
-                                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
-                                    generateRubric ? "bg-amber-500 border-amber-500" : "border-slate-300"
-                                }`}>
+                                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${generateRubric ? "bg-amber-500 border-amber-500" : "border-slate-300"
+                                    }`}>
                                     {generateRubric && <Check className="w-3.5 h-3.5 text-white" />}
                                 </div>
                                 <div>
@@ -597,11 +719,10 @@ export function TrainingGenerateInterface() {
                                     <button
                                         type="button"
                                         onClick={() => setActivePromptTab("script")}
-                                        className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
-                                            activePromptTab === "script"
-                                                ? "text-violet-600 border-b-2 border-violet-500 bg-violet-50/50"
-                                                : "text-slate-500 hover:text-slate-700"
-                                        }`}
+                                        className={`flex-1 py-2.5 text-sm font-medium transition-colors ${activePromptTab === "script"
+                                            ? "text-violet-600 border-b-2 border-violet-500 bg-violet-50/50"
+                                            : "text-slate-500 hover:text-slate-700"
+                                            }`}
                                     >
                                         <BookOpen className="w-3.5 h-3.5 inline mr-1.5" />
                                         剧本配置 Prompt
@@ -609,11 +730,10 @@ export function TrainingGenerateInterface() {
                                     <button
                                         type="button"
                                         onClick={() => setActivePromptTab("rubric")}
-                                        className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
-                                            activePromptTab === "rubric"
-                                                ? "text-amber-600 border-b-2 border-amber-500 bg-amber-50/50"
-                                                : "text-slate-500 hover:text-slate-700"
-                                        }`}
+                                        className={`flex-1 py-2.5 text-sm font-medium transition-colors ${activePromptTab === "rubric"
+                                            ? "text-amber-600 border-b-2 border-amber-500 bg-amber-50/50"
+                                            : "text-slate-500 hover:text-slate-700"
+                                            }`}
                                     >
                                         <ClipboardList className="w-3.5 h-3.5 inline mr-1.5" />
                                         评分标准 Prompt
@@ -762,9 +882,8 @@ export function TrainingGenerateInterface() {
                                             onChange={e => setSavePublic(e.target.checked)}
                                             className="sr-only"
                                         />
-                                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
-                                            savePublic ? "bg-indigo-500 border-indigo-500" : "border-slate-300"
-                                        }`}>
+                                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${savePublic ? "bg-indigo-500 border-indigo-500" : "border-slate-300"
+                                            }`}>
                                             {savePublic && <Check className="w-3.5 h-3.5 text-white" />}
                                         </div>
                                         <span className="text-sm text-slate-700 flex items-center gap-1.5">
@@ -836,37 +955,35 @@ export function TrainingGenerateInterface() {
                 {/* ====== 右侧：结果展示区 ====== */}
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[500px]">
                     {/* Tab 切换头 */}
-                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                        <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
+                    <div className="px-5 py-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 overflow-x-auto">
+                        <div className="flex gap-1.5 p-1 bg-slate-100/80 rounded-xl shrink-0">
                             {generateScript && (
                                 <button
                                     onClick={() => setActiveTab("script")}
-                                    className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${
-                                        activeTab === "script"
-                                            ? "bg-white text-violet-600 shadow-sm"
-                                            : "text-slate-500 hover:text-slate-700"
-                                    }`}
+                                    className={`px-3 py-2 text-sm font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${activeTab === "script"
+                                        ? "bg-white text-violet-700 shadow-sm ring-1 ring-slate-200/50"
+                                        : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                                        }`}
                                 >
-                                    <BookOpen className="w-3.5 h-3.5" />
-                                    训练剧本
+                                    <BookOpen className="w-4 h-4 shrink-0" />
+                                    <span>训练剧本</span>
                                     {scriptContent && phase === "completed" && (
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                                     )}
                                 </button>
                             )}
                             {generateRubric && (
                                 <button
                                     onClick={() => setActiveTab("rubric")}
-                                    className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${
-                                        activeTab === "rubric"
-                                            ? "bg-white text-amber-600 shadow-sm"
-                                            : "text-slate-500 hover:text-slate-700"
-                                    }`}
+                                    className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap ${activeTab === "rubric"
+                                        ? "bg-white text-amber-700 shadow-sm ring-1 ring-slate-200/50"
+                                        : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                                        }`}
                                 >
-                                    <ClipboardList className="w-3.5 h-3.5" />
-                                    评分标准
+                                    <ClipboardList className="w-4 h-4 shrink-0" />
+                                    <span>评分标准</span>
                                     {rubricContent && phase === "completed" && (
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                                     )}
                                 </button>
                             )}
@@ -874,23 +991,13 @@ export function TrainingGenerateInterface() {
 
                         {/* 操作按钮 */}
                         {activeContent && phase === "completed" && (
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 shrink-0">
                                 <button
-                                    onClick={handleCopy}
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 rounded-lg transition-colors"
-                                    title="复制内容"
+                                    onClick={() => setShowInjectModal(true)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 rounded-lg shadow-sm shadow-indigo-200 transition-all hover:-translate-y-0.5"
+                                    title="一键注入到平台"
                                 >
-                                    {copySuccess ? (
-                                        <>
-                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                                            <span className="text-emerald-600">已复制</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Copy className="w-3.5 h-3.5" />
-                                            复制
-                                        </>
-                                    )}
+                                    🚀 一键注入
                                 </button>
                                 <button
                                     onClick={handleDownload}
@@ -902,11 +1009,11 @@ export function TrainingGenerateInterface() {
                                 </button>
                                 <button
                                     onClick={handleReset}
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 rounded-lg transition-colors"
-                                    title="重新生成"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 rounded-lg transition-colors"
+                                    title="重新开始"
                                 >
                                     <RefreshCw className="w-3.5 h-3.5" />
-                                    重新生成
+                                    重置
                                 </button>
                             </div>
                         )}
@@ -933,13 +1040,12 @@ export function TrainingGenerateInterface() {
                                         <p className="text-sm font-medium text-indigo-700">{statusMessage}</p>
                                         <div className="flex items-center gap-2 mt-1">
                                             {generateScript && (
-                                                <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${
-                                                    currentGeneratingPhase === "script"
-                                                        ? "bg-violet-100 text-violet-600"
-                                                        : scriptContent
+                                                <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${currentGeneratingPhase === "script"
+                                                    ? "bg-violet-100 text-violet-600"
+                                                    : scriptContent
                                                         ? "bg-emerald-100 text-emerald-600"
                                                         : "bg-slate-100 text-slate-400"
-                                                }`}>
+                                                    }`}>
                                                     {currentGeneratingPhase === "script" ? (
                                                         <Loader2 className="w-3 h-3 animate-spin" />
                                                     ) : scriptContent ? (
@@ -949,13 +1055,12 @@ export function TrainingGenerateInterface() {
                                                 </span>
                                             )}
                                             {generateRubric && (
-                                                <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${
-                                                    currentGeneratingPhase === "rubric"
-                                                        ? "bg-amber-100 text-amber-600"
-                                                        : rubricContent
+                                                <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${currentGeneratingPhase === "rubric"
+                                                    ? "bg-amber-100 text-amber-600"
+                                                    : rubricContent
                                                         ? "bg-emerald-100 text-emerald-600"
                                                         : "bg-slate-100 text-slate-400"
-                                                }`}>
+                                                    }`}>
                                                     {currentGeneratingPhase === "rubric" ? (
                                                         <Loader2 className="w-3 h-3 animate-spin" />
                                                     ) : rubricContent ? (
@@ -1005,11 +1110,90 @@ export function TrainingGenerateInterface() {
                             </div>
                         )}
                     </div>
+
+                    {/* 重新生成带有提示词输入的区域 */}
+                    {phase === "completed" && activeContent && (
+                        <div className="border-t border-slate-100 bg-slate-50/50 p-4">
+                            <div className="flex flex-col gap-3">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs font-medium text-slate-500 flex items-center gap-1.5">
+                                        <Sparkles className="w-3 h-3 text-indigo-500" />
+                                        对结果不满意？输入修改意见重新生成
+                                    </label>
+                                    <div className="flex items-center gap-3">
+                                        {generateScript && (
+                                            <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={regenScript}
+                                                    onChange={(e) => setRegenScript(e.target.checked)}
+                                                    className="w-3.5 h-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                                                />
+                                                <span className={regenScript ? "text-violet-600 font-medium" : "text-slate-400"}>训练剧本</span>
+                                            </label>
+                                        )}
+                                        {generateRubric && (
+                                            <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={regenRubric}
+                                                    onChange={(e) => setRegenRubric(e.target.checked)}
+                                                    className="w-3.5 h-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                                />
+                                                <span className={regenRubric ? "text-amber-600 font-medium" : "text-slate-400"}>评分标准</span>
+                                            </label>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="例如：把打分标准变得更严格一些，或者添加几个更复杂的测试案例..."
+                                        value={regenContext}
+                                        onChange={(e) => setRegenContext(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" && !e.shiftKey) {
+                                                e.preventDefault();
+                                                handleRegenerate();
+                                            }
+                                        }}
+                                        disabled={isRegenerating}
+                                        className="flex-1 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400 disabled:opacity-50"
+                                    />
+                                    <button
+                                        onClick={handleRegenerate}
+                                        disabled={isRegenerating || !regenContext.trim() || (!regenScript && !regenRubric)}
+                                        className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-slate-800 hover:bg-slate-900 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                                    >
+                                        {isRegenerating ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                生成中...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <RotateCcw className="w-4 h-4" />
+                                                重新配置
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
             {/* 设置弹窗 */}
             <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+
+            {/* 一键注入配置弹窗 */}
+            <InjectConfigModal
+                isOpen={showInjectModal}
+                onClose={() => setShowInjectModal(false)}
+                scriptMarkdown={scriptContent}
+                rubricMarkdown={rubricContent}
+            />
         </div>
     );
 }

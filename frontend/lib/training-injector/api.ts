@@ -296,7 +296,7 @@ export async function createScriptFlow(
                 ],
             },
             transitionPrompt: transitionPrompt,
-            transitionHistoryNum: 0,
+            transitionHistoryNum: -1,
             isDefault: 1,
             isError: false,
         },

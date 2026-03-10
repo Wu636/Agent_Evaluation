@@ -32,7 +32,7 @@ import {
     downloadMarkdown,
     copyToClipboard,
 } from "@/lib/training-generator/client";
-import { DEFAULT_SCRIPT_TEMPLATE, DEFAULT_RUBRIC_TEMPLATE } from "@/lib/training-generator/prompts";
+import { DEFAULT_SCRIPT_TEMPLATE, DEFAULT_RUBRIC_TEMPLATE, TEMPLATE_VERSION } from "@/lib/training-generator/prompts";
 import { SettingsModal } from "./SettingsModal";
 import { InjectConfigModal } from "./InjectConfigModal";
 
@@ -101,20 +101,27 @@ export function TrainingGenerateInterface() {
         if (typeof window === "undefined") return DEFAULT_SCRIPT_TEMPLATE;
         try {
             const saved = localStorage.getItem(PROMPT_SETTINGS_KEY);
-            return saved ? (JSON.parse(saved).scriptTemplate || DEFAULT_SCRIPT_TEMPLATE) : DEFAULT_SCRIPT_TEMPLATE;
+            if (!saved) return DEFAULT_SCRIPT_TEMPLATE;
+            const parsed = JSON.parse(saved);
+            // 版本不匹配 → 默认模板已更新，丢弃旧缓存
+            if (parsed._v !== TEMPLATE_VERSION) return DEFAULT_SCRIPT_TEMPLATE;
+            return parsed.scriptTemplate || DEFAULT_SCRIPT_TEMPLATE;
         } catch { return DEFAULT_SCRIPT_TEMPLATE; }
     });
     const [rubricTemplate, setRubricTemplate] = useState<string>(() => {
         if (typeof window === "undefined") return DEFAULT_RUBRIC_TEMPLATE;
         try {
             const saved = localStorage.getItem(PROMPT_SETTINGS_KEY);
-            return saved ? (JSON.parse(saved).rubricTemplate || DEFAULT_RUBRIC_TEMPLATE) : DEFAULT_RUBRIC_TEMPLATE;
+            if (!saved) return DEFAULT_RUBRIC_TEMPLATE;
+            const parsed = JSON.parse(saved);
+            if (parsed._v !== TEMPLATE_VERSION) return DEFAULT_RUBRIC_TEMPLATE;
+            return parsed.rubricTemplate || DEFAULT_RUBRIC_TEMPLATE;
         } catch { return DEFAULT_RUBRIC_TEMPLATE; }
     });
 
-    // localStorage 持久化
+    // localStorage 持久化（附带版本号）
     useEffect(() => {
-        localStorage.setItem(PROMPT_SETTINGS_KEY, JSON.stringify({ scriptTemplate, rubricTemplate }));
+        localStorage.setItem(PROMPT_SETTINGS_KEY, JSON.stringify({ scriptTemplate, rubricTemplate, _v: TEMPLATE_VERSION }));
     }, [scriptTemplate, rubricTemplate]);
 
     // --- 数据库模板列表 ---

@@ -25,6 +25,9 @@ export interface ExtractedScriptConfig {
 
 // ─── 通用 LLM 调用 ──────────────────────────────────────────────────
 
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 3000;
+
 async function callLLM(
     prompt: string,
     llmSettings: LLMSettings
@@ -39,47 +42,65 @@ async function callLLM(
 
     console.log("[llm-extractor] Calling LLM:", { endpoint, model, promptLength: prompt.length });
 
-    let res: Response;
-    try {
-        res = await fetch(endpoint, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
+    const requestBody = JSON.stringify({
+        model,
+        messages: [
+            {
+                role: "system",
+                content:
+                    "你是一个精确的 JSON 数据提取器。你的任务是从 Markdown 文档中提取结构化数据，严格按照要求的 JSON 格式输出。不要输出任何额外的说明文字，只输出纯 JSON。",
             },
-            body: JSON.stringify({
-                model,
-                messages: [
-                    {
-                        role: "system",
-                        content:
-                            "你是一个精确的 JSON 数据提取器。你的任务是从 Markdown 文档中提取结构化数据，严格按照要求的 JSON 格式输出。不要输出任何额外的说明文字，只输出纯 JSON。",
-                    },
-                    { role: "user", content: prompt },
-                ],
-                temperature: 0,
-                max_tokens: 16000,
-            }),
-        });
-    } catch (fetchErr) {
-        console.error("[llm-extractor] fetch 网络错误:", fetchErr);
-        throw new Error(`LLM API 网络连接失败: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`);
+            { role: "user", content: prompt },
+        ],
+        temperature: 0,
+        max_tokens: 16000,
+    });
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+            const delay = RETRY_DELAY_MS * attempt;
+            console.log(`[llm-extractor] 第 ${attempt + 1} 次重试，等待 ${delay}ms...`);
+            await new Promise((r) => setTimeout(r, delay));
+        }
+
+        let res: Response;
+        try {
+            res = await fetch(endpoint, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${apiKey}`,
+                },
+                body: requestBody,
+            });
+        } catch (fetchErr) {
+            console.error(`[llm-extractor] fetch 网络错误 (attempt ${attempt + 1}):`, fetchErr);
+            lastError = new Error(`LLM API 网络连接失败: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`);
+            continue;
+        }
+
+        if (!res.ok) {
+            const errText = await res.text().catch(() => "");
+            console.error(`[llm-extractor] API 返回错误 (attempt ${attempt + 1}):`, res.status, errText);
+            lastError = new Error(`LLM API 调用失败 (${res.status}): ${errText}`);
+            // 仅对 5xx 服务端错误重试
+            if (res.status >= 500) continue;
+            throw lastError;
+        }
+
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content || "";
+
+        // 清理 markdown 代码块包裹
+        return content
+            .replace(/^```(?:json)?\s*\n?/i, "")
+            .replace(/\n?```\s*$/i, "")
+            .trim();
     }
 
-    if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        console.error("[llm-extractor] API 返回错误:", res.status, errText);
-        throw new Error(`LLM API 调用失败 (${res.status}): ${errText}`);
-    }
-
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content || "";
-
-    // 清理 markdown 代码块包裹
-    return content
-        .replace(/^```(?:json)?\s*\n?/i, "")
-        .replace(/\n?```\s*$/i, "")
-        .trim();
+    throw lastError || new Error("LLM API 调用失败（已耗尽重试次数）");
 }
 
 // ─── 训练剧本提取 ───────────────────────────────────────────────────

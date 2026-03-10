@@ -6,6 +6,40 @@
 
 import { ParsedStep, ParsedScoreItem } from "./types";
 
+// ─── 基础配置提取 ─────────────────────────────────────────────────────
+
+export interface ParsedTaskConfig {
+    trainTaskName: string;
+    description: string;
+}
+
+/**
+ * 从训练剧本 Markdown 中提取基础配置（任务名称、任务描述）
+ * 匹配 ## 📋 基础配置 区块中的字段
+ */
+export function parseTaskConfig(markdown: string): ParsedTaskConfig | null {
+    // 匹配基础配置区块：从 ## 📋 基础配置 / ## 基础配置 开始，到下一个 ## 结束
+    const configMatch = markdown.match(
+        /^##\s*(?:📋\s*)?基础配置[\s\S]*?(?=^##\s|$(?!\n))/m
+    );
+    if (!configMatch) return null;
+
+    const block = configMatch[0];
+    let trainTaskName = "";
+    let description = "";
+
+    // 提取 **任务名称**: xxx
+    const nameMatch = block.match(/\*{2}任务名称\*{2}\s*[：:]\s*(.+)/)
+    if (nameMatch) trainTaskName = nameMatch[1].trim();
+
+    // 提取 **任务描述**: xxx（可能跨行）
+    const descMatch = block.match(/\*{2}任务描述\*{2}\s*[：:]\s*(.+)/);
+    if (descMatch) description = descMatch[1].trim();
+
+    if (!trainTaskName && !description) return null;
+    return { trainTaskName, description };
+}
+
 // ─── 工具函数 ────────────────────────────────────────────────────────
 
 /** 清理 Markdown 值中的"选填"标注、引号等 */
@@ -198,7 +232,9 @@ export function parseRubricMarkdown(markdown: string): ParsedScoreItem[] {
 
     for (let i = 0; i < matches.length; i++) {
         const m = matches[i];
-        const itemName = m[1].trim();
+        // 清理中文序号前缀：一、二、三、…
+        const rawName = m[1].trim();
+        const itemName = rawName.replace(/^[一二三四五六七八九十]+、\s*/, "");
         const score = parseInt(m[2], 10);
 
         // 该段的文本范围
@@ -206,29 +242,40 @@ export function parseRubricMarkdown(markdown: string): ParsedScoreItem[] {
         const bodyEnd = i + 1 < matches.length ? matches[i + 1].index! : markdown.length;
         const body = markdown.slice(bodyStart, bodyEnd);
 
-        // 提取 description 和 requireDetail
-        // description = 第一个纯描述段落（不含分数档次）
-        // requireDetail = 所有分数档次行（90–100分、80–89分、70–79分 等）
-        const scoreTierPattern = /^[-*]?\s*\*{0,2}(\d{2,3}[–—-]\d{2,3}\s*分|\d{2,3}\s*分以[下上])[：:：]?\*{0,2}/;
-        const descLines: string[] = [];
-        const requireLines: string[] = [];
-        let inRequire = false;
+        // 优先使用显式标记：**评价描述：** 和 **评分区间：**
+        const explicitDescMatch = body.match(/\*{2}评价描述[：:]\*{2}\s*([\s\S]*?)(?=\*{2}评分区间[：:]\*{2}|$)/i);
+        const explicitReqMatch = body.match(/\*{2}评分区间[：:]\*{2}\s*([\s\S]*?)$/i);
 
-        for (const line of body.split("\n")) {
-            const s = line.trim();
-            if (!s || s === "---") continue;
-            if (scoreTierPattern.test(s)) {
-                inRequire = true;
+        let description: string;
+        let requireDetail: string;
+
+        if (explicitDescMatch && explicitReqMatch) {
+            // 新格式：有显式标记
+            description = explicitDescMatch[1].trim();
+            requireDetail = explicitReqMatch[1].trim();
+        } else {
+            // 兼容旧格式：按分数档次行分割
+            const scoreTierPattern = /^[-*]?\s*\*{0,2}(\d{2,3}[–—-]\d{2,3}\s*分|\d{2,3}\s*分以[下上])[：:：]?\*{0,2}/;
+            const descLines: string[] = [];
+            const requireLines: string[] = [];
+            let inRequire = false;
+
+            for (const line of body.split("\n")) {
+                const s = line.trim();
+                if (!s || s === "---") continue;
+                if (scoreTierPattern.test(s)) {
+                    inRequire = true;
+                }
+                if (inRequire) {
+                    requireLines.push(s);
+                } else {
+                    descLines.push(s);
+                }
             }
-            if (inRequire) {
-                requireLines.push(s);
-            } else {
-                descLines.push(s);
-            }
+
+            description = descLines.join("\n").trim();
+            requireDetail = requireLines.join("\n\n").trim();
         }
-
-        const description = descLines.join("\n").trim();
-        const requireDetail = requireLines.join("\n\n").trim();
 
         items.push({ itemName, score, description, requireDetail });
     }

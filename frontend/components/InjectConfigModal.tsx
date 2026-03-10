@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { X, Save, Shield, Key, FilePlus, Loader2, CheckCircle2, AlertCircle, Play, Cpu } from "lucide-react";
+import { X, Save, Shield, Key, FilePlus, Loader2, CheckCircle2, AlertCircle, Play, Cpu, Upload, ChevronDown, ChevronRight, FileText } from "lucide-react";
 import { PolymasCredentials, InjectProgressEvent, InjectSummary } from "@/lib/training-injector/types";
 import { parsePolymasUrl } from "@/lib/training-injector/api";
 import { AVAILABLE_MODELS } from "@/lib/config";
@@ -36,16 +36,54 @@ export function InjectConfigModal({
     const [progressLogs, setProgressLogs] = useState<InjectProgressEvent[]>([]);
     const [error, setError] = useState("");
     const [summary, setSummary] = useState<InjectSummary | null>(null);
-    const [extractionMode, setExtractionMode] = useState<"hybrid" | "llm">("hybrid");
+    const [extractionMode, setExtractionMode] = useState<"hybrid" | "llm" | "regex">("regex");
     const [llmModel, setLlmModel] = useState("");
 
+    // --- 自定义文档状态 ---
+    const [customDocExpanded, setCustomDocExpanded] = useState(false);
+    const [customDocMode, setCustomDocMode] = useState<"combined" | "separate">("combined");
+    const [customCombinedText, setCustomCombinedText] = useState("");
+    const [customScriptText, setCustomScriptText] = useState("");
+    const [customRubricText, setCustomRubricText] = useState("");
+
     const logsEndRef = useRef<HTMLDivElement>(null);
+    const combinedFileRef = useRef<HTMLInputElement>(null);
+    const scriptFileRef = useRef<HTMLInputElement>(null);
+    const rubricFileRef = useRef<HTMLInputElement>(null);
+
+    // 计算最终生效的 markdown 文本（自定义文档覆盖生成的文档）
+    const hasCustomDoc = customDocExpanded && (
+        customDocMode === "combined"
+            ? customCombinedText.trim().length > 0
+            : (customScriptText.trim().length > 0 || customRubricText.trim().length > 0)
+    );
+
+    const effectiveScriptMd = hasCustomDoc
+        ? (customDocMode === "combined" ? customCombinedText : customScriptText) || undefined
+        : scriptMarkdown;
+
+    const effectiveRubricMd = hasCustomDoc
+        ? (customDocMode === "combined" ? customCombinedText : customRubricText) || undefined
+        : rubricMarkdown;
 
     // 回填可用的数据开关
     useEffect(() => {
         setInjectScript(!!scriptMarkdown);
         setInjectRubric(!!rubricMarkdown);
     }, [scriptMarkdown, rubricMarkdown, isOpen]);
+
+    // 自定义文档变化时同步注入开关
+    useEffect(() => {
+        if (!hasCustomDoc) return;
+        if (customDocMode === "combined") {
+            const hasCombined = customCombinedText.trim().length > 0;
+            setInjectScript(hasCombined);
+            setInjectRubric(hasCombined);
+        } else {
+            setInjectScript(customScriptText.trim().length > 0);
+            setInjectRubric(customRubricText.trim().length > 0);
+        }
+    }, [hasCustomDoc, customDocMode, customCombinedText, customScriptText, customRubricText]);
 
     // 加载凭证和 LLM 配置
     useEffect(() => {
@@ -86,6 +124,22 @@ export function InjectConfigModal({
             logsEndRef.current.scrollIntoView({ behavior: "smooth" });
         }
     }, [progressLogs]);
+
+    // 读取上传的 .md 文件内容
+    const handleFileUpload = (
+        e: React.ChangeEvent<HTMLInputElement>,
+        setter: (v: string) => void
+    ) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            setter(reader.result as string);
+        };
+        reader.readAsText(file);
+        // 重置 input 以允许重新选择同一文件
+        e.target.value = "";
+    };
 
     const handleSaveCredentials = () => {
         if (!authorization.trim() || !cookie.trim()) {
@@ -136,6 +190,24 @@ export function InjectConfigModal({
             return;
         }
 
+        // 自定义文档验证
+        if (hasCustomDoc) {
+            if (customDocMode === "combined" && !customCombinedText.trim()) {
+                setError("请上传或粘贴合并文档内容");
+                return;
+            }
+            if (customDocMode === "separate") {
+                if (injectScript && !customScriptText.trim()) {
+                    setError("已选注入剧本，但未提供训练剧本配置文档");
+                    return;
+                }
+                if (injectRubric && !customRubricText.trim()) {
+                    setError("已选注入评分标准，但未提供评分标准文档");
+                    return;
+                }
+            }
+        }
+
         setInjecting(true);
         setError("");
         setSummary(null);
@@ -177,8 +249,8 @@ export function InjectConfigModal({
                     },
                     llmSettings,
                     extractionMode,
-                    scriptMarkdown: injectScript ? scriptMarkdown : undefined,
-                    rubricMarkdown: injectRubric ? rubricMarkdown : undefined,
+                    scriptMarkdown: injectScript ? effectiveScriptMd : undefined,
+                    rubricMarkdown: injectRubric ? effectiveRubricMd : undefined,
                     injectMode,
                 }),
             });
@@ -343,27 +415,27 @@ export function InjectConfigModal({
                                     {/* 左侧：注入内容 */}
                                     <div className="space-y-3">
                                         <label className="text-xs font-medium text-slate-700 block">注入内容</label>
-                                        <label className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${!scriptMarkdown ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-50'}`}>
+                                        <label className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${!effectiveScriptMd ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-50'}`}>
                                             <input
                                                 type="checkbox"
                                                 checked={injectScript}
                                                 onChange={(e) => setInjectScript(e.target.checked)}
-                                                disabled={!scriptMarkdown}
+                                                disabled={!effectiveScriptMd}
                                                 className="rounded text-indigo-600 focus:ring-indigo-500"
                                             />
                                             <span className="text-sm font-medium text-slate-700">训练剧本配置节点</span>
-                                            {!scriptMarkdown && <span className="text-xs text-slate-400 ml-auto">未生成</span>}
+                                            {!effectiveScriptMd && <span className="text-xs text-slate-400 ml-auto">未生成</span>}
                                         </label>
-                                        <label className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${!rubricMarkdown ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-50'}`}>
+                                        <label className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${!effectiveRubricMd ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-50'}`}>
                                             <input
                                                 type="checkbox"
                                                 checked={injectRubric}
                                                 onChange={(e) => setInjectRubric(e.target.checked)}
-                                                disabled={!rubricMarkdown}
+                                                disabled={!effectiveRubricMd}
                                                 className="rounded text-indigo-600 focus:ring-indigo-500"
                                             />
                                             <span className="text-sm font-medium text-slate-700">任务评分标准</span>
-                                            {!rubricMarkdown && <span className="text-xs text-slate-400 ml-auto">未生成</span>}
+                                            {!effectiveRubricMd && <span className="text-xs text-slate-400 ml-auto">未生成</span>}
                                         </label>
                                     </div>
 
@@ -418,13 +490,23 @@ export function InjectConfigModal({
                                     <div className="flex gap-2">
                                         <button
                                             type="button"
+                                            onClick={() => setExtractionMode('regex')}
+                                            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${extractionMode === 'regex'
+                                                ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
+                                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                                }`}
+                                        >
+                                            🚀 纯正则
+                                        </button>
+                                        <button
+                                            type="button"
                                             onClick={() => setExtractionMode('hybrid')}
                                             className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${extractionMode === 'hybrid'
                                                 ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
                                                 : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                                                 }`}
                                         >
-                                            ⚡ 智能模式
+                                            ⚡ 智能混合
                                         </button>
                                         <button
                                             type="button"
@@ -438,11 +520,188 @@ export function InjectConfigModal({
                                         </button>
                                     </div>
                                     <p className="text-xs text-slate-400">
-                                        {extractionMode === 'hybrid'
-                                            ? '正则解析剧本（快速），LLM 仅用于评分标准字段拆分'
-                                            : '所有内容均使用 LLM 提取，适用于非标准格式文档（较慢）'
+                                        {extractionMode === 'regex'
+                                            ? '全部使用正则解析（最快），适用于本系统生成的标准格式文档'
+                                            : extractionMode === 'hybrid'
+                                                ? '正则解析剧本 + LLM 辅助提取（较快）'
+                                                : '所有内容均使用 LLM 提取，适用于非标准格式文档（较慢）'
                                         }
                                     </p>
+                                </div>
+
+                                {/* 自定义文档上传（可折叠） */}
+                                <div className="pt-3 border-t border-slate-100">
+                                    <button
+                                        type="button"
+                                        onClick={() => setCustomDocExpanded(!customDocExpanded)}
+                                        className="flex items-center gap-2 w-full text-left group"
+                                    >
+                                        {customDocExpanded
+                                            ? <ChevronDown className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                                            : <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                                        }
+                                        <Upload className="w-3.5 h-3.5 text-slate-500" />
+                                        <span className="text-xs font-medium text-slate-700 group-hover:text-indigo-600 transition-colors">
+                                            自定义注入文档（可选）
+                                        </span>
+                                        {hasCustomDoc && (
+                                            <span className="ml-auto text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">已加载自定义文档</span>
+                                        )}
+                                    </button>
+
+                                    {customDocExpanded && (
+                                        <div className="mt-3 space-y-4 pl-6">
+                                            <p className="text-xs text-slate-400">
+                                                可上传或粘贴您自己的训练配置/评分标准文档来注入，将替代上方生成的内容。
+                                            </p>
+
+                                            {/* 文档模式选择 */}
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCustomDocMode("combined")}
+                                                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${customDocMode === "combined"
+                                                        ? "bg-indigo-50 border-indigo-500 text-indigo-700"
+                                                        : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                                                        }`}
+                                                >
+                                                    📄 合并文档（同一文档）
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCustomDocMode("separate")}
+                                                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${customDocMode === "separate"
+                                                        ? "bg-indigo-50 border-indigo-500 text-indigo-700"
+                                                        : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                                                        }`}
+                                                >
+                                                    📑 分开文档（各一份）
+                                                </button>
+                                            </div>
+
+                                            {customDocMode === "combined" ? (
+                                                /* 合并模式：一个文档包含训练配置 + 评分标准 */
+                                                <div className="space-y-2">
+                                                    <label className="text-xs font-medium text-slate-700 block">
+                                                        训练配置 + 评分标准（合并文档）
+                                                    </label>
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            ref={combinedFileRef}
+                                                            type="file"
+                                                            accept=".md,.markdown,.txt"
+                                                            className="hidden"
+                                                            onChange={(e) => handleFileUpload(e, setCustomCombinedText)}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => combinedFileRef.current?.click()}
+                                                            className="px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white hover:bg-slate-50 text-slate-600 flex items-center gap-1.5 transition-colors"
+                                                        >
+                                                            <FileText className="w-3.5 h-3.5" />
+                                                            上传 .md 文件
+                                                        </button>
+                                                        {customCombinedText && (
+                                                            <span className="text-xs text-emerald-600">✅ 已加载 {customCombinedText.length} 字符</span>
+                                                        )}
+                                                    </div>
+                                                    <textarea
+                                                        value={customCombinedText}
+                                                        onChange={(e) => setCustomCombinedText(e.target.value)}
+                                                        placeholder="或直接粘贴包含训练配置和评分标准的 Markdown 文档内容..."
+                                                        rows={6}
+                                                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono resize-y"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                /* 分开模式：训练配置和评分标准各一个文档 */
+                                                <div className="space-y-4">
+                                                    {/* 训练剧本配置文档 */}
+                                                    <div className="space-y-2">
+                                                        <label className="text-xs font-medium text-slate-700 block">
+                                                            训练剧本配置文档
+                                                        </label>
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                ref={scriptFileRef}
+                                                                type="file"
+                                                                accept=".md,.markdown,.txt"
+                                                                className="hidden"
+                                                                onChange={(e) => handleFileUpload(e, setCustomScriptText)}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => scriptFileRef.current?.click()}
+                                                                className="px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white hover:bg-slate-50 text-slate-600 flex items-center gap-1.5 transition-colors"
+                                                            >
+                                                                <FileText className="w-3.5 h-3.5" />
+                                                                上传 .md 文件
+                                                            </button>
+                                                            {customScriptText && (
+                                                                <span className="text-xs text-emerald-600">✅ 已加载 {customScriptText.length} 字符</span>
+                                                            )}
+                                                        </div>
+                                                        <textarea
+                                                            value={customScriptText}
+                                                            onChange={(e) => setCustomScriptText(e.target.value)}
+                                                            placeholder="粘贴训练剧本配置的 Markdown 内容..."
+                                                            rows={4}
+                                                            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono resize-y"
+                                                        />
+                                                    </div>
+
+                                                    {/* 评分标准文档 */}
+                                                    <div className="space-y-2">
+                                                        <label className="text-xs font-medium text-slate-700 block">
+                                                            评分标准文档
+                                                        </label>
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                ref={rubricFileRef}
+                                                                type="file"
+                                                                accept=".md,.markdown,.txt"
+                                                                className="hidden"
+                                                                onChange={(e) => handleFileUpload(e, setCustomRubricText)}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => rubricFileRef.current?.click()}
+                                                                className="px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white hover:bg-slate-50 text-slate-600 flex items-center gap-1.5 transition-colors"
+                                                            >
+                                                                <FileText className="w-3.5 h-3.5" />
+                                                                上传 .md 文件
+                                                            </button>
+                                                            {customRubricText && (
+                                                                <span className="text-xs text-emerald-600">✅ 已加载 {customRubricText.length} 字符</span>
+                                                            )}
+                                                        </div>
+                                                        <textarea
+                                                            value={customRubricText}
+                                                            onChange={(e) => setCustomRubricText(e.target.value)}
+                                                            placeholder="粘贴评分标准的 Markdown 内容..."
+                                                            rows={4}
+                                                            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono resize-y"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* 清空按钮 */}
+                                            {hasCustomDoc && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setCustomCombinedText("");
+                                                        setCustomScriptText("");
+                                                        setCustomRubricText("");
+                                                    }}
+                                                    className="text-xs text-red-500 hover:text-red-600 transition-colors"
+                                                >
+                                                    清空自定义文档，恢复使用生成的内容
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </>
@@ -522,7 +781,7 @@ export function InjectConfigModal({
                     ) : (
                         <button
                             onClick={handleInject}
-                            disabled={injecting || (!injectScript && !injectRubric)}
+                            disabled={injecting || (!injectScript && !injectRubric) || (!effectiveScriptMd && !effectiveRubricMd)}
                             className="px-6 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 disabled:opacity-50 text-white rounded-lg font-medium flex items-center gap-2 shadow-md shadow-indigo-500/20 transition-all"
                         >
                             {injecting ? (

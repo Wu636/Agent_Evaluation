@@ -4,7 +4,7 @@
  */
 
 import { NextRequest } from "next/server";
-import { parseTrainingScript, parseRubricMarkdown } from "@/lib/training-injector/parser";
+import { parseTrainingScript, parseRubricMarkdown, parseTaskConfig } from "@/lib/training-injector/parser";
 import { extractScriptConfig, extractRubricConfig, LLMSettings } from "@/lib/training-injector/llm-extractor";
 import {
     queryScriptSteps,
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
                     libraryFolderId?: string;
                     credentials: PolymasCredentials;
                     llmSettings?: LLMSettings;
-                    extractionMode?: "hybrid" | "llm";
+                    extractionMode?: "hybrid" | "llm" | "regex";
                     scriptMarkdown?: string;
                     rubricMarkdown?: string;
                     injectMode: "replace" | "append";
@@ -99,13 +99,22 @@ export async function POST(request: NextRequest) {
                         }
                     }
 
-                    // 智能模式 或 LLM 模式失败回退：用正则解析
+                    // 正则解析（regex 模式直接使用，hybrid 模式始终使用，LLM 失败时回退）
                     if (steps.length === 0) {
                         send({ type: "progress", phase: "script", message: "正在解析训练剧本配置...", current: 0, total: 1 });
                         steps = parseTrainingScript(scriptMarkdown);
                     }
 
-                    // 智能模式下，只用 LLM 提取任务名称/描述
+                    // 提取任务名称/描述：regex 和 hybrid 模式优先用正则
+                    if (!taskConfig && (extractionMode === "regex" || extractionMode === "hybrid")) {
+                        const regexConfig = parseTaskConfig(scriptMarkdown);
+                        if (regexConfig) {
+                            taskConfig = regexConfig;
+                            send({ type: "progress", phase: "script", message: `正则提取任务名称：${regexConfig.trainTaskName || '(未找到)'}` });
+                        }
+                    }
+
+                    // hybrid 模式下，如果正则未提取到任务名称，尝试 LLM
                     if (extractionMode === "hybrid" && hasLLM && !taskConfig) {
                         try {
                             const extracted = await extractScriptConfig(scriptMarkdown, llmSettings);
@@ -152,7 +161,7 @@ export async function POST(request: NextRequest) {
                     const { startId, endId } = extractStartEndIds(existingSteps);
 
                     if (!startId || !endId) {
-                        send({ type: "error", message: "未找到 START/END 节点，请确认任务ID正确且已初始化任务工作流" });
+                        send({ type: "error", message: `未找到 START/END 节点（查询到 ${existingSteps.length} 个节点）。请确认：1) 任务链接/ID 正确；2) 已在平台上打开过该任务的工作流编辑页（系统会自动初始化 START/END）；3) 凭证未过期。` });
                         controller.close();
                         return;
                     }
@@ -348,8 +357,8 @@ export async function POST(request: NextRequest) {
                 if (rubricMarkdown) {
                     let items: any[] = [];
 
-                    // 1. 尝试使用 LLM 提取
-                    if (llmSettings?.apiKey && llmSettings?.apiUrl && llmSettings?.model) {
+                    // 1. LLM 提取（仅非 regex 模式时尝试）
+                    if (extractionMode !== "regex" && llmSettings?.apiKey && llmSettings?.apiUrl && llmSettings?.model) {
                         send({
                             type: "progress",
                             phase: "rubric",

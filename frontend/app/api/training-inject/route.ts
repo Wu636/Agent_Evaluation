@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
                         const regexConfig = parseTaskConfig(scriptMarkdown);
                         if (regexConfig) {
                             taskConfig = regexConfig;
-                            send({ type: "progress", phase: "script", message: `正则提取任务名称：${regexConfig.trainTaskName || '(未找到)'}` });
+                            send({ type: "progress", phase: "script", message: `正则提取任务名称：${regexConfig.trainTaskName || '(未找到)'}`, current: 0, total: 1 });
                         }
                     }
 

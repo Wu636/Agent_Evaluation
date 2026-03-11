@@ -36,7 +36,11 @@ export async function GET(request: NextRequest) {
             unread_count: countData
         });
 
-    } catch (error) {
+    } catch (error: any) {
+        // JWT 过期属于正常情况（用户闲置），返回 401 而非 500
+        if (error?.code === 'PGRST303' || error?.message?.includes('JWT expired')) {
+            return NextResponse.json({ error: 'JWT expired' }, { status: 401 });
+        }
         console.error('Fetch notifications error:', error);
         return NextResponse.json({ error: '获取通知失败' }, { status: 500 });
     }

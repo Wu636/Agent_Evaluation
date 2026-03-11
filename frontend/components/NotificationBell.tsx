@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Bell, Check, MessageSquare, AtSign, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from './AuthProvider';
+import { supabase } from '@/lib/supabase';
 import clsx from 'clsx';
 import { useRouter } from 'next/navigation';
 
@@ -30,13 +31,15 @@ export function NotificationBell() {
     const [loading, setLoading] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Initial fetch and polling
+    // 登录后拉一次；切回标签页时静默刷新（不再定时轮询）
     useEffect(() => {
         if (session?.access_token) {
             fetchNotifications();
-            // Poll every 60 seconds
-            const interval = setInterval(fetchNotifications, 60000);
-            return () => clearInterval(interval);
+            const onVisible = () => {
+                if (document.visibilityState === 'visible') fetchNotifications();
+            };
+            document.addEventListener('visibilitychange', onVisible);
+            return () => document.removeEventListener('visibilitychange', onVisible);
         }
     }, [session]);
 
@@ -54,9 +57,16 @@ export function NotificationBell() {
     const fetchNotifications = async () => {
         if (!session?.access_token) return;
         try {
+            // 获取最新 session，避免使用过期 JWT
+            let token = session.access_token;
+            if (supabase) {
+                const { data } = await supabase.auth.getSession();
+                token = data.session?.access_token || token;
+            }
             const res = await fetch('/api/notifications', {
-                headers: { 'Authorization': `Bearer ${session.access_token}` }
+                headers: { 'Authorization': `Bearer ${token}` }
             });
+            if (res.status === 401) return; // token 过期，静默等待下次刷新
             if (res.ok) {
                 const data = await res.json();
                 setNotifications(data.notifications || []);
@@ -136,7 +146,11 @@ export function NotificationBell() {
     return (
         <div className="relative" ref={dropdownRef}>
             <button
-                onClick={() => setIsOpen(!isOpen)}
+                onClick={() => {
+                    const opening = !isOpen;
+                    setIsOpen(opening);
+                    if (opening) fetchNotifications();
+                }}
                 className="relative p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full transition-colors"
             >
                 <Bell className="w-5 h-5" />

@@ -19,6 +19,7 @@ import {
     createScoreItem,
     editConfiguration,
     generateBackgroundImage,
+    parsePolymasUrl,
 } from "@/lib/training-injector/api";
 import { InjectProgressEvent, PolymasCredentials } from "@/lib/training-injector/types";
 
@@ -70,6 +71,21 @@ export async function POST(request: NextRequest) {
                     return;
                 }
 
+                // 服务端兜底：如果前端传来的是完整 URL，在此解析出真正的 ID
+                let finalTrainTaskId = trainTaskId;
+                let finalCourseId = courseId || "";
+                let finalLibraryFolderId = libraryFolderId || "";
+                if (trainTaskId.includes("http") || trainTaskId.includes("?") || trainTaskId.length > 50) {
+                    const parsed = parsePolymasUrl(trainTaskId);
+                    if (parsed?.trainTaskId) {
+                        finalTrainTaskId = parsed.trainTaskId;
+                        finalCourseId = finalCourseId || parsed.courseId;
+                        finalLibraryFolderId = finalLibraryFolderId || parsed.libraryFolderId;
+                        console.log("[inject-route] URL parsed -> trainTaskId:", finalTrainTaskId, "courseId:", finalCourseId);
+                    }
+                }
+
+                console.log("[inject-route] trainTaskId:", finalTrainTaskId, "length:", finalTrainTaskId.length);
                 console.log("[inject-route] Received llmSettings:", llmSettings ? { hasApiKey: !!llmSettings.apiKey, apiUrl: llmSettings.apiUrl, model: llmSettings.model } : "NONE");
 
                 let stepsCreated = 0;
@@ -131,12 +147,12 @@ export async function POST(request: NextRequest) {
                     }
 
                     // 3. 更新基础配置（如果提供了 courseId 并且 LLM 提取到了任务配置）
-                    if (courseId && taskConfig?.trainTaskName && taskConfig?.description) {
+                    if (finalCourseId && taskConfig?.trainTaskName && taskConfig?.description) {
                         send({ type: "progress", phase: "script", message: "正在更新任务基础配置（名称、描述）...", current: 0, total: steps.length });
                         const ok = await editConfiguration(
                             {
-                                trainTaskId,
-                                courseId,
+                                trainTaskId: finalTrainTaskId,
+                                courseId: finalCourseId,
                                 trainTaskName: taskConfig.trainTaskName,
                                 description: taskConfig.description,
                             },
@@ -156,8 +172,8 @@ export async function POST(request: NextRequest) {
 
                     // 查询现有节点和连线
                     send({ type: "progress", phase: "script", message: "正在查询现有工作流...", current: 0, total: steps.length });
-                    const existingSteps = await queryScriptSteps(trainTaskId, credentials);
-                    const existingFlows = await queryScriptFlows(trainTaskId, credentials);
+                    const existingSteps = await queryScriptSteps(finalTrainTaskId, credentials);
+                    const existingFlows = await queryScriptFlows(finalTrainTaskId, credentials);
                     const { startId, endId } = extractStartEndIds(existingSteps);
 
                     if (!startId || !endId) {
@@ -174,12 +190,12 @@ export async function POST(request: NextRequest) {
 
                             // 先删连线
                             for (const flow of existingFlows) {
-                                await deleteScriptFlow(trainTaskId, flow.flowId, credentials);
+                                await deleteScriptFlow(finalTrainTaskId, flow.flowId, credentials);
                                 flowsDeleted++;
                             }
                             // 再删节点
                             for (const step of scriptNodes) {
-                                await deleteScriptStep(trainTaskId, step.stepId, credentials);
+                                await deleteScriptStep(finalTrainTaskId, step.stepId, credentials);
                                 stepsDeleted++;
                             }
                         }
@@ -237,7 +253,7 @@ export async function POST(request: NextRequest) {
 
                         const position = { x: X_START + i * X_GAP, y: Y_START };
                         const newStepId = await createScriptStep(
-                            trainTaskId,
+                            finalTrainTaskId,
                             {
                                 stepName: step.stepName,
                                 description: step.description,
@@ -262,13 +278,13 @@ export async function POST(request: NextRequest) {
                         }
 
                         // 创建成功后，用 editScriptStep 设置背景图（需要 courseId 和 libraryFolderId）
-                        console.log("[inject-route] bg-image条件:", { bgImage: bgImage ? `fileId=${bgImage.fileId}` : "NULL", courseId: courseId || "EMPTY", libraryFolderId: libraryFolderId || "EMPTY" });
-                        if (bgImage && courseId && libraryFolderId) {
+                        console.log("[inject-route] bg-image条件:", { bgImage: bgImage ? `fileId=${bgImage.fileId}` : "NULL", courseId: finalCourseId || "EMPTY", libraryFolderId: finalLibraryFolderId || "EMPTY" });
+                        if (bgImage && finalCourseId && finalLibraryFolderId) {
                             console.log("[inject-route] 正在调用 editScriptStep 设置背景图, stepId=", newStepId, "bgImage=", bgImage);
                             send({ type: "progress", phase: "script", message: `正在设置背景图...`, current: i + 1, total: steps.length });
                             try {
                                 const editOk = await editScriptStep(
-                                    trainTaskId,
+                                    finalTrainTaskId,
                                     newStepId,
                                     {
                                         stepName: step.stepName,
@@ -286,8 +302,8 @@ export async function POST(request: NextRequest) {
                                         },
                                         backgroundTheme: bgImage.fileId,
                                     },
-                                    courseId,
-                                    libraryFolderId,
+                                    finalCourseId,
+                                    finalLibraryFolderId,
                                     position,
                                     credentials
                                 );
@@ -313,7 +329,7 @@ export async function POST(request: NextRequest) {
 
                     // START → 第一个节点
                     const flowStartOk = await createScriptFlow(
-                        trainTaskId,
+                        finalTrainTaskId,
                         startId,
                         createdStepIds[0],
                         "",
@@ -327,7 +343,7 @@ export async function POST(request: NextRequest) {
                         const condition = steps[i].flowCondition || steps[i + 1].stepName || "下一步";
                         const transition = steps[i].transitionPrompt || "";
                         const ok = await createScriptFlow(
-                            trainTaskId,
+                            finalTrainTaskId,
                             createdStepIds[i],
                             createdStepIds[i + 1],
                             condition,
@@ -340,7 +356,7 @@ export async function POST(request: NextRequest) {
                     // 最后节点 → END
                     const lastStep = steps[steps.length - 1];
                     const flowEndOk = await createScriptFlow(
-                        trainTaskId,
+                        finalTrainTaskId,
                         createdStepIds[createdStepIds.length - 1],
                         endId,
                         lastStep.flowCondition || "训练结束",
@@ -403,9 +419,9 @@ export async function POST(request: NextRequest) {
                             total: items.length,
                         });
 
-                        const itemId = await createScoreItem(trainTaskId, item, credentials);
-                        if (!itemId) {
-                            send({ type: "error", message: `创建评分项「${item.itemName}」失败，注入已中止` });
+                        const scoreResult = await createScoreItem(finalTrainTaskId, item, credentials);
+                        if (!scoreResult.itemId) {
+                            send({ type: "error", message: `创建评分项「${item.itemName}」失败: ${scoreResult.error || '未知错误'}` });
                             controller.close();
                             return;
                         }

@@ -348,7 +348,7 @@ export async function createScoreItem(
         requireDetail: string;
     },
     credentials: PolymasCredentials
-): Promise<string | null> {
+): Promise<{ itemId: string | null; error?: string }> {
     const result = await directRequest<{ itemId: string }>(
         "createScoreItem",
         {
@@ -360,7 +360,11 @@ export async function createScoreItem(
         },
         credentials
     );
-    return result.success ? (result.data?.itemId || "ok") : null;
+    if (result.success) {
+        return { itemId: result.data?.itemId || "ok" };
+    }
+    console.error(`[createScoreItem] 失败 - ${item.itemName}:`, result.error);
+    return { itemId: null, error: result.error };
 }
 
 // ─── 基础配置接口 ───────────────────────────────────────────────────
@@ -411,16 +415,21 @@ export function parsePolymasUrl(urlStr: string): {
         );
         const trainTaskId =
             url.searchParams.get("trainTaskId") || "";
-        const courseId =
+        let courseId =
             url.searchParams.get("businessId") ||
             url.searchParams.get("courseId") ||
             "";
+        // 从 URL 路径提取 courseId：/agent-course-full/{courseId}/
+        if (!courseId) {
+            const pathMatch = url.pathname.match(/\/agent-course-full\/([^/]+)/);
+            if (pathMatch) courseId = pathMatch[1];
+        }
         const libraryFolderId =
             url.searchParams.get("libraryId") ||
             url.searchParams.get("libraryFolderId") ||
             "";
 
-        if (!trainTaskId || !courseId) return null;
+        if (!trainTaskId) return null;
         return { courseId, trainTaskId, libraryFolderId };
     } catch {
         return null;

@@ -12,7 +12,6 @@ import {
     RefreshCw,
     Wand2,
     AlertCircle,
-    Settings,
     Type,
     CheckCircle2,
     BookOpen,
@@ -938,14 +937,6 @@ export function TrainingGenerateInterface() {
                                 开始生成
                             </button>
                         )}
-
-                        <button
-                            onClick={() => setShowSettings(true)}
-                            className="px-4 py-3 bg-white text-slate-600 font-medium rounded-xl border border-slate-200 hover:bg-slate-50 hover:text-indigo-600 transition-all"
-                            title="API 设置"
-                        >
-                            <Settings className="w-4 h-4" />
-                        </button>
                     </div>
 
                     {/* 未配置 API 提示 */}
@@ -953,7 +944,7 @@ export function TrainingGenerateInterface() {
                         <div className="flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl">
                             <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
                             <p className="text-xs text-amber-700">
-                                请先点击右侧设置按钮配置 API Key 和 API 地址，才能使用生成功能。
+                                请先在导航栏「设置」中配置 API Key 和 API 地址，才能使用生成功能。
                             </p>
                         </div>
                     )}

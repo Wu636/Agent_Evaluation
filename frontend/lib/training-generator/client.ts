@@ -3,6 +3,7 @@
  */
 
 import { TrainingSSEEvent } from "./types";
+import { normalizeModelId } from "@/lib/config";
 
 const SETTINGS_KEY = "llm-eval-settings";
 
@@ -17,7 +18,11 @@ function getStoredSettings(): StoredSettings {
     try {
         const raw = localStorage.getItem(SETTINGS_KEY);
         if (!raw) return {};
-        return JSON.parse(raw);
+        const parsed = JSON.parse(raw) as StoredSettings;
+        return {
+            ...parsed,
+            model: normalizeModelId(parsed.model),
+        };
     } catch {
         return {};
     }

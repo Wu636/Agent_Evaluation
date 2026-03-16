@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Settings, Save, Key, Globe, Cpu } from 'lucide-react';
 import { getModels, ModelInfo } from '@/lib/api';
+import { normalizeModelId } from '@/lib/config';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -15,24 +16,49 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const [model, setModel] = useState('gpt-4o');
     const [models, setModels] = useState<ModelInfo[]>([]);
 
-    // Load settings from localStorage on mount
-    useEffect(() => {
+    const loadSettingsFromStorage = () => {
         const saved = localStorage.getItem('llm-eval-settings');
         if (saved) {
             const settings = JSON.parse(saved);
             setApiKey(settings.apiKey || '');
             setApiUrl(settings.apiUrl || 'http://llm-service.polymas.com/api/openai/v1/chat/completions');
-            setModel(settings.model || 'gpt-4o');
+            setModel(normalizeModelId(settings.model) || 'gpt-4o');
+            return;
         }
+        setApiKey('');
+        setApiUrl('http://llm-service.polymas.com/api/openai/v1/chat/completions');
+        setModel('gpt-4o');
+    };
 
-        // Fetch available models
+    // 首次挂载：拉取模型列表
+    useEffect(() => {
         getModels()
             .then(data => setModels(data.models || []))
             .catch(err => console.error('Failed to fetch models:', err));
     }, []);
 
+    // 每次打开弹窗时，从统一存储重新加载，确保多个入口一致
+    useEffect(() => {
+        if (!isOpen) return;
+        loadSettingsFromStorage();
+    }, [isOpen]);
+
+    // 监听跨组件/跨标签页更新
+    useEffect(() => {
+        const onUpdated = () => loadSettingsFromStorage();
+        const onStorage = (e: StorageEvent) => {
+            if (e.key === 'llm-eval-settings') loadSettingsFromStorage();
+        };
+        window.addEventListener('llm-settings-updated', onUpdated);
+        window.addEventListener('storage', onStorage);
+        return () => {
+            window.removeEventListener('llm-settings-updated', onUpdated);
+            window.removeEventListener('storage', onStorage);
+        };
+    }, []);
+
     const handleSave = () => {
-        const settings = { apiKey, apiUrl, model };
+        const settings = { apiKey, apiUrl, model: normalizeModelId(model) };
         localStorage.setItem('llm-eval-settings', JSON.stringify(settings));
         // 触发自定义事件通知其他组件更新
         window.dispatchEvent(new Event('llm-settings-updated'));
@@ -118,6 +144,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 ))
                             ) : (
                                 <>
+                                    <option value="gpt-5.4">GPT-5.4 - Newest GPT-5 series</option>
                                     <option value="gpt-4o">GPT-4o - Most capable</option>
                                     <option value="gpt-4o-mini">GPT-4o Mini - Faster, cost-effective</option>
                                     <option value="gpt-4.1">GPT-4.1 - Latest GPT-4 version</option>
@@ -128,6 +155,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                     <option value="claude-sonnet-4.5">Claude Sonnet 4.5 - Newest Sonnet</option>
                                     <option value="claude-haiku-4.5">Claude Haiku 4.5 - Latest Haiku</option>
                                     <option value="claude-opus-4">Claude Opus 4 - Most capable Claude</option>
+                                    <option value="claude-opus-4-6">Claude Opus 4.6 - Latest Opus</option>
                                     <option value="grok-4">Grok-4 - xAI&apos;s model</option>
                                 </>
                             )}

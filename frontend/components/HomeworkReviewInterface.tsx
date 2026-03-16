@@ -7,7 +7,7 @@ import {
   Table2, FolderOpen, Clock, Trash2, Eye, EyeOff, RefreshCw
 } from "lucide-react";
 import clsx from "clsx";
-import { MODEL_NAME_MAPPING } from "@/lib/config";
+import { MODEL_NAME_MAPPING, normalizeModelId } from "@/lib/config";
 
 const STORAGE_KEY = "homework-review-credentials";
 const HISTORY_KEY = "homework-review-history";
@@ -148,7 +148,14 @@ function saveCredentials(creds: Credentials) {
 function loadLLMSettings(): { apiKey: string; apiUrl: string; model: string } {
   try {
     const saved = localStorage.getItem("llm-eval-settings");
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        apiKey: parsed.apiKey || "",
+        apiUrl: parsed.apiUrl || "",
+        model: normalizeModelId(parsed.model),
+      };
+    }
   } catch { /* ignore */ }
   return { apiKey: "", apiUrl: "", model: "" };
 }

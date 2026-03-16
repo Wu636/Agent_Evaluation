@@ -174,6 +174,7 @@ export const DIMENSIONS: Record<string, DimensionConfig> = {
  * 将前端模型ID映射到API实际需要的模型名称
  */
 export const MODEL_NAME_MAPPING: Record<string, string> = {
+  "gpt-5.4": "gpt-5.4",
   "gpt-4.1": "gpt-4.1",
   "gpt-4.1-mini": "gpt-4.1-mini",
   "gpt-4.1-nano": "gpt-4.1-nano",
@@ -182,6 +183,8 @@ export const MODEL_NAME_MAPPING: Record<string, string> = {
   "claude-sonnet-4.5": "Claude Sonnet 4.5",
   "claude-haiku-4.5": "Claude Haiku 4.5",
   "claude-opus-4": "Claude Opus 4",
+  "claude-opus-4-6": "claude-opus-4-6",
+  "Claude Opus 4.6": "claude-opus-4-6",
   "grok-4": "grok-4",
 };
 
@@ -189,6 +192,7 @@ export const MODEL_NAME_MAPPING: Record<string, string> = {
  * 可用模型列表
  */
 export const AVAILABLE_MODELS = [
+  { id: "gpt-5.4", name: "GPT-5.4", description: "Newest GPT-5 series" },
   { id: "gpt-4o", name: "GPT-4o", description: "Most capable" },
   { id: "gpt-4o-mini", name: "GPT-4o Mini", description: "Faster, cost-effective" },
   { id: "gpt-4.1", name: "GPT-4.1", description: "Latest GPT-4 version" },
@@ -199,8 +203,22 @@ export const AVAILABLE_MODELS = [
   { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", description: "Newest Sonnet" },
   { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", description: "Latest Haiku" },
   { id: "claude-opus-4", name: "Claude Opus 4", description: "Most capable Claude" },
+  { id: "claude-opus-4-6", name: "Claude Opus 4.6", description: "Latest Opus" },
   { id: "grok-4", name: "Grok-4", description: "xAI's model" },
 ];
+
+/**
+ * 规范化前端模型 ID（用于本地存储和下拉选中）
+ */
+export function normalizeModelId(model: string | undefined | null): string {
+  if (!model) return "";
+  const raw = String(model).trim();
+  if (!raw) return "";
+
+  // 兼容历史/别名写法，统一存储为 canonical id
+  if (raw === "Claude Opus 4.6") return "claude-opus-4-6";
+  return raw;
+}
 
 /**
  * 获取环境变量配置

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { X, Save, Shield, Key, FilePlus, Loader2, CheckCircle2, AlertCircle, Play, Cpu, Upload, ChevronDown, ChevronRight, FileText } from "lucide-react";
 import { PolymasCredentials, InjectProgressEvent, InjectSummary } from "@/lib/training-injector/types";
 import { parsePolymasUrl } from "@/lib/training-injector/api";
-import { AVAILABLE_MODELS } from "@/lib/config";
+import { AVAILABLE_MODELS, normalizeModelId } from "@/lib/config";
 
 interface InjectConfigModalProps {
     isOpen: boolean;
@@ -103,7 +103,7 @@ export function InjectConfigModal({
                 const llmStored = localStorage.getItem("llm-eval-settings");
                 if (llmStored) {
                     const llmParsed = JSON.parse(llmStored);
-                    setLlmModel(llmParsed.model || "");
+                    setLlmModel(normalizeModelId(llmParsed.model) || "");
                 }
             } catch {
                 // ignore

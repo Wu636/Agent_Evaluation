@@ -170,6 +170,12 @@ export async function POST(request: NextRequest) {
                         total: steps.length,
                     });
 
+                    // 提前检测背景图能力
+                    const canSetBgImage = !!(finalCourseId && finalLibraryFolderId);
+                    if (!canSetBgImage) {
+                        send({ type: "progress", phase: "script", message: "⚠️ 未检测到 libraryFolderId，将跳过背景图设置（提示：使用包含 libraryId 参数的完整链接可启用背景图）", current: 0, total: steps.length });
+                    }
+
                     // 查询现有节点和连线
                     send({ type: "progress", phase: "script", message: "正在查询现有工作流...", current: 0, total: steps.length });
                     const existingSteps = await queryScriptSteps(finalTrainTaskId, credentials);
@@ -210,37 +216,39 @@ export async function POST(request: NextRequest) {
                     for (let i = 0; i < steps.length; i++) {
                         const step = steps[i];
 
-                        // 生成背景图
-                        send({
-                            type: "progress",
-                            phase: "script",
-                            message: `正在为「${step.stepName}」生成背景图 (${i + 1}/${steps.length})...`,
-                            current: i + 1,
-                            total: steps.length,
-                        });
-
+                        // 生成背景图（仅在有 courseId + libraryFolderId 时才生成）
                         let bgImage: { fileId: string; fileUrl: string } | null = null;
-                        try {
-                            const trainName = taskConfig?.trainTaskName || "训练任务";
-                            const trainDesc = taskConfig?.description || "";
-                            bgImage = await generateBackgroundImage(
-                                {
-                                    trainName,
-                                    trainDescription: trainDesc,
-                                    stageName: step.stepName,
-                                    stageDescription: step.description || "",
-                                },
-                                credentials
-                            );
+                        if (canSetBgImage) {
+                            send({
+                                type: "progress",
+                                phase: "script",
+                                message: `正在为「${step.stepName}」生成背景图 (${i + 1}/${steps.length})...`,
+                                current: i + 1,
+                                total: steps.length,
+                            });
+
+                            try {
+                                const trainName = taskConfig?.trainTaskName || "训练任务";
+                                const trainDesc = taskConfig?.description || "";
+                                bgImage = await generateBackgroundImage(
+                                    {
+                                        trainName,
+                                        trainDescription: trainDesc,
+                                        stageName: step.stepName,
+                                        stageDescription: step.description || "",
+                                    },
+                                    credentials
+                                );
                             if (bgImage) {
                                 send({ type: "progress", phase: "script", message: `背景图生成成功`, current: i + 1, total: steps.length });
                             } else {
                                 send({ type: "progress", phase: "script", message: `背景图生成跳过（返回为空）`, current: i + 1, total: steps.length });
                             }
-                        } catch (err) {
-                            console.warn("背景图生成失败:", err);
-                            send({ type: "progress", phase: "script", message: `背景图生成失败，将跳过`, current: i + 1, total: steps.length });
-                        }
+                            } catch (err) {
+                                console.warn("背景图生成失败:", err);
+                                send({ type: "progress", phase: "script", message: `背景图生成失败，将跳过`, current: i + 1, total: steps.length });
+                            }
+                        } // end canSetBgImage
 
                         // 创建节点
                         send({
@@ -258,7 +266,7 @@ export async function POST(request: NextRequest) {
                                 stepName: step.stepName,
                                 description: step.description,
                                 prologue: step.prologue,
-                                modelId: step.modelId || "Doubao-Seed-1.6",
+                                modelId: step.modelId || "Doubao-Seed-2.0-pro",
                                 llmPrompt: step.llmPrompt,
                                 trainerName: step.trainerName,
                                 interactiveRounds: step.interactiveRounds,
@@ -277,10 +285,9 @@ export async function POST(request: NextRequest) {
                             return;
                         }
 
-                        // 创建成功后，用 editScriptStep 设置背景图（需要 courseId 和 libraryFolderId）
-                        console.log("[inject-route] bg-image条件:", { bgImage: bgImage ? `fileId=${bgImage.fileId}` : "NULL", courseId: finalCourseId || "EMPTY", libraryFolderId: finalLibraryFolderId || "EMPTY" });
-                        if (bgImage && finalCourseId && finalLibraryFolderId) {
-                            console.log("[inject-route] 正在调用 editScriptStep 设置背景图, stepId=", newStepId, "bgImage=", bgImage);
+                        // 创建成功后，用 editScriptStep 设置背景图
+                        if (bgImage && canSetBgImage) {
+                            console.log("[inject-route] 正在调用 editScriptStep 设置背景图, stepId=", newStepId);
                             send({ type: "progress", phase: "script", message: `正在设置背景图...`, current: i + 1, total: steps.length });
                             try {
                                 const editOk = await editScriptStep(
@@ -290,7 +297,7 @@ export async function POST(request: NextRequest) {
                                         stepName: step.stepName,
                                         description: step.description,
                                         prologue: step.prologue,
-                                        modelId: step.modelId || "Doubao-Seed-1.6",
+                                        modelId: step.modelId || "Doubao-Seed-2.0-pro",
                                         llmPrompt: step.llmPrompt,
                                         trainerName: step.trainerName,
                                         interactiveRounds: step.interactiveRounds,
@@ -316,8 +323,6 @@ export async function POST(request: NextRequest) {
                                 console.error("[inject-route] editScriptStep 异常:", editErr);
                                 send({ type: "progress", phase: "script", message: `背景图设置异常: ${editErr instanceof Error ? editErr.message : String(editErr)}`, current: i + 1, total: steps.length });
                             }
-                        } else if (bgImage) {
-                            send({ type: "progress", phase: "script", message: `背景图跳过：缺少 courseId 或 libraryFolderId`, current: i + 1, total: steps.length });
                         }
 
                         createdStepIds.push(newStepId);

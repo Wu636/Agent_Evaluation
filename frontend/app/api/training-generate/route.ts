@@ -195,7 +195,7 @@ export async function POST(request: NextRequest) {
                     const message = /terminated|econnreset|fetch failed/i.test(rawMsg)
                         ? 'LLM 流式连接中断（网络波动或网关超时）。系统已自动重试一次但仍失败，请稍后重试。'
                         : rawMsg;
-                    send({ type: 'error', message });
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message })}\n\n`));
                     controller.close();
                 } catch (e) {
                     // 忽略关闭错误

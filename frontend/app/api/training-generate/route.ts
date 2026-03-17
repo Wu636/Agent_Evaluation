@@ -92,67 +92,110 @@ export async function POST(request: NextRequest) {
                     return;
                 }
 
+                const send = (event: unknown) => {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+                };
+
+                const cleanupMarkdownFence = (content: string): string => {
+                    let clean = content.trim();
+                    if (clean.startsWith('\`\`\`markdown')) {
+                        clean = clean.substring(13);
+                    } else if (clean.startsWith('\`\`\`')) {
+                        clean = clean.substring(3);
+                    }
+                    if (clean.endsWith('\`\`\`')) {
+                        clean = clean.substring(0, clean.length - 3);
+                    }
+                    return clean.trim();
+                };
+
+                const isRetryableStreamError = (err: unknown): boolean => {
+                    const anyErr = err as any;
+                    const msg = String(anyErr?.message || err || '').toLowerCase();
+                    const causeMsg = String(anyErr?.cause?.message || '').toLowerCase();
+                    const causeCode = String(anyErr?.cause?.code || '').toLowerCase();
+                    return msg.includes('terminated') ||
+                        msg.includes('econnreset') ||
+                        msg.includes('fetch failed') ||
+                        causeMsg.includes('econnreset') ||
+                        causeCode.includes('econnreset');
+                };
+
+                const generatePhaseWithRetry = async (
+                    phase: 'script' | 'rubric',
+                    startMessage: string,
+                    streamFactory: () => AsyncGenerator<string, void, unknown>
+                ): Promise<string> => {
+                    const maxAttempts = 2; // 首次 + 1次重试
+                    let lastError: unknown;
+
+                    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                        let fullContent = '';
+                        try {
+                            if (attempt === 1) {
+                                send({ type: 'start', phase, message: startMessage });
+                            } else {
+                                // 清空前一次半成品，避免前端出现重复拼接
+                                send({ type: 'phase_complete', phase, fullContent: '' });
+                                send({ type: 'start', phase, message: `网络波动，正在自动重试（${attempt}/${maxAttempts}）...` });
+                            }
+
+                            const phaseStream = streamFactory();
+                            for await (const chunk of phaseStream) {
+                                fullContent += chunk;
+                                send({ type: 'chunk', phase, content: chunk });
+                            }
+
+                            return cleanupMarkdownFence(fullContent);
+                        } catch (err) {
+                            lastError = err;
+                            if (attempt < maxAttempts && isRetryableStreamError(err)) {
+                                console.warn(`[training-generate] ${phase} 阶段流式中断，自动重试:`, err);
+                                continue;
+                            }
+                            throw err;
+                        }
+                    }
+
+                    throw lastError;
+                };
+
                 let fullScript = "";
                 let fullRubric = "";
 
                 // 1. 生成剧本配置
                 if (generateScript) {
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'start', phase: 'script', message: '开始生成剧本配置...' })}\n\n`));
-                    const scriptStream = generateTrainingScriptStream(teacherDocContent, apiConfig, scriptPromptTemplate || undefined);
-                    for await (const chunk of scriptStream) {
-                        fullScript += chunk;
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'chunk', phase: 'script', content: chunk })}\n\n`));
-                    }
-                    // 尝试清理可能的 Markdown 块包裹
-                    let cleanScript = fullScript.trim();
-                    if (cleanScript.startsWith('\`\`\`markdown')) {
-                        cleanScript = cleanScript.substring(13);
-                    } else if (cleanScript.startsWith('\`\`\`')) {
-                        cleanScript = cleanScript.substring(3);
-                    }
-                    if (cleanScript.endsWith('\`\`\`')) {
-                        cleanScript = cleanScript.substring(0, cleanScript.length - 3);
-                    }
-                    fullScript = cleanScript.trim();
-
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'phase_complete', phase: 'script', fullContent: fullScript })}\n\n`));
+                    fullScript = await generatePhaseWithRetry(
+                        'script',
+                        '开始生成剧本配置...',
+                        () => generateTrainingScriptStream(teacherDocContent, apiConfig, scriptPromptTemplate || undefined)
+                    );
+                    send({ type: 'phase_complete', phase: 'script', fullContent: fullScript });
                 }
 
                 // 2. 生成评分标准
                 if (generateRubric) {
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'start', phase: 'rubric', message: '开始生成评分标准...' })}\n\n`));
-                    const rubricStream = generateTrainingRubricStream(teacherDocContent, apiConfig, rubricPromptTemplate || undefined);
-                    for await (const chunk of rubricStream) {
-                        fullRubric += chunk;
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'chunk', phase: 'rubric', content: chunk })}\n\n`));
-                    }
-                    // 清理可能的 Markdown 块包裹
-                    let cleanRubric = fullRubric.trim();
-                    if (cleanRubric.startsWith('\`\`\`markdown')) {
-                        cleanRubric = cleanRubric.substring(13);
-                    } else if (cleanRubric.startsWith('\`\`\`')) {
-                        cleanRubric = cleanRubric.substring(3);
-                    }
-                    if (cleanRubric.endsWith('\`\`\`')) {
-                        cleanRubric = cleanRubric.substring(0, cleanRubric.length - 3);
-                    }
-                    fullRubric = cleanRubric.trim();
-
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'phase_complete', phase: 'rubric', fullContent: fullRubric })}\n\n`));
+                    fullRubric = await generatePhaseWithRetry(
+                        'rubric',
+                        '开始生成评分标准...',
+                        () => generateTrainingRubricStream(teacherDocContent, apiConfig, rubricPromptTemplate || undefined)
+                    );
+                    send({ type: 'phase_complete', phase: 'rubric', fullContent: fullRubric });
                 }
 
                 const taskName = teacherDocName.replace(/\.[^/.]+$/, ""); // 尝试去掉扩展名作为默认任务名
 
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'complete', script: fullScript, rubric: fullRubric, taskName })}\n\n`));
+                send({ type: 'complete', script: fullScript, rubric: fullRubric, taskName });
                 controller.close();
 
             } catch (error) {
                 console.error("生成配置失败:", error);
                 try {
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-                        type: 'error',
-                        message: error instanceof Error ? error.message : "生成失败"
-                    })}\n\n`));
+                    const rawMsg = error instanceof Error ? error.message : '生成失败';
+                    const message = /terminated|econnreset|fetch failed/i.test(rawMsg)
+                        ? 'LLM 流式连接中断（网络波动或网关超时）。系统已自动重试一次但仍失败，请稍后重试。'
+                        : rawMsg;
+                    send({ type: 'error', message });
                     controller.close();
                 } catch (e) {
                     // 忽略关闭错误

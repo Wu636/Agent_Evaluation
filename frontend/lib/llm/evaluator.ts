@@ -17,6 +17,13 @@ import { formatDialogueForLLM, parseLLMResponse, callLLM } from "./utils";
 // 重新导出工具函数供其他模块使用
 export { formatDialogueForLLM, parseLLMResponse, callLLM } from "./utils";
 
+function clampScore(score: number, fullScore: number): number {
+  if (!Number.isFinite(score)) return 0;
+  if (!Number.isFinite(fullScore) || fullScore <= 0) return 0;
+  const clamped = Math.max(0, Math.min(score, fullScore));
+  return Math.round(clamped * 10) / 10;
+}
+
 /**
  * 评测单个维度 (包含多个子维度)
  */
@@ -55,9 +62,10 @@ async function evaluateDimension(
       const result = parseLLMResponse(llmResponse);
 
       // 收集子维度分数
+      const safeScore = clampScore(result.score, subDim.fullScore);
       subDimensionScores.push({
         sub_dimension: subDim.name,
-        score: result.score,
+        score: safeScore,
         full_score: subDim.fullScore,
         rating: result.rating || "未知",
         score_range: result.score_range || "",
@@ -80,7 +88,8 @@ async function evaluateDimension(
   }
 
   // 汇总子维度分数
-  const totalScore = subDimensionScores.reduce((sum, s) => sum + s.score, 0);
+  const rawTotalScore = subDimensionScores.reduce((sum, s) => sum + s.score, 0);
+  const totalScore = clampScore(rawTotalScore, config.fullScore);
 
   // 聚合分析
   const analysis = subDimensionScores

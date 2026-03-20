@@ -22,6 +22,13 @@ import type {
 export const maxDuration = 300;
 export const runtime = 'nodejs';
 
+function clampScore(score: number, fullScore: number): number {
+    if (!Number.isFinite(score)) return 0;
+    if (!Number.isFinite(fullScore) || fullScore <= 0) return 0;
+    const clamped = Math.max(0, Math.min(score, fullScore));
+    return Math.round(clamped * 10) / 10;
+}
+
 async function readFileInfo(file: File): Promise<{ name: string; content: string | Buffer }> {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
@@ -190,7 +197,7 @@ export async function POST(request: NextRequest) {
                                 const standardScore = STANDARD_SCORES[task.subDim.name] || 10;
                                 const userFullScore = task.subDim.fullScore;
                                 const scaleRatio = userFullScore / standardScore;
-                                const scaledScore = Math.round(result.score * scaleRatio * 10) / 10; // 保留1位小数
+                                const scaledScore = clampScore(result.score * scaleRatio, userFullScore);
 
                                 results.set(`${task.dimKey}-${task.subDim.key}`, {
                                     sub_dimension: task.subDim.name,
@@ -248,7 +255,8 @@ export async function POST(request: NextRequest) {
                     }
 
                     // 汇总子维度分数到一级维度
-                    const totalScore = subDimensionScores.reduce((sum, s) => sum + s.score, 0);
+                    const rawTotalScore = subDimensionScores.reduce((sum, s) => sum + s.score, 0);
+                    const totalScore = clampScore(rawTotalScore, dimConfig.fullScore);
 
                     // 聚合分析
                     const analysis = subDimensionScores

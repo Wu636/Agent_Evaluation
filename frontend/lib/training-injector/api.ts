@@ -18,6 +18,9 @@ const POLYMAS_IMAGE_FALLBACK_API_KEY =
     process.env.POLYMAS_IMAGE_FALLBACK_API_KEY ||
     "sk-jqzsYB7vjZ6NEdfsP7oZ17Gti45cSMrHSCxQJzq7hz8Coq7h";
 
+type ImageProvider = "cloudapi" | "openai";
+const DEFAULT_IMAGE_PROVIDER_PRIORITY: ImageProvider[] = ["cloudapi", "openai"];
+
 const DEFAULT_BG_IMAGE_REQUIREMENT = "专业、清晰、教学场景背景图，严格16:9横版宽屏构图，无任何文字";
 const DEFAULT_COVER_STYLE_REQUIREMENT = "专业、简洁、教学场景感，16:9 横版封面，无任何文字";
 
@@ -134,6 +137,45 @@ function extractGeneratedImageFileUrl(result: any): string | null {
     }
 
     return null;
+}
+
+function parseImageProviderPriority(input?: string | ImageProvider[]): ImageProvider[] {
+    if (Array.isArray(input)) {
+        const normalized = input
+            .map((item) => String(item || "").trim().toLowerCase())
+            .map((item) => {
+                if (["cloudapi", "cloud", "polymas"].includes(item)) return "cloudapi" as const;
+                if (["openai", "ark", "openai-compatible"].includes(item)) return "openai" as const;
+                return null;
+            })
+            .filter(Boolean) as ImageProvider[];
+        return normalized;
+    }
+
+    const text = String(input || "").trim();
+    if (!text) return [];
+    const normalized = text
+        .split(/[,|>\s]+/)
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean)
+        .map((item) => {
+            if (["cloudapi", "cloud", "polymas"].includes(item)) return "cloudapi" as const;
+            if (["openai", "ark", "openai-compatible"].includes(item)) return "openai" as const;
+            return null;
+        })
+        .filter(Boolean) as ImageProvider[];
+    return normalized;
+}
+
+function resolveImageProviderPriority(customPriority?: string | ImageProvider[]): ImageProvider[] {
+    const envPriority = parseImageProviderPriority(process.env.POLYMAS_IMAGE_PROVIDER_PRIORITY);
+    const customParsed = parseImageProviderPriority(customPriority);
+    const base = customParsed.length > 0 ? customParsed : (envPriority.length > 0 ? envPriority : DEFAULT_IMAGE_PROVIDER_PRIORITY);
+    const merged = [...base];
+    for (const provider of DEFAULT_IMAGE_PROVIDER_PRIORITY) {
+        if (!merged.includes(provider)) merged.push(provider);
+    }
+    return merged;
 }
 
 async function generateImageViaArk(
@@ -253,57 +295,68 @@ export async function generateBackgroundImage(
         arkApiKey?: string;
         llmApiUrl?: string;
         imageModel?: string;
+        imageProviderPriority?: string | ImageProvider[];
     },
     credentials: PolymasCredentials
 ): Promise<BgImageResult | null> {
     const targetUrl = `${POLYMAS_AI_BASE}/image/generate`;
     const preferredPrompt = buildBackgroundFallbackPrompt(params);
+    const providerPriority = resolveImageProviderPriority(params.imageProviderPriority);
 
     try {
-        const preferredGenerated = await generateImageViaArk(preferredPrompt, {
-            apiKey: params.arkApiKey,
-            secondaryApiKey: POLYMAS_IMAGE_FALLBACK_API_KEY,
-            endpoint: deriveImageEndpointFromLlmApiUrl(params.llmApiUrl),
-            cookie: credentials.cookie,
-            imageModel: params.imageModel,
-        });
+        for (const provider of providerPriority) {
+            if (provider === "cloudapi") {
+                const res = await fetch(targetUrl, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json; charset=utf-8",
+                        Authorization: credentials.authorization,
+                        Cookie: credentials.cookie,
+                        "User-Agent":
+                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    },
+                    body: JSON.stringify({
+                        trainName: params.trainName,
+                        trainDescription: params.trainDescription,
+                        stageName: params.stageName,
+                        stageDescription: params.stageDescription,
+                    }),
+                });
 
-        if (preferredGenerated?.fileUrl) {
-            const uploadedPreferred = await uploadCoverImageFromUrl(preferredGenerated.fileUrl, credentials);
-            if (uploadedPreferred) {
-                return uploadedPreferred;
+                if (res.ok) {
+                    const result = await res.json();
+                    if (result.code === 200 || result.success === true) {
+                        const data = result.data;
+                        if (data?.fileId && data?.ossUrl) {
+                            return { fileId: data.fileId, fileUrl: data.ossUrl };
+                        }
+                        console.log("[bg-image] cloudapi 成功但返回格式不可用:", JSON.stringify(data).substring(0, 300));
+                    } else {
+                        console.error("[bg-image] cloudapi 返回非成功:", JSON.stringify(result).substring(0, 300));
+                    }
+                } else {
+                    console.error("[bg-image] cloudapi 请求失败:", res.status, res.statusText);
+                }
+                continue;
             }
-            console.error("[bg-image] OpenAI优先生图成功，但上传失败，回退 cloudapi");
-        }
 
-        const res = await fetch(targetUrl, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json; charset=utf-8",
-                Authorization: credentials.authorization,
-                Cookie: credentials.cookie,
-                "User-Agent":
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
-            },
-            body: JSON.stringify(params),
-        });
+            const preferredGenerated = await generateImageViaArk(preferredPrompt, {
+                apiKey: params.arkApiKey,
+                secondaryApiKey: POLYMAS_IMAGE_FALLBACK_API_KEY,
+                endpoint: deriveImageEndpointFromLlmApiUrl(params.llmApiUrl),
+                cookie: credentials.cookie,
+                imageModel: params.imageModel,
+            });
 
-        if (!res.ok) {
-            console.error("[bg-image] API 请求失败:", res.status);
-            return null;
-        }
-
-        const result = await res.json();
-        console.log("[bg-image] Full API response:", JSON.stringify(result).substring(0, 500));
-        if (result.code === 200 || result.success === true) {
-            const data = result.data;
-            if (data?.fileId && data?.ossUrl) {
-                return { fileId: data.fileId, fileUrl: data.ossUrl };
+            if (preferredGenerated?.fileUrl) {
+                const uploadedPreferred = await uploadCoverImageFromUrl(preferredGenerated.fileUrl, credentials);
+                if (uploadedPreferred) {
+                    return uploadedPreferred;
+                }
+                console.error("[bg-image] openai 生成成功但上传失败，继续下一个提供方");
             }
-            console.log("[bg-image] 无法识别 data 格式:", JSON.stringify(data).substring(0, 300));
-            return null;
         }
-        console.error("[bg-image] API 返回非成功状态:", JSON.stringify(result).substring(0, 300));
+
         return null;
     } catch (err) {
         console.error("[bg-image] 请求异常:", err);
@@ -320,62 +373,67 @@ export async function generateCourseCoverImageSource(
         arkApiKey?: string;
         llmApiUrl?: string;
         imageModel?: string;
+        imageProviderPriority?: string | ImageProvider[];
     },
     credentials: PolymasCredentials
 ): Promise<{ fileUrl: string } | null> {
     const targetUrl = `${POLYMAS_AI_BASE}/image/generate`;
     const preferredPrompt = buildCoverFallbackPrompt(params);
+    const providerPriority = resolveImageProviderPriority(params.imageProviderPriority);
 
     try {
-        const preferredGenerated = await generateImageViaArk(preferredPrompt, {
-            apiKey: params.arkApiKey,
-            secondaryApiKey: POLYMAS_IMAGE_FALLBACK_API_KEY,
-            endpoint: deriveImageEndpointFromLlmApiUrl(params.llmApiUrl),
-            cookie: credentials.cookie,
-            imageModel: params.imageModel,
-        });
+        for (const provider of providerPriority) {
+            if (provider === "cloudapi") {
+                const res = await fetch(targetUrl, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json; charset=utf-8",
+                        Authorization: credentials.authorization,
+                        Cookie: credentials.cookie,
+                        "User-Agent":
+                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    },
+                    body: JSON.stringify({
+                        trainName: params.trainName,
+                        trainDescription: params.trainDescription,
+                        stageName: `${params.trainName} 课程封面`,
+                        stageDescription: params.coverStylePrompt
+                            ? `${params.trainDescription}\n封面风格要求：${params.coverStylePrompt}`
+                            : params.trainDescription,
+                    }),
+                });
 
-        if (preferredGenerated?.fileUrl) {
-            return preferredGenerated;
+                if (res.ok) {
+                    const result = await res.json();
+                    if (result.code === 200 || result.success === true) {
+                        const fileUrl = extractImageUrlFromData(result.data);
+                        if (fileUrl) {
+                            return { fileUrl };
+                        }
+                        console.error("[course-cover] cloudapi 返回成功但无可用URL:", JSON.stringify(result.data).substring(0, 300));
+                    } else {
+                        console.error("[course-cover] cloudapi 返回非成功:", JSON.stringify(result).substring(0, 300));
+                    }
+                } else {
+                    console.error("[course-cover] cloudapi 请求失败:", res.status, res.statusText);
+                }
+                continue;
+            }
+
+            const preferredGenerated = await generateImageViaArk(preferredPrompt, {
+                apiKey: params.arkApiKey,
+                secondaryApiKey: POLYMAS_IMAGE_FALLBACK_API_KEY,
+                endpoint: deriveImageEndpointFromLlmApiUrl(params.llmApiUrl),
+                cookie: credentials.cookie,
+                imageModel: params.imageModel,
+            });
+
+            if (preferredGenerated?.fileUrl) {
+                return preferredGenerated;
+            }
         }
 
-        const res = await fetch(targetUrl, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json; charset=utf-8",
-                Authorization: credentials.authorization,
-                Cookie: credentials.cookie,
-                "User-Agent":
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
-            },
-            body: JSON.stringify({
-                trainName: params.trainName,
-                trainDescription: params.trainDescription,
-                stageName: `${params.trainName} 课程封面`,
-                stageDescription: params.coverStylePrompt
-                    ? `${params.trainDescription}\n封面风格要求：${params.coverStylePrompt}`
-                    : params.trainDescription,
-            }),
-        });
-
-        if (!res.ok) {
-            console.error("[course-cover] 生成请求失败:", res.status, res.statusText);
-            return null;
-        }
-
-        const result = await res.json();
-        if (!(result.code === 200 || result.success === true)) {
-            console.error("[course-cover] 生成接口返回失败:", JSON.stringify(result).substring(0, 300));
-            return null;
-        }
-
-        const fileUrl = extractImageUrlFromData(result.data);
-        if (!fileUrl) {
-            console.error("[course-cover] 生成接口未返回可用URL:", JSON.stringify(result.data).substring(0, 300));
-            return null;
-        }
-
-        return { fileUrl };
+        return null;
     } catch (err) {
         console.error("[course-cover] 生成异常:", err);
         return null;

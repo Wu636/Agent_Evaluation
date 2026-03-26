@@ -15,10 +15,9 @@ interface InjectConfigModalProps {
 }
 
 const STORAGE_KEY = "training-injector-credentials";
-const IMAGE_MODELS = [
-    { id: "dall-e-3", name: "openai · dall-e-3" },
-    { id: "general_v2.0_L", name: "豆包 · general_v2.0_L" },
-    { id: "doubao-seedream-3-0-t2i-250415", name: "豆包 · doubao-seedream-3-0-t2i-250415" },
+const IMAGE_PROVIDER_OPTIONS = [
+    { id: "cloudapi", name: "cloudapi（优先）" },
+    { id: "openai", name: "OpenAI（优先）" },
 ];
 
 interface StageOption {
@@ -50,7 +49,7 @@ export function InjectConfigModal({
     const [extractionMode, setExtractionMode] = useState<"hybrid" | "llm" | "regex">("regex");
     const [llmModel, setLlmModel] = useState("");
     const [coverStylePrompt, setCoverStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染， 电影级光影 高清细节，16:9宽屏构图");
-    const [imageModel, setImageModel] = useState("dall-e-3");
+    const [imageProviderMode, setImageProviderMode] = useState<"cloudapi" | "openai">("cloudapi");
     const [injectCoverImage, setInjectCoverImage] = useState(true);
     const [injectBackgroundImage, setInjectBackgroundImage] = useState(true);
     const [regenTarget, setRegenTarget] = useState<"cover" | "background" | "all">("cover");
@@ -66,6 +65,8 @@ export function InjectConfigModal({
     const [customCombinedText, setCustomCombinedText] = useState("");
     const [customScriptText, setCustomScriptText] = useState("");
     const [customRubricText, setCustomRubricText] = useState("");
+
+    const imageProviderPriority = imageProviderMode === "openai" ? "openai,cloudapi" : "cloudapi,openai";
 
     const logsEndRef = useRef<HTMLDivElement>(null);
     const combinedFileRef = useRef<HTMLInputElement>(null);
@@ -337,7 +338,7 @@ export function InjectConfigModal({
                 },
                 llmSettings,
                 coverStylePrompt: coverStylePrompt.trim() || undefined,
-                imageModel,
+                imageProviderPriority,
                 trainTaskName,
                 trainDescription,
             };
@@ -535,7 +536,7 @@ export function InjectConfigModal({
                     llmSettings,
                     extractionMode,
                     coverStylePrompt: coverStylePrompt.trim() || undefined,
-                    imageModel,
+                    imageProviderPriority,
                     injectCoverImage: shouldInjectCoverInMain,
                     injectBackgroundImage: shouldInjectBgInMain,
                     scriptMarkdown: injectScript ? effectiveScriptMd : undefined,
@@ -668,7 +669,7 @@ export function InjectConfigModal({
                     },
                     llmSettings,
                     coverStylePrompt: coverStylePrompt.trim() || undefined,
-                    imageModel,
+                    imageProviderPriority,
                     trainTaskName: parseTaskConfig(effectiveScriptMd || "")?.trainTaskName || "训练任务",
                     trainDescription: parseTaskConfig(effectiveScriptMd || "")?.description || "",
                 };
@@ -913,17 +914,17 @@ export function InjectConfigModal({
                                 </div>
 
                                 <div className="pt-3 border-t border-slate-100 space-y-2">
-                                    <label className="text-xs font-medium text-slate-700 block">生图模型</label>
+                                    <label className="text-xs font-medium text-slate-700 block">生图方式</label>
                                     <select
-                                        value={imageModel}
-                                        onChange={(e) => setImageModel(e.target.value)}
+                                        value={imageProviderMode}
+                                        onChange={(e) => setImageProviderMode(e.target.value as "cloudapi" | "openai")}
                                         className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white"
                                     >
-                                        {IMAGE_MODELS.map((item) => (
+                                        {IMAGE_PROVIDER_OPTIONS.map((item) => (
                                             <option key={item.id} value={item.id}>{item.name}</option>
                                         ))}
                                     </select>
-                                    <p className="text-xs text-slate-400">封面图与背景图都使用此模型生成。</p>
+                                    <p className="text-xs text-slate-400">仅选择调用方式：当前方式失败后会自动回退到另一种方式。</p>
                                 </div>
 
                                 <div className="pt-3 border-t border-slate-100 space-y-2">

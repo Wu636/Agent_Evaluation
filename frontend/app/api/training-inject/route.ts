@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
                     extractionMode = "hybrid",
                     coverStylePrompt,
                     imageModel,
+                    imageProviderPriority,
                     injectCoverImage = true,
                     injectBackgroundImage = true,
                     scriptMarkdown,
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
                     extractionMode?: "hybrid" | "llm" | "regex";
                     coverStylePrompt?: string;
                     imageModel?: string;
+                    imageProviderPriority?: string;
                     injectCoverImage?: boolean;
                     injectBackgroundImage?: boolean;
                     scriptMarkdown?: string;
@@ -171,6 +173,7 @@ export async function POST(request: NextRequest) {
                                     arkApiKey: llmSettings?.apiKey,
                                     llmApiUrl: llmSettings?.apiUrl,
                                     imageModel: imageModel || undefined,
+                                    imageProviderPriority,
                                 },
                                 credentials
                             );
@@ -208,7 +211,7 @@ export async function POST(request: NextRequest) {
                             credentials
                         );
                         if (!ok) {
-                            send({ type: "progress", phase: "script", message: "更新任务基础配置失败，将跳过该步骤", current: 0, total: steps.length });
+                            console.warn("[inject-route] 更新任务基础配置失败（前端不展示该提示）");
                         }
                     }
 
@@ -221,12 +224,6 @@ export async function POST(request: NextRequest) {
 
                     // 提前检测背景图能力
                     const canSetBgImage = !!(injectBackgroundImage && finalCourseId && finalLibraryFolderId);
-                    if (!canSetBgImage) {
-                        const reason = !injectBackgroundImage
-                            ? "已手动关闭背景图注入"
-                            : "未检测到 libraryFolderId（提示：使用包含 libraryId 参数的完整链接可启用背景图）";
-                        send({ type: "progress", phase: "script", message: `⚠️ ${reason}，将跳过背景图设置`, current: 0, total: steps.length });
-                    }
 
                     // 查询现有节点和连线
                     send({ type: "progress", phase: "script", message: "正在查询现有工作流...", current: 0, total: steps.length });
@@ -291,6 +288,7 @@ export async function POST(request: NextRequest) {
                                         arkApiKey: llmSettings?.apiKey,
                                         llmApiUrl: llmSettings?.apiUrl,
                                         imageModel: imageModel || undefined,
+                                        imageProviderPriority,
                                     },
                                     credentials
                                 );

@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
             llmSettings,
             coverStylePrompt,
             imageModel,
+            imageProviderPriority,
             targetType,
             stepId,
             trainTaskName,
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
             llmSettings?: LLMSettings;
             coverStylePrompt?: string;
             imageModel?: string;
+            imageProviderPriority?: string;
             targetType: "cover" | "background" | "all";
             stepId?: string;
             trainTaskName?: string;
@@ -83,6 +85,7 @@ export async function POST(request: NextRequest) {
                     arkApiKey: llmSettings?.apiKey,
                     llmApiUrl: llmSettings?.apiUrl,
                     imageModel: String(imageModel || "").trim() || undefined,
+                    imageProviderPriority,
                 },
                 credentials
             );
@@ -159,6 +162,7 @@ export async function POST(request: NextRequest) {
                     arkApiKey: llmSettings?.apiKey,
                     llmApiUrl: llmSettings?.apiUrl,
                     imageModel: String(imageModel || "").trim() || undefined,
+                    imageProviderPriority,
                 },
                 credentials
             );
@@ -244,6 +248,7 @@ export async function POST(request: NextRequest) {
                                 arkApiKey: llmSettings?.apiKey,
                                 llmApiUrl: llmSettings?.apiUrl,
                                 imageModel: String(imageModel || "").trim() || undefined,
+                                imageProviderPriority,
                             },
                             credentials
                         );
@@ -296,6 +301,7 @@ export async function POST(request: NextRequest) {
                                     arkApiKey: llmSettings?.apiKey,
                                     llmApiUrl: llmSettings?.apiUrl,
                                     imageModel: String(imageModel || "").trim() || undefined,
+                                    imageProviderPriority,
                                 },
                                 credentials
                             );

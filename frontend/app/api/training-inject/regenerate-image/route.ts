@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
             imageProviderPriority,
             targetType,
             stepId,
+            stepSnapshot,
             trainTaskName,
             trainDescription,
             stageDescription,
@@ -41,6 +42,21 @@ export async function POST(request: NextRequest) {
             imageProviderPriority?: string;
             targetType: "cover" | "background" | "all";
             stepId?: string;
+            stepSnapshot?: {
+                stepName?: string;
+                description?: string;
+                prologue?: string;
+                modelId?: string;
+                llmPrompt?: string;
+                trainerName?: string;
+                interactiveRounds?: number;
+                agentId?: string;
+                avatarNid?: string;
+                position?: {
+                    x?: number;
+                    y?: number;
+                };
+            };
             trainTaskName?: string;
             trainDescription?: string;
             stageDescription?: string;
@@ -140,16 +156,50 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            const steps = await queryScriptSteps(finalTrainTaskId, credentials);
-            const targetStep = steps.find((s) => s.stepId === stepId && s.stepDetailDTO?.nodeType === "SCRIPT_NODE");
-            if (!targetStep) {
-                return NextResponse.json(
-                    { success: false, error: "未找到指定阶段节点" },
-                    { status: 404 }
-                );
+            let stepDetail = {
+                stepName: stepSnapshot?.stepName || "",
+                description: stepSnapshot?.description || "",
+                prologue: stepSnapshot?.prologue || "",
+                modelId: stepSnapshot?.modelId || "",
+                llmPrompt: stepSnapshot?.llmPrompt || "",
+                trainerName: stepSnapshot?.trainerName || "",
+                interactiveRounds: Number(stepSnapshot?.interactiveRounds) || 0,
+                agentId: stepSnapshot?.agentId || "",
+                avatarNid: stepSnapshot?.avatarNid || "",
+            };
+            let position = {
+                x: Number(stepSnapshot?.position?.x) || 100,
+                y: Number(stepSnapshot?.position?.y) || 300,
+            };
+
+            if (!stepSnapshot) {
+                const steps = await queryScriptSteps(finalTrainTaskId, credentials);
+                const targetStep = steps.find((s) => s.stepId === stepId && s.stepDetailDTO?.nodeType === "SCRIPT_NODE");
+                if (!targetStep) {
+                    return NextResponse.json(
+                        { success: false, error: "未找到指定阶段节点" },
+                        { status: 404 }
+                    );
+                }
+
+                const raw = targetStep.stepDetailDTO || { nodeType: "SCRIPT_NODE", stepName: "未命名阶段" };
+                stepDetail = {
+                    stepName: raw.stepName || "",
+                    description: raw.description || "",
+                    prologue: raw.prologue || "",
+                    modelId: raw.modelId || "",
+                    llmPrompt: raw.llmPrompt || "",
+                    trainerName: raw.trainerName || "",
+                    interactiveRounds: Number(raw.interactiveRounds) || 0,
+                    agentId: raw.agentId || "",
+                    avatarNid: raw.avatarNid || "",
+                };
+                position = {
+                    x: Number(targetStep.positionDTO?.x) || 100,
+                    y: Number(targetStep.positionDTO?.y) || 300,
+                };
             }
 
-            const stepDetail = targetStep.stepDetailDTO || { nodeType: "SCRIPT_NODE", stepName: "未命名阶段" };
             const stageName = stepDetail.stepName || "未命名阶段";
             const description = String(stepDetail.description || "").trim() || String(stageDescription || "").trim();
 
@@ -195,10 +245,7 @@ export async function POST(request: NextRequest) {
                 },
                 finalCourseId,
                 finalLibraryFolderId,
-                {
-                    x: Number(targetStep.positionDTO?.x) || 100,
-                    y: Number(targetStep.positionDTO?.y) || 300,
-                },
+                position,
                 credentials
             );
 

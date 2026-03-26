@@ -33,6 +33,21 @@ export async function POST(request: NextRequest) {
             .map((step) => ({
                 stepId: step.stepId,
                 stepName: step.stepDetailDTO?.stepName || "未命名阶段",
+                stepSnapshot: {
+                    stepName: step.stepDetailDTO?.stepName || "",
+                    description: step.stepDetailDTO?.description || "",
+                    prologue: step.stepDetailDTO?.prologue || "",
+                    modelId: step.stepDetailDTO?.modelId || "",
+                    llmPrompt: step.stepDetailDTO?.llmPrompt || "",
+                    trainerName: step.stepDetailDTO?.trainerName || "",
+                    interactiveRounds: Number(step.stepDetailDTO?.interactiveRounds) || 0,
+                    agentId: step.stepDetailDTO?.agentId || "",
+                    avatarNid: step.stepDetailDTO?.avatarNid || "",
+                    position: {
+                        x: Number(step.positionDTO?.x) || 100,
+                        y: Number(step.positionDTO?.y) || 300,
+                    },
+                },
             }));
 
         return NextResponse.json({ success: true, stages });

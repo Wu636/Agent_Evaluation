@@ -23,6 +23,21 @@ const IMAGE_PROVIDER_OPTIONS = [
 interface StageOption {
     stepId: string;
     stepName: string;
+    stepSnapshot?: {
+        stepName?: string;
+        description?: string;
+        prologue?: string;
+        modelId?: string;
+        llmPrompt?: string;
+        trainerName?: string;
+        interactiveRounds?: number;
+        agentId?: string;
+        avatarNid?: string;
+        position?: {
+            x?: number;
+            y?: number;
+        };
+    };
 }
 
 export function InjectConfigModal({
@@ -385,20 +400,6 @@ export function InjectConfigModal({
                 let successStages = 0;
                 const failedStages: string[] = [];
 
-                setRegenMessage(`正在重生全部图片：课程封面（${current + 1}/${total}）...`);
-                try {
-                    await callRegenerateApi({
-                        ...basePayload,
-                        targetType: "cover",
-                    });
-                    coverOk = true;
-                } catch (err) {
-                    coverOk = false;
-                    failedStages.push("课程封面");
-                    console.warn("[InjectModal] 重生封面失败，将继续重生阶段背景:", err);
-                }
-                current += 1;
-
                 for (const stage of stageList) {
                     const matched = parsedSteps.find((step) => step.stepName === stage.stepName);
                     const stageDesc = matched?.description || "";
@@ -408,6 +409,7 @@ export function InjectConfigModal({
                             ...basePayload,
                             targetType: "background",
                             stepId: stage.stepId,
+                            stepSnapshot: stage.stepSnapshot,
                             stageDescription: stageDesc || undefined,
                         });
                         successStages += 1;
@@ -417,6 +419,20 @@ export function InjectConfigModal({
                     }
                     current += 1;
                 }
+
+                setRegenMessage(`正在重生课程封面图（${current + 1}/${total}）...`);
+                try {
+                    await callRegenerateApi({
+                        ...basePayload,
+                        targetType: "cover",
+                    });
+                    coverOk = true;
+                } catch (err) {
+                    coverOk = false;
+                    failedStages.push("课程封面");
+                    console.warn("[InjectModal] 重生封面失败:", err);
+                }
+                current += 1;
 
                 setRegenMessage(
                     `重生完成：封面${coverOk ? "成功" : "失败"}，阶段背景 ${successStages}/${stageList.length} 成功`
@@ -431,6 +447,9 @@ export function InjectConfigModal({
                 ...basePayload,
                 targetType: regenTarget,
                 stepId: regenTarget === "background" ? regenStepId : undefined,
+                stepSnapshot: regenTarget === "background"
+                    ? regenStages.find((stage) => stage.stepId === regenStepId)?.stepSnapshot
+                    : undefined,
                 stageDescription: selectedStageDescription || undefined,
             });
             setRegenMessage(data.message || "重生图片成功");
@@ -555,6 +574,7 @@ export function InjectConfigModal({
             const decoder = new TextDecoder();
             let buffer = "";
             let completedSummary: InjectSummary | null = null;
+            let delayedCompleteLog: InjectProgressEvent | null = null;
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -570,14 +590,19 @@ export function InjectConfigModal({
 
                     try {
                         const data = JSON.parse(trimmed.slice(6)) as InjectProgressEvent;
-                        setProgressLogs((prev) => [...prev, data]);
-
                         if (data.type === "error") {
                             throw new Error(data.message);
                         }
+
                         if (data.type === "complete") {
                             completedSummary = data.summary;
+                            if (shouldRunPostImageBatch) {
+                                delayedCompleteLog = data;
+                                continue;
+                            }
                         }
+
+                        setProgressLogs((prev) => [...prev, data]);
                     } catch (eventErr) {
                         if (eventErr instanceof Error && eventErr.message) {
                             throw eventErr;
@@ -674,6 +699,26 @@ export function InjectConfigModal({
                     trainDescription: parseTaskConfig(effectiveScriptMd || "")?.description || "",
                 };
 
+                if (injectBackgroundImage) {
+                    for (const stage of stageList) {
+                        pushImageLog(`正在补全阶段背景：${stage.stepName}（${currentImageTask + 1}/${totalImageTasks}）...`, currentImageTask + 1, totalImageTasks);
+                        const matched = parsedSteps.find((step) => step.stepName === stage.stepName);
+                        try {
+                            await callRegenerateApi({
+                                ...baseRegenPayload,
+                                targetType: "background",
+                                stepId: stage.stepId,
+                                stepSnapshot: stage.stepSnapshot,
+                                stageDescription: matched?.description || undefined,
+                            });
+                        } catch (stageErr) {
+                            failedItems.push(stage.stepName || stage.stepId);
+                            console.warn("[InjectModal] 注入后补全阶段背景失败:", stage.stepName, stageErr);
+                        }
+                        currentImageTask += 1;
+                    }
+                }
+
                 if (injectCoverImage) {
                     pushImageLog(`正在补全课程封面图（${currentImageTask + 1}/${totalImageTasks}）...`, currentImageTask + 1, totalImageTasks);
                     try {
@@ -686,25 +731,6 @@ export function InjectConfigModal({
                         console.warn("[InjectModal] 注入后补全封面失败:", coverErr);
                     }
                     currentImageTask += 1;
-                }
-
-                if (injectBackgroundImage) {
-                    for (const stage of stageList) {
-                        pushImageLog(`正在补全阶段背景：${stage.stepName}（${currentImageTask + 1}/${totalImageTasks}）...`, currentImageTask + 1, totalImageTasks);
-                        const matched = parsedSteps.find((step) => step.stepName === stage.stepName);
-                        try {
-                            await callRegenerateApi({
-                                ...baseRegenPayload,
-                                targetType: "background",
-                                stepId: stage.stepId,
-                                stageDescription: matched?.description || undefined,
-                            });
-                        } catch (stageErr) {
-                            failedItems.push(stage.stepName || stage.stepId);
-                            console.warn("[InjectModal] 注入后补全阶段背景失败:", stage.stepName, stageErr);
-                        }
-                        currentImageTask += 1;
-                    }
                 }
 
                 if (failedItems.length > 0) {
@@ -730,6 +756,10 @@ export function InjectConfigModal({
                         },
                     ]);
                 }
+            }
+
+            if (shouldRunPostImageBatch && delayedCompleteLog) {
+                setProgressLogs((prev) => [...prev, delayedCompleteLog as InjectProgressEvent]);
             }
 
             setSummary(completedSummary);

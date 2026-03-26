@@ -203,7 +203,6 @@ export function TrainingGenerateInterface() {
     const [activeTab, setActiveTab] = useState<ResultTab>("script");
     const [taskName, setTaskName] = useState(cached.name);
     const [errorMessage, setErrorMessage] = useState("");
-    const [detectedScriptMode, setDetectedScriptMode] = useState<Exclude<ScriptMode, "auto"> | null>(null);
 
     // 生成完成后自动持久化
     useEffect(() => {
@@ -609,7 +608,6 @@ export function TrainingGenerateInterface() {
         setPhase("generating");
         if (generateScript) setScriptContent("");
         if (generateRubric) setRubricContent("");
-        setDetectedScriptMode(null);
         setErrorMessage("");
         if (generateScript) setTaskName(""); // 仅生成剧本时才重置任务名
         setStatusMessage("准备中...");
@@ -660,17 +658,11 @@ export function TrainingGenerateInterface() {
                                 setRubricContent(event.fullContent);
                             }
                             break;
-
-                        case "script_mode_detected":
-                            setDetectedScriptMode(event.resolvedMode);
-                            break;
-
                         case "complete":
                             setPhase("completed");
                             setCurrentGeneratingPhase(null);
                             setStatusMessage("");
                             setTaskName(event.taskName || "训练配置");
-                            setDetectedScriptMode((prev) => event.resolvedScriptMode || prev);
                             // 自动切换到有内容的 tab
                             if (event.script && !event.rubric) setActiveTab("script");
                             else if (event.rubric && !event.script) setActiveTab("rubric");
@@ -753,7 +745,6 @@ export function TrainingGenerateInterface() {
         setPhase("generating");
         if (shouldRegenScript) setScriptContent("");
         if (shouldRegenRubric) setRubricContent("");
-        if (shouldRegenScript) setDetectedScriptMode(null);
         setErrorMessage("");
         setStatusMessage("准备重新生成...");
         setCurrentGeneratingPhase(null);
@@ -801,15 +792,11 @@ export function TrainingGenerateInterface() {
                                 setRubricContent(event.fullContent);
                             }
                             break;
-                        case "script_mode_detected":
-                            setDetectedScriptMode(event.resolvedMode);
-                            break;
                         case "complete":
                             setPhase("completed");
                             setCurrentGeneratingPhase(null);
                             setStatusMessage("");
                             setTaskName(event.taskName || taskName || "训练配置");
-                            setDetectedScriptMode((prev) => event.resolvedScriptMode || prev);
                             if (shouldRegenScript && !shouldRegenRubric) setActiveTab("script");
                             else if (shouldRegenRubric && !shouldRegenScript) setActiveTab("rubric");
                             break;
@@ -844,7 +831,6 @@ export function TrainingGenerateInterface() {
         setRubricContent("");
         setErrorMessage("");
         setTaskName("");
-        setDetectedScriptMode(null);
         setStatusMessage("");
         localStorage.removeItem(CACHE_KEY);
     }, []);
@@ -1144,19 +1130,6 @@ export function TrainingGenerateInterface() {
                             </label>
                         </div>
 
-                        {generateScript && (
-                            <div className="mt-4 pt-4 border-t border-slate-100">
-                                <p className="text-sm font-semibold text-slate-700">主导模式</p>
-                                <p className="mt-1 text-xs text-slate-500">
-                                    主导模式由智能规划和自动识别决定，具体阶段以模块类型为准。
-                                </p>
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                    <span className="inline-flex items-center px-2 py-1 rounded-full bg-violet-100 text-violet-700 text-xs">
-                                        {modulePlan ? `当前主导模式 ${SCRIPT_MODE_LABELS[modulePlan.recommendedMode]}` : "未规划时自动识别"}
-                                    </span>
-                                </div>
-                            </div>
-                        )}
                     </div>
 
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1201,34 +1174,20 @@ export function TrainingGenerateInterface() {
                                 </p>
                             ) : (
                                 <>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="text-xs font-medium text-slate-600 flex items-center gap-1.5 mb-1">
-                                                <span>任务名称</span>
-                                                {planAutofillTaskFields.includes("taskName") && (
-                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px]">
-                                                        自动补全
-                                                    </span>
-                                                )}
-                                            </label>
-                                            <input
-                                                value={modulePlan.taskName}
-                                                onChange={(e) => updateModulePlanField("taskName", e.target.value)}
-                                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-medium text-slate-600 block mb-1">推荐主导模式</label>
-                                            <select
-                                                value={modulePlan.recommendedMode}
-                                                onChange={(e) => updateModulePlanField("recommendedMode", e.target.value as Exclude<ScriptMode, "auto">)}
-                                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
-                                            >
-                                                {Object.entries(SCRIPT_MODE_LABELS).map(([value, label]) => (
-                                                    <option key={value} value={value}>{label}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-slate-600 flex items-center gap-1.5 mb-1">
+                                            <span>任务名称</span>
+                                            {planAutofillTaskFields.includes("taskName") && (
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px]">
+                                                    自动补全
+                                                </span>
+                                            )}
+                                        </label>
+                                        <input
+                                            value={modulePlan.taskName}
+                                            onChange={(e) => updateModulePlanField("taskName", e.target.value)}
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+                                        />
                                     </div>
 
                                     <div>
@@ -1251,9 +1210,6 @@ export function TrainingGenerateInterface() {
                                     <div className="flex flex-wrap gap-2">
                                         <span className="inline-flex items-center px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs">
                                             模块数 {modulePlan.modules.length}
-                                        </span>
-                                        <span className="inline-flex items-center px-2 py-1 rounded-full bg-violet-100 text-violet-700 text-xs">
-                                            推荐主导模式 {SCRIPT_MODE_LABELS[modulePlan.recommendedMode]}
                                         </span>
                                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${planValidation.some((item) => item.level === "error")
                                             ? "bg-rose-100 text-rose-700"
@@ -1827,18 +1783,6 @@ export function TrainingGenerateInterface() {
                             </div>
                         )}
                     </div>
-
-                    {generateScript && detectedScriptMode && (
-                        <div className="px-5 py-2.5 border-b border-slate-100 bg-slate-50/80 flex items-center gap-2 text-xs">
-                            <span className="text-slate-500">本次主导模式</span>
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">
-                                {SCRIPT_MODE_LABELS[detectedScriptMode]}
-                            </span>
-                            {scriptMode === "auto" && (
-                                <span className="text-slate-400">由自动识别选择，具体阶段仍以模块类型为准</span>
-                            )}
-                        </div>
-                    )}
 
                     {phase === "completed" && generateScript && scriptDiagnostics && activeTab === "script" && (
                         <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/60 space-y-2">

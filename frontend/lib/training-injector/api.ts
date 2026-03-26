@@ -24,6 +24,22 @@ const DEFAULT_IMAGE_PROVIDER_PRIORITY: ImageProvider[] = ["cloudapi", "openai"];
 const DEFAULT_BG_IMAGE_REQUIREMENT = "专业、清晰、教学场景背景图，严格16:9横版宽屏构图，无任何文字";
 const DEFAULT_COVER_STYLE_REQUIREMENT = "专业、简洁、教学场景感，16:9 横版封面，无任何文字";
 
+const IMAGE_FETCH_TIMEOUT_MS = 20000;
+const IMAGE_UPLOAD_TIMEOUT_MS = 30000;
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, {
+            ...init,
+            signal: controller.signal,
+        });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 function buildBackgroundFallbackPrompt(params: {
     trainName: string;
     trainDescription: string;
@@ -233,11 +249,11 @@ async function generateImageViaArk(
                     headers.Cookie = options.cookie.trim();
                 }
 
-                    const res = await fetch(endpoint, {
+                    const res = await fetchWithTimeout(endpoint, {
                         method: "POST",
                         headers,
                         body: JSON.stringify(requestBody),
-                    });
+                    }, IMAGE_FETCH_TIMEOUT_MS);
 
                     if (!res.ok) {
                         const txt = await res.text().catch(() => "");
@@ -306,7 +322,7 @@ export async function generateBackgroundImage(
     try {
         for (const provider of providerPriority) {
             if (provider === "cloudapi") {
-                const res = await fetch(targetUrl, {
+                const res = await fetchWithTimeout(targetUrl, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json; charset=utf-8",
@@ -321,7 +337,7 @@ export async function generateBackgroundImage(
                         stageName: params.stageName,
                         stageDescription: params.stageDescription,
                     }),
-                });
+                }, IMAGE_FETCH_TIMEOUT_MS);
 
                 if (res.ok) {
                     const result = await res.json();
@@ -384,7 +400,7 @@ export async function generateCourseCoverImageSource(
     try {
         for (const provider of providerPriority) {
             if (provider === "cloudapi") {
-                const res = await fetch(targetUrl, {
+                const res = await fetchWithTimeout(targetUrl, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json; charset=utf-8",
@@ -401,7 +417,7 @@ export async function generateCourseCoverImageSource(
                             ? `${params.trainDescription}\n封面风格要求：${params.coverStylePrompt}`
                             : params.trainDescription,
                     }),
-                });
+                }, IMAGE_FETCH_TIMEOUT_MS);
 
                 if (res.ok) {
                     const result = await res.json();
@@ -468,22 +484,22 @@ export async function uploadCoverImageFromUrl(
             hostname.endsWith("polymas.com") ||
             hostname.includes("cloudapi");
 
-        let imgRes = await fetch(imageUrl, {
+        let imgRes = await fetchWithTimeout(imageUrl, {
             method: "GET",
             headers: shouldUseAuthFirst
                 ? downloadHeadersWithAuth
                 : downloadHeadersWithoutAuth,
-        });
+        }, IMAGE_FETCH_TIMEOUT_MS);
 
         if (
             !imgRes.ok &&
             shouldUseAuthFirst &&
             [400, 401, 403].includes(imgRes.status)
         ) {
-            imgRes = await fetch(imageUrl, {
+            imgRes = await fetchWithTimeout(imageUrl, {
                 method: "GET",
                 headers: downloadHeadersWithoutAuth,
-            });
+            }, IMAGE_FETCH_TIMEOUT_MS);
         }
 
         if (!imgRes.ok) {
@@ -510,7 +526,7 @@ export async function uploadCoverImageFromUrl(
         formData.append("size", String(fileSize));
         formData.append("file", new Blob([arrayBuffer], { type: mimeType }), fileName);
 
-        const uploadRes = await fetch(`${POLYMAS_RESOURCE_BASE}/file/upload`, {
+        const uploadRes = await fetchWithTimeout(`${POLYMAS_RESOURCE_BASE}/file/upload`, {
             method: "POST",
             headers: {
                 Authorization: credentials.authorization,
@@ -519,7 +535,7 @@ export async function uploadCoverImageFromUrl(
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
             },
             body: formData,
-        });
+        }, IMAGE_UPLOAD_TIMEOUT_MS);
 
         if (!uploadRes.ok) {
             console.error("[course-cover] 上传失败:", uploadRes.status, uploadRes.statusText);

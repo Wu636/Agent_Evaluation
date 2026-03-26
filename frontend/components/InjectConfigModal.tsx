@@ -19,6 +19,7 @@ const IMAGE_PROVIDER_OPTIONS = [
     { id: "cloudapi", name: "cloudapi（优先）" },
     { id: "openai", name: "OpenAI（优先）" },
 ];
+const BACKGROUND_IMAGE_CONCURRENCY = 2;
 
 interface StageOption {
     stepId: string;
@@ -82,6 +83,7 @@ export function InjectConfigModal({
     const [customRubricText, setCustomRubricText] = useState("");
 
     const imageProviderPriority = imageProviderMode === "openai" ? "openai,cloudapi" : "cloudapi,openai";
+    const switchedImageProviderPriority = imageProviderMode === "openai" ? "cloudapi,openai" : "openai,cloudapi";
 
     const logsEndRef = useRef<HTMLDivElement>(null);
     const combinedFileRef = useRef<HTMLInputElement>(null);
@@ -358,6 +360,31 @@ export function InjectConfigModal({
                 trainDescription,
             };
 
+            const runCoverRegenerateWithRetry = async (): Promise<boolean> => {
+                try {
+                    await callRegenerateApi({
+                        ...basePayload,
+                        targetType: "cover",
+                        imageProviderPriority,
+                    });
+                    return true;
+                } catch (firstErr) {
+                    console.warn("[InjectModal] 重生封面首次失败，切换提供方重试:", firstErr);
+                    setRegenMessage("封面图首次生成失败，正在切换生图方式重试（1/1）...");
+                    try {
+                        await callRegenerateApi({
+                            ...basePayload,
+                            targetType: "cover",
+                            imageProviderPriority: switchedImageProviderPriority,
+                        });
+                        return true;
+                    } catch (secondErr) {
+                        console.warn("[InjectModal] 重生封面重试失败:", secondErr);
+                        return false;
+                    }
+                }
+            };
+
             if (regenTarget === "all") {
                 if (!finalCourseId || !finalLibraryFolderId) {
                     throw new Error("重生全部图片需要 courseId 与 libraryFolderId（请粘贴完整任务链接）");
@@ -400,37 +427,53 @@ export function InjectConfigModal({
                 let successStages = 0;
                 const failedStages: string[] = [];
 
-                for (const stage of stageList) {
-                    const matched = parsedSteps.find((step) => step.stepName === stage.stepName);
-                    const stageDesc = matched?.description || "";
-                    setRegenMessage(`正在重生阶段背景：${stage.stepName}（${current + 1}/${total}）...`);
-                    try {
-                        await callRegenerateApi({
-                            ...basePayload,
-                            targetType: "background",
-                            stepId: stage.stepId,
-                            stepSnapshot: stage.stepSnapshot,
-                            stageDescription: stageDesc || undefined,
-                        });
-                        successStages += 1;
-                    } catch (err) {
-                        failedStages.push(stage.stepName || stage.stepId);
-                        console.warn("[InjectModal] 重生阶段背景失败，将继续下一个阶段:", stage.stepName, err);
-                    }
-                    current += 1;
+                let coverPromise: Promise<boolean> | null = null;
+                setRegenMessage(`正在并行重生图片：封面 + 阶段背景（共 ${total} 项）...`);
+                coverPromise = runCoverRegenerateWithRetry();
+
+                if (stageList.length > 0) {
+                    const concurrency = Math.min(BACKGROUND_IMAGE_CONCURRENCY, stageList.length);
+                    let nextIndex = 0;
+                    let completedStages = 0;
+
+                    setRegenMessage(`正在并发重生阶段背景（并发 ${concurrency}）...`);
+
+                    const runWorker = async () => {
+                        while (true) {
+                            const index = nextIndex;
+                            if (index >= stageList.length) return;
+                            nextIndex += 1;
+
+                            const stage = stageList[index];
+                            const matched = parsedSteps.find((step) => step.stepName === stage.stepName);
+                            const stageDesc = matched?.description || "";
+
+                            try {
+                                await callRegenerateApi({
+                                    ...basePayload,
+                                    targetType: "background",
+                                    stepId: stage.stepId,
+                                    stepSnapshot: stage.stepSnapshot,
+                                    stageDescription: stageDesc || undefined,
+                                });
+                                successStages += 1;
+                            } catch (err) {
+                                failedStages.push(stage.stepName || stage.stepId);
+                                console.warn("[InjectModal] 重生阶段背景失败，将继续下一个阶段:", stage.stepName, err);
+                            }
+
+                            completedStages += 1;
+                            current = completedStages;
+                            setRegenMessage(`阶段背景重生进度：${completedStages}/${stageList.length}（已完成：${stage.stepName}）`);
+                        }
+                    };
+
+                    await Promise.all(Array.from({ length: concurrency }, () => runWorker()));
                 }
 
-                setRegenMessage(`正在重生课程封面图（${current + 1}/${total}）...`);
-                try {
-                    await callRegenerateApi({
-                        ...basePayload,
-                        targetType: "cover",
-                    });
-                    coverOk = true;
-                } catch (err) {
-                    coverOk = false;
+                coverOk = coverPromise ? await coverPromise : false;
+                if (!coverOk) {
                     failedStages.push("课程封面");
-                    console.warn("[InjectModal] 重生封面失败:", err);
                 }
                 current += 1;
 
@@ -440,6 +483,15 @@ export function InjectConfigModal({
                 if (failedStages.length > 0) {
                     setError(`部分图片重生失败：${failedStages.join("、")}`);
                 }
+                return;
+            }
+
+            if (regenTarget === "cover") {
+                const coverOk = await runCoverRegenerateWithRetry();
+                if (!coverOk) {
+                    throw new Error("课程封面图重生失败（已切换提供方重试 1 次）");
+                }
+                setRegenMessage("课程封面图重生成功");
                 return;
             }
 
@@ -699,38 +751,92 @@ export function InjectConfigModal({
                     trainDescription: parseTaskConfig(effectiveScriptMd || "")?.description || "",
                 };
 
-                if (injectBackgroundImage) {
-                    for (const stage of stageList) {
-                        pushImageLog(`正在补全阶段背景：${stage.stepName}（${currentImageTask + 1}/${totalImageTasks}）...`, currentImageTask + 1, totalImageTasks);
-                        const matched = parsedSteps.find((step) => step.stepName === stage.stepName);
-                        try {
-                            await callRegenerateApi({
-                                ...baseRegenPayload,
-                                targetType: "background",
-                                stepId: stage.stepId,
-                                stepSnapshot: stage.stepSnapshot,
-                                stageDescription: matched?.description || undefined,
-                            });
-                        } catch (stageErr) {
-                            failedItems.push(stage.stepName || stage.stepId);
-                            console.warn("[InjectModal] 注入后补全阶段背景失败:", stage.stepName, stageErr);
-                        }
-                        currentImageTask += 1;
-                    }
-                }
-
-                if (injectCoverImage) {
-                    pushImageLog(`正在补全课程封面图（${currentImageTask + 1}/${totalImageTasks}）...`, currentImageTask + 1, totalImageTasks);
+                const runCoverRegenerateWithRetryForInject = async (): Promise<boolean> => {
                     try {
                         await callRegenerateApi({
                             ...baseRegenPayload,
                             targetType: "cover",
+                            imageProviderPriority,
                         });
-                    } catch (coverErr) {
-                        failedItems.push("课程封面");
-                        console.warn("[InjectModal] 注入后补全封面失败:", coverErr);
+                        return true;
+                    } catch (firstErr) {
+                        console.warn("[InjectModal] 注入后补全封面首次失败，切换提供方重试:", firstErr);
+                        pushImageLog("封面图首次补全失败，正在切换生图方式重试（1/1）...", currentImageTask, totalImageTasks);
+                        try {
+                            await callRegenerateApi({
+                                ...baseRegenPayload,
+                                targetType: "cover",
+                                imageProviderPriority: switchedImageProviderPriority,
+                            });
+                            return true;
+                        } catch (secondErr) {
+                            console.warn("[InjectModal] 注入后补全封面重试失败:", secondErr);
+                            return false;
+                        }
                     }
+                };
+
+                let coverPromise: Promise<boolean> | null = null;
+                if (injectCoverImage) {
+                    pushImageLog(`正在并行补全课程封面图（与阶段背景并行）...`, currentImageTask, totalImageTasks);
+                    coverPromise = runCoverRegenerateWithRetryForInject();
+                }
+
+                if (injectBackgroundImage) {
+                    const concurrency = Math.min(BACKGROUND_IMAGE_CONCURRENCY, stageList.length);
+                    if (stageList.length > 0) {
+                        pushImageLog(`正在并发补全阶段背景（并发 ${concurrency}，共 ${stageList.length} 个）...`, currentImageTask, totalImageTasks);
+                    }
+
+                    let nextIndex = 0;
+                    const runWorker = async () => {
+                        while (true) {
+                            const index = nextIndex;
+                            if (index >= stageList.length) return;
+                            nextIndex += 1;
+
+                            const stage = stageList[index];
+                            const matched = parsedSteps.find((step) => step.stepName === stage.stepName);
+                            let stageOk = true;
+                            try {
+                                await callRegenerateApi({
+                                    ...baseRegenPayload,
+                                    targetType: "background",
+                                    stepId: stage.stepId,
+                                    stepSnapshot: stage.stepSnapshot,
+                                    stageDescription: matched?.description || undefined,
+                                });
+                            } catch (stageErr) {
+                                stageOk = false;
+                                failedItems.push(stage.stepName || stage.stepId);
+                                console.warn("[InjectModal] 注入后补全阶段背景失败:", stage.stepName, stageErr);
+                            }
+
+                            currentImageTask += 1;
+                            pushImageLog(
+                                `${stageOk ? "已补全" : "补全失败"}阶段背景：${stage.stepName}（${currentImageTask}/${totalImageTasks}）`,
+                                currentImageTask,
+                                totalImageTasks
+                            );
+                        }
+                    };
+
+                    if (stageList.length > 0) {
+                        await Promise.all(Array.from({ length: concurrency }, () => runWorker()));
+                    }
+                }
+
+                if (injectCoverImage) {
+                    const coverOk = coverPromise ? await coverPromise : false;
                     currentImageTask += 1;
+                    if (!coverOk) {
+                        failedItems.push("课程封面");
+                    }
+                    pushImageLog(
+                        `${coverOk ? "已补全" : "补全失败"}课程封面图（${currentImageTask}/${totalImageTasks}）`,
+                        currentImageTask,
+                        totalImageTasks
+                    );
                 }
 
                 if (failedItems.length > 0) {

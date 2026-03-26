@@ -306,94 +306,135 @@ export function InjectConfigModal({
                     : "正在重新生成全部图片（封面+所有阶段背景）..."
         );
         try {
-            const response = await fetch("/api/training-inject/regenerate-image", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    trainTaskId: finalTaskId,
-                    courseId: finalCourseId,
-                    libraryFolderId: finalLibraryFolderId,
-                    credentials: {
-                        authorization: authorization.trim(),
-                        cookie: cookie.trim(),
-                    },
-                    llmSettings,
-                    coverStylePrompt: coverStylePrompt.trim() || undefined,
-                    imageModel,
-                    targetType: regenTarget,
-                    stepId: regenTarget === "background" ? regenStepId : undefined,
-                    trainTaskName,
-                    trainDescription,
-                    stageDescription: selectedStageDescription || undefined,
-                }),
-            });
+            const callRegenerateApi = async (payload: Record<string, unknown>) => {
+                const response = await fetch("/api/training-inject/regenerate-image", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
 
-            const contentType = response.headers.get("content-type") || "";
-            if (regenTarget === "all" && contentType.includes("text/event-stream")) {
-                if (!response.ok) {
-                    throw new Error(`请求失败: ${response.status} ${response.statusText}`);
-                }
-                const reader = response.body?.getReader();
-                if (!reader) {
-                    throw new Error("无法读取重生进度流");
+                const rawText = await response.text();
+                let data: any = {};
+                try {
+                    data = rawText ? JSON.parse(rawText) : {};
+                } catch {
+                    data = { success: false, error: rawText || "重生图片失败" };
                 }
 
-                const decoder = new TextDecoder();
-                let buffer = "";
-                let completed = false;
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || `请求失败: ${response.status} ${response.statusText}`);
+                }
+                return data;
+            };
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
+            const basePayload = {
+                trainTaskId: finalTaskId,
+                courseId: finalCourseId,
+                libraryFolderId: finalLibraryFolderId,
+                credentials: {
+                    authorization: authorization.trim(),
+                    cookie: cookie.trim(),
+                },
+                llmSettings,
+                coverStylePrompt: coverStylePrompt.trim() || undefined,
+                imageModel,
+                trainTaskName,
+                trainDescription,
+            };
 
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split("\n");
-                    buffer = lines.pop() || "";
+            if (regenTarget === "all") {
+                if (!finalCourseId || !finalLibraryFolderId) {
+                    throw new Error("重生全部图片需要 courseId 与 libraryFolderId（请粘贴完整任务链接）");
+                }
 
-                    for (const line of lines) {
-                        const trimmed = line.trim();
-                        if (!trimmed.startsWith("data: ")) continue;
-                        try {
-                            const event = JSON.parse(trimmed.slice(6)) as {
-                                type: "start" | "progress" | "complete" | "error";
-                                message?: string;
-                                current?: number;
-                                total?: number;
-                            };
-
-                            if (event.type === "error") {
-                                throw new Error(event.message || "重生图片失败");
-                            }
-                            if (event.type === "start" || event.type === "progress") {
-                                setRegenMessage(event.message || "正在重生图片...");
-                            }
-                            if (event.type === "complete") {
-                                completed = true;
-                                setRegenMessage(event.message || "重生图片成功");
-                            }
-                        } catch (parseErr) {
-                            if (parseErr instanceof Error) {
-                                throw parseErr;
-                            }
-                        }
+                let stageList = regenStages;
+                if (stageList.length === 0) {
+                    const stageResponse = await fetch("/api/training-inject/stages", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            trainTaskId: finalTaskId,
+                            credentials: {
+                                authorization: authorization.trim(),
+                                cookie: cookie.trim(),
+                            },
+                        }),
+                    });
+                    const stageText = await stageResponse.text();
+                    let stageData: any = {};
+                    try {
+                        stageData = stageText ? JSON.parse(stageText) : {};
+                    } catch {
+                        stageData = { success: false, error: stageText || "加载阶段列表失败" };
+                    }
+                    if (!stageResponse.ok || !stageData.success) {
+                        throw new Error(stageData.error || "加载阶段列表失败");
+                    }
+                    stageList = Array.isArray(stageData.stages) ? stageData.stages : [];
+                    setRegenStages(stageList);
+                    if (stageList.length > 0) {
+                        setRegenStepId((prev) => prev || stageList[0].stepId);
                     }
                 }
 
-                if (!completed) {
-                    throw new Error("重生进度流中断，未收到完成事件，请重试");
+                const parsedSteps = effectiveScriptMd ? parseTrainingScript(effectiveScriptMd) : [];
+                const total = stageList.length + 1;
+                let current = 0;
+                let coverOk = false;
+                let successStages = 0;
+                const failedStages: string[] = [];
+
+                setRegenMessage(`正在重生全部图片：课程封面（${current + 1}/${total}）...`);
+                try {
+                    await callRegenerateApi({
+                        ...basePayload,
+                        targetType: "cover",
+                    });
+                    coverOk = true;
+                } catch (err) {
+                    coverOk = false;
+                    failedStages.push("课程封面");
+                    console.warn("[InjectModal] 重生封面失败，将继续重生阶段背景:", err);
+                }
+                current += 1;
+
+                for (const stage of stageList) {
+                    const matched = parsedSteps.find((step) => step.stepName === stage.stepName);
+                    const stageDesc = matched?.description || "";
+                    setRegenMessage(`正在重生阶段背景：${stage.stepName}（${current + 1}/${total}）...`);
+                    try {
+                        await callRegenerateApi({
+                            ...basePayload,
+                            targetType: "background",
+                            stepId: stage.stepId,
+                            stageDescription: stageDesc || undefined,
+                        });
+                        successStages += 1;
+                    } catch (err) {
+                        failedStages.push(stage.stepName || stage.stepId);
+                        console.warn("[InjectModal] 重生阶段背景失败，将继续下一个阶段:", stage.stepName, err);
+                    }
+                    current += 1;
                 }
 
-                await loadStages();
+                setRegenMessage(
+                    `重生完成：封面${coverOk ? "成功" : "失败"}，阶段背景 ${successStages}/${stageList.length} 成功`
+                );
+                if (failedStages.length > 0) {
+                    setError(`部分图片重生失败：${failedStages.join("、")}`);
+                }
                 return;
             }
 
-            const data = await response.json();
-            if (!response.ok || !data.success) {
-                throw new Error(data.error || "重生图片失败");
-            }
+            const data = await callRegenerateApi({
+                ...basePayload,
+                targetType: regenTarget,
+                stepId: regenTarget === "background" ? regenStepId : undefined,
+                stageDescription: selectedStageDescription || undefined,
+            });
             setRegenMessage(data.message || "重生图片成功");
 
-            if (regenTarget === "background" || regenTarget === "all") {
+            if (regenTarget === "background") {
                 await loadStages();
             }
         } catch (err) {
@@ -440,6 +481,10 @@ export function InjectConfigModal({
         setSummary(null);
         setProgressLogs([]);
 
+        const shouldRunPostImageBatch = injectScript && (injectCoverImage || injectBackgroundImage);
+        const shouldInjectCoverInMain = injectCoverImage && !shouldRunPostImageBatch;
+        const shouldInjectBgInMain = injectBackgroundImage && !shouldRunPostImageBatch;
+
         // 获取 LLM 配置用于智能提取，使用用户在注入弹窗中选择的模型覆盖
         let llmSettings = undefined;
         try {
@@ -463,6 +508,19 @@ export function InjectConfigModal({
         }
 
         try {
+            if (shouldRunPostImageBatch) {
+                setProgressLogs((prev) => [
+                    ...prev,
+                    {
+                        type: "progress",
+                        phase: "script",
+                        message: "检测到已开启生图：将采用“先注入文本，再分步补图”模式，避免云端超时。",
+                        current: 0,
+                        total: 1,
+                    },
+                ]);
+            }
+
             const response = await fetch("/api/training-inject", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -478,8 +536,8 @@ export function InjectConfigModal({
                     extractionMode,
                     coverStylePrompt: coverStylePrompt.trim() || undefined,
                     imageModel,
-                    injectCoverImage,
-                    injectBackgroundImage,
+                    injectCoverImage: shouldInjectCoverInMain,
+                    injectBackgroundImage: shouldInjectBgInMain,
                     scriptMarkdown: injectScript ? effectiveScriptMd : undefined,
                     rubricMarkdown: injectRubric ? effectiveRubricMd : undefined,
                     injectMode,
@@ -495,6 +553,7 @@ export function InjectConfigModal({
 
             const decoder = new TextDecoder();
             let buffer = "";
+            let completedSummary: InjectSummary | null = null;
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -513,20 +572,167 @@ export function InjectConfigModal({
                         setProgressLogs((prev) => [...prev, data]);
 
                         if (data.type === "error") {
-                            setError(data.message);
-                            setInjecting(false);
-                            return; // 遇到错误立刻停止处理日志
+                            throw new Error(data.message);
                         }
                         if (data.type === "complete") {
-                            setSummary(data.summary);
-                            setInjecting(false);
-                            return;
+                            completedSummary = data.summary;
                         }
-                    } catch {
+                    } catch (eventErr) {
+                        if (eventErr instanceof Error && eventErr.message) {
+                            throw eventErr;
+                        }
                         // 解析异常忽略
                     }
                 }
             }
+
+            if (!completedSummary) {
+                throw new Error("注入进度流异常结束，未收到完成事件，请重试");
+            }
+
+            if (shouldRunPostImageBatch) {
+                if (!finalCourseId || !finalLibraryFolderId) {
+                    throw new Error("你开启了图片注入，但未解析到 courseId/libraryFolderId。请粘贴包含完整参数的任务链接后重试。");
+                }
+
+                const callRegenerateApi = async (payload: Record<string, unknown>) => {
+                    const regenResponse = await fetch("/api/training-inject/regenerate-image", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload),
+                    });
+                    const regenText = await regenResponse.text();
+                    let regenData: any = {};
+                    try {
+                        regenData = regenText ? JSON.parse(regenText) : {};
+                    } catch {
+                        regenData = { success: false, error: regenText || "图片补全失败" };
+                    }
+                    if (!regenResponse.ok || !regenData.success) {
+                        throw new Error(regenData.error || `图片补全请求失败: ${regenResponse.status} ${regenResponse.statusText}`);
+                    }
+                    return regenData;
+                };
+
+                const pushImageLog = (message: string, current: number, total: number) => {
+                    setProgressLogs((prev) => [
+                        ...prev,
+                        {
+                            type: "progress",
+                            phase: "script",
+                            message,
+                            current,
+                            total,
+                        },
+                    ]);
+                };
+
+                const parsedSteps = effectiveScriptMd ? parseTrainingScript(effectiveScriptMd) : [];
+                let stageList: StageOption[] = [];
+                if (injectBackgroundImage) {
+                    const stageResponse = await fetch("/api/training-inject/stages", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            trainTaskId: finalTaskId,
+                            credentials: {
+                                authorization: authorization.trim(),
+                                cookie: cookie.trim(),
+                            },
+                        }),
+                    });
+                    const stageText = await stageResponse.text();
+                    let stageData: any = {};
+                    try {
+                        stageData = stageText ? JSON.parse(stageText) : {};
+                    } catch {
+                        stageData = { success: false, error: stageText || "加载阶段列表失败" };
+                    }
+                    if (!stageResponse.ok || !stageData.success) {
+                        throw new Error(stageData.error || "加载阶段列表失败");
+                    }
+                    stageList = Array.isArray(stageData.stages) ? stageData.stages : [];
+                }
+
+                const totalImageTasks = (injectCoverImage ? 1 : 0) + (injectBackgroundImage ? stageList.length : 0);
+                let currentImageTask = 0;
+                const failedItems: string[] = [];
+
+                const baseRegenPayload = {
+                    trainTaskId: finalTaskId,
+                    courseId: finalCourseId,
+                    libraryFolderId: finalLibraryFolderId,
+                    credentials: {
+                        authorization: authorization.trim(),
+                        cookie: cookie.trim(),
+                    },
+                    llmSettings,
+                    coverStylePrompt: coverStylePrompt.trim() || undefined,
+                    imageModel,
+                    trainTaskName: parseTaskConfig(effectiveScriptMd || "")?.trainTaskName || "训练任务",
+                    trainDescription: parseTaskConfig(effectiveScriptMd || "")?.description || "",
+                };
+
+                if (injectCoverImage) {
+                    pushImageLog(`正在补全课程封面图（${currentImageTask + 1}/${totalImageTasks}）...`, currentImageTask + 1, totalImageTasks);
+                    try {
+                        await callRegenerateApi({
+                            ...baseRegenPayload,
+                            targetType: "cover",
+                        });
+                    } catch (coverErr) {
+                        failedItems.push("课程封面");
+                        console.warn("[InjectModal] 注入后补全封面失败:", coverErr);
+                    }
+                    currentImageTask += 1;
+                }
+
+                if (injectBackgroundImage) {
+                    for (const stage of stageList) {
+                        pushImageLog(`正在补全阶段背景：${stage.stepName}（${currentImageTask + 1}/${totalImageTasks}）...`, currentImageTask + 1, totalImageTasks);
+                        const matched = parsedSteps.find((step) => step.stepName === stage.stepName);
+                        try {
+                            await callRegenerateApi({
+                                ...baseRegenPayload,
+                                targetType: "background",
+                                stepId: stage.stepId,
+                                stageDescription: matched?.description || undefined,
+                            });
+                        } catch (stageErr) {
+                            failedItems.push(stage.stepName || stage.stepId);
+                            console.warn("[InjectModal] 注入后补全阶段背景失败:", stage.stepName, stageErr);
+                        }
+                        currentImageTask += 1;
+                    }
+                }
+
+                if (failedItems.length > 0) {
+                    setProgressLogs((prev) => [
+                        ...prev,
+                        {
+                            type: "progress",
+                            phase: "script",
+                            message: `图片补全完成，但有部分失败：${failedItems.join("、")}`,
+                            current: totalImageTasks,
+                            total: totalImageTasks,
+                        },
+                    ]);
+                } else if (totalImageTasks > 0) {
+                    setProgressLogs((prev) => [
+                        ...prev,
+                        {
+                            type: "progress",
+                            phase: "script",
+                            message: "图片补全完成",
+                            current: totalImageTasks,
+                            total: totalImageTasks,
+                        },
+                    ]);
+                }
+            }
+
+            setSummary(completedSummary);
+            setInjecting(false);
         } catch (err) {
             setError(err instanceof Error ? err.message : "注入过程发生未知错误");
             setInjecting(false);

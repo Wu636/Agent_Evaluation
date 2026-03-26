@@ -371,6 +371,7 @@ export function InjectConfigModal({
                 } catch (firstErr) {
                     console.warn("[InjectModal] 重生封面首次失败，切换提供方重试:", firstErr);
                     setRegenMessage("封面图首次生成失败，正在切换生图方式重试（1/1）...");
+                    await new Promise((resolve) => setTimeout(resolve, 1200));
                     try {
                         await callRegenerateApi({
                             ...basePayload,
@@ -762,6 +763,7 @@ export function InjectConfigModal({
                     } catch (firstErr) {
                         console.warn("[InjectModal] 注入后补全封面首次失败，切换提供方重试:", firstErr);
                         pushImageLog("封面图首次补全失败，正在切换生图方式重试（1/1）...", currentImageTask, totalImageTasks);
+                        await new Promise((resolve) => setTimeout(resolve, 1200));
                         try {
                             await callRegenerateApi({
                                 ...baseRegenPayload,

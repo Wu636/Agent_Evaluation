@@ -24,8 +24,10 @@ const DEFAULT_IMAGE_PROVIDER_PRIORITY: ImageProvider[] = ["cloudapi", "openai"];
 const DEFAULT_BG_IMAGE_REQUIREMENT = "专业、清晰、教学场景背景图，严格16:9横版宽屏构图，无任何文字";
 const DEFAULT_COVER_STYLE_REQUIREMENT = "专业、简洁、教学场景感，16:9 横版封面，无任何文字";
 
-const IMAGE_FETCH_TIMEOUT_MS = 20000;
-const IMAGE_UPLOAD_TIMEOUT_MS = 30000;
+const IMAGE_GENERATE_TIMEOUT_MS = 25000;
+const COVER_GENERATE_TIMEOUT_MS = 60000;
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 30000;
+const IMAGE_UPLOAD_TIMEOUT_MS = 60000;
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
     const controller = new AbortController();
@@ -196,7 +198,7 @@ function resolveImageProviderPriority(customPriority?: string | ImageProvider[])
 
 async function generateImageViaArk(
     prompt: string,
-    options?: { apiKey?: string; secondaryApiKey?: string; endpoint?: string; cookie?: string; imageModel?: string }
+    options?: { apiKey?: string; secondaryApiKey?: string; endpoint?: string; cookie?: string; imageModel?: string; timeoutMs?: number }
 ): Promise<{ fileUrl: string } | null> {
     const preferredApiKey = normalizeApiKey(options?.apiKey || process.env.ARK_API_KEY);
     const secondaryApiKey = normalizeApiKey(options?.secondaryApiKey || POLYMAS_IMAGE_FALLBACK_API_KEY);
@@ -206,6 +208,10 @@ async function generateImageViaArk(
         console.warn("[ark-image] 未配置 ARK_API_KEY，跳过方舟生图兜底");
         return null;
     }
+
+    const requestTimeoutMs = Number(options?.timeoutMs) > 0
+        ? Number(options?.timeoutMs)
+        : IMAGE_GENERATE_TIMEOUT_MS;
 
     const endpointCandidates = [
         normalizeEndpoint(options?.endpoint),
@@ -253,7 +259,7 @@ async function generateImageViaArk(
                         method: "POST",
                         headers,
                         body: JSON.stringify(requestBody),
-                    }, IMAGE_FETCH_TIMEOUT_MS);
+                    }, requestTimeoutMs);
 
                     if (!res.ok) {
                         const txt = await res.text().catch(() => "");
@@ -337,7 +343,7 @@ export async function generateBackgroundImage(
                         stageName: params.stageName,
                         stageDescription: params.stageDescription,
                     }),
-                }, IMAGE_FETCH_TIMEOUT_MS);
+                }, IMAGE_GENERATE_TIMEOUT_MS);
 
                 if (res.ok) {
                     const result = await res.json();
@@ -362,6 +368,7 @@ export async function generateBackgroundImage(
                 endpoint: deriveImageEndpointFromLlmApiUrl(params.llmApiUrl),
                 cookie: credentials.cookie,
                 imageModel: params.imageModel,
+                timeoutMs: IMAGE_GENERATE_TIMEOUT_MS,
             });
 
             if (preferredGenerated?.fileUrl) {
@@ -417,7 +424,7 @@ export async function generateCourseCoverImageSource(
                             ? `${params.trainDescription}\n封面风格要求：${params.coverStylePrompt}`
                             : params.trainDescription,
                     }),
-                }, IMAGE_FETCH_TIMEOUT_MS);
+                }, COVER_GENERATE_TIMEOUT_MS);
 
                 if (res.ok) {
                     const result = await res.json();
@@ -442,6 +449,7 @@ export async function generateCourseCoverImageSource(
                 endpoint: deriveImageEndpointFromLlmApiUrl(params.llmApiUrl),
                 cookie: credentials.cookie,
                 imageModel: params.imageModel,
+                timeoutMs: COVER_GENERATE_TIMEOUT_MS,
             });
 
             if (preferredGenerated?.fileUrl) {
@@ -489,7 +497,7 @@ export async function uploadCoverImageFromUrl(
             headers: shouldUseAuthFirst
                 ? downloadHeadersWithAuth
                 : downloadHeadersWithoutAuth,
-        }, IMAGE_FETCH_TIMEOUT_MS);
+        }, IMAGE_DOWNLOAD_TIMEOUT_MS);
 
         if (
             !imgRes.ok &&
@@ -499,7 +507,7 @@ export async function uploadCoverImageFromUrl(
             imgRes = await fetchWithTimeout(imageUrl, {
                 method: "GET",
                 headers: downloadHeadersWithoutAuth,
-            }, IMAGE_FETCH_TIMEOUT_MS);
+            }, IMAGE_DOWNLOAD_TIMEOUT_MS);
         }
 
         if (!imgRes.ok) {

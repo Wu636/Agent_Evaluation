@@ -22,21 +22,142 @@ import {
     Globe,
     Lock,
     Sparkles,
+    GripVertical,
+    Plus,
+    Trash2,
+    Crosshair,
 } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
-import { TrainingSSEEvent, PromptTemplate } from "@/lib/training-generator/types";
 import {
+    PromptTemplate,
+    ScriptMode,
+    ScriptModulePlan,
+    ScriptPlanValidationIssue,
+    TrainingSSEEvent,
+    TrainingScriptPlan,
+} from "@/lib/training-generator/types";
+import {
+    createTrainingScriptPlan,
+    regenerateTrainingScriptModule,
     streamTrainingGenerate,
     isApiConfigured,
     downloadMarkdown,
     copyToClipboard,
 } from "@/lib/training-generator/client";
-import { DEFAULT_SCRIPT_TEMPLATE, DEFAULT_RUBRIC_TEMPLATE, TEMPLATE_VERSION } from "@/lib/training-generator/prompts";
+import { DEFAULT_RUBRIC_TEMPLATE, DEFAULT_SCRIPT_TEMPLATE, TEMPLATE_VERSION, getBuiltInScriptTemplate } from "@/lib/training-generator/prompts";
+import { diagnoseTrainingScript, extractScriptStructure, replaceStageInScript } from "@/lib/training-generator/script-tools";
 import { SettingsModal } from "./SettingsModal";
 import { InjectConfigModal } from "./InjectConfigModal";
 
 type GeneratePhase = "idle" | "generating" | "completed" | "error";
 type ResultTab = "script" | "rubric";
+type PlanRegenerateSource = "current_edited" | "previous_plan" | "teacher_doc_only";
+
+const SCRIPT_MODE_LABELS: Record<Exclude<ScriptMode, "auto">, string> = {
+    general: "通用",
+    sequential: "循序过关型",
+    roleplay: "模拟人物型",
+    summary: "总结复盘型",
+};
+
+const BUILTIN_TEMPLATE_ORIGINAL = "builtin:original";
+const BUILTIN_TEMPLATE_SEQUENTIAL = "builtin:sequential";
+const BUILTIN_TEMPLATE_ROLEPLAY = "builtin:roleplay";
+const BUILTIN_TEMPLATE_SUMMARY = "builtin:summary";
+
+type BuiltInTemplateId =
+    | typeof BUILTIN_TEMPLATE_ORIGINAL
+    | typeof BUILTIN_TEMPLATE_SEQUENTIAL
+    | typeof BUILTIN_TEMPLATE_ROLEPLAY
+    | typeof BUILTIN_TEMPLATE_SUMMARY;
+
+function isBuiltInTemplateId(value: string): value is BuiltInTemplateId {
+    return [
+        BUILTIN_TEMPLATE_ORIGINAL,
+        BUILTIN_TEMPLATE_SEQUENTIAL,
+        BUILTIN_TEMPLATE_ROLEPLAY,
+        BUILTIN_TEMPLATE_SUMMARY,
+    ].includes(value);
+}
+
+function getBuiltInTemplateById(id: BuiltInTemplateId): string {
+    switch (id) {
+        case BUILTIN_TEMPLATE_ORIGINAL:
+            return DEFAULT_SCRIPT_TEMPLATE;
+        case BUILTIN_TEMPLATE_SEQUENTIAL:
+            return getBuiltInScriptTemplate("sequential");
+        case BUILTIN_TEMPLATE_ROLEPLAY:
+            return getBuiltInScriptTemplate("roleplay");
+        case BUILTIN_TEMPLATE_SUMMARY:
+            return getBuiltInScriptTemplate("summary");
+        default:
+            return DEFAULT_SCRIPT_TEMPLATE;
+    }
+}
+
+function getBuiltInTemplateIdByMode(mode: Exclude<ScriptMode, "auto">): BuiltInTemplateId {
+    switch (mode) {
+        case "sequential":
+            return BUILTIN_TEMPLATE_SEQUENTIAL;
+        case "roleplay":
+            return BUILTIN_TEMPLATE_ROLEPLAY;
+        case "summary":
+            return BUILTIN_TEMPLATE_SUMMARY;
+        case "general":
+        default:
+            return BUILTIN_TEMPLATE_ORIGINAL;
+    }
+}
+
+function validatePlanLocally(plan: TrainingScriptPlan | null): ScriptPlanValidationIssue[] {
+    if (!plan) return [];
+
+    const issues: ScriptPlanValidationIssue[] = [];
+    if (!plan.taskName.trim()) {
+        issues.push({ level: "error", message: "规划中未填写任务名称。", field: "taskName" });
+    }
+    if (!plan.overallObjective.trim()) {
+        issues.push({ level: "error", message: "规划中未填写整体训练目标。", field: "overallObjective" });
+    }
+    if (plan.modules.length === 0) {
+        issues.push({ level: "error", message: "规划中没有任何模块。" });
+        return issues;
+    }
+    plan.modules.forEach((module, index) => {
+        if (!module.title.trim()) issues.push({ level: "error", message: `模块 ${index + 1} 缺少标题。`, moduleId: module.id, field: "title" });
+        if (!module.objective.trim()) issues.push({ level: "error", message: `模块 ${index + 1} 缺少训练目的。`, moduleId: module.id, field: "objective" });
+        if (!module.description.trim()) issues.push({ level: "error", message: `模块 ${index + 1} 缺少模块说明。`, moduleId: module.id, field: "description" });
+        if (module.keyPoints.length < 2) issues.push({ level: "error", message: `模块 ${index + 1} 的关键要点不足 2 条。`, moduleId: module.id, field: "keyPoints" });
+    });
+    return issues;
+}
+
+function createEmptyModule(index: number): ScriptModulePlan {
+    const order = index + 1;
+    return {
+        id: `module_${Date.now()}_${order}`,
+        title: `新模块 ${order}`,
+        moduleType: "general",
+        objective: "",
+        description: "",
+        keyPoints: [],
+        interactionStyle: "",
+        transitionGoal: "",
+        suggestedRounds: 3,
+    };
+}
+
+function reorderModules(modules: ScriptModulePlan[], draggedId: string, targetId: string): ScriptModulePlan[] {
+    if (draggedId === targetId) return modules;
+    const fromIndex = modules.findIndex((module) => module.id === draggedId);
+    const toIndex = modules.findIndex((module) => module.id === targetId);
+    if (fromIndex < 0 || toIndex < 0) return modules;
+
+    const nextModules = [...modules];
+    const [moved] = nextModules.splice(fromIndex, 1);
+    nextModules.splice(toIndex, 0, moved);
+    return nextModules;
+}
 
 export function TrainingGenerateInterface() {
     // --- 输入状态 ---
@@ -49,6 +170,17 @@ export function TrainingGenerateInterface() {
     // --- 生成选项 ---
     const [generateScript, setGenerateScript] = useState(true);
     const [generateRubric, setGenerateRubric] = useState(true);
+    const [scriptMode, setScriptMode] = useState<ScriptMode>(() => {
+        if (typeof window === "undefined") return "general";
+        try {
+            const saved = localStorage.getItem("training-prompt-settings");
+            if (!saved) return "general";
+            const parsed = JSON.parse(saved);
+            return parsed._v === TEMPLATE_VERSION ? (parsed.scriptMode || "auto") : "auto";
+        } catch {
+            return "auto";
+        }
+    });
 
     // --- 生成状态 ---
     const [phase, setPhase] = useState<GeneratePhase>("idle");
@@ -71,6 +203,7 @@ export function TrainingGenerateInterface() {
     const [activeTab, setActiveTab] = useState<ResultTab>("script");
     const [taskName, setTaskName] = useState(cached.name);
     const [errorMessage, setErrorMessage] = useState("");
+    const [detectedScriptMode, setDetectedScriptMode] = useState<Exclude<ScriptMode, "auto"> | null>(null);
 
     // 生成完成后自动持久化
     useEffect(() => {
@@ -93,6 +226,30 @@ export function TrainingGenerateInterface() {
     const [showInjectModal, setShowInjectModal] = useState(false);
     const [showPromptEditor, setShowPromptEditor] = useState(false);
     const [activePromptTab, setActivePromptTab] = useState<"script" | "rubric">("script");
+    const [modulePlan, setModulePlan] = useState<TrainingScriptPlan | null>(null);
+    const [lastSystemPlan, setLastSystemPlan] = useState<TrainingScriptPlan | null>(null);
+    const [planValidation, setPlanValidation] = useState<ScriptPlanValidationIssue[]>([]);
+    const [planAutofillApplied, setPlanAutofillApplied] = useState(false);
+    const [planAutofillFields, setPlanAutofillFields] = useState<string[]>([]);
+    const [planAutofillTaskFields, setPlanAutofillTaskFields] = useState<string[]>([]);
+    const [planAutofillModuleFields, setPlanAutofillModuleFields] = useState<Record<string, string[]>>({});
+    const [planning, setPlanning] = useState(false);
+    const [showPlanEditor, setShowPlanEditor] = useState(false);
+    const [draggingModuleId, setDraggingModuleId] = useState<string | null>(null);
+    const [dragOverModuleId, setDragOverModuleId] = useState<string | null>(null);
+    const [collapsedModuleIds, setCollapsedModuleIds] = useState<string[]>([]);
+    const [focusedModuleId, setFocusedModuleId] = useState<string | null>(null);
+    const [focusedStageIndex, setFocusedStageIndex] = useState<number | null>(null);
+    const [moduleRegenTargetId, setModuleRegenTargetId] = useState("");
+    const [moduleRegenFeedback, setModuleRegenFeedback] = useState("");
+    const [moduleRegenUsePrevious, setModuleRegenUsePrevious] = useState(true);
+    const [moduleRegenerating, setModuleRegenerating] = useState(false);
+    const [showModuleRegenModal, setShowModuleRegenModal] = useState(false);
+    const [showPlanRegenerateModal, setShowPlanRegenerateModal] = useState(false);
+    const [planRegenerateFeedback, setPlanRegenerateFeedback] = useState("");
+    const [planRegenerateSource, setPlanRegenerateSource] = useState<PlanRegenerateSource>("current_edited");
+    const moduleCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const resultPaneRef = useRef<HTMLDivElement | null>(null);
 
     // --- Prompt 模板（数据库 + localStorage fallback） ---
     const PROMPT_SETTINGS_KEY = "training-prompt-settings";
@@ -120,12 +277,16 @@ export function TrainingGenerateInterface() {
 
     // localStorage 持久化（附带版本号）
     useEffect(() => {
-        localStorage.setItem(PROMPT_SETTINGS_KEY, JSON.stringify({ scriptTemplate, rubricTemplate, _v: TEMPLATE_VERSION }));
-    }, [scriptTemplate, rubricTemplate]);
+        localStorage.setItem(PROMPT_SETTINGS_KEY, JSON.stringify({ scriptTemplate, rubricTemplate, scriptMode, _v: TEMPLATE_VERSION }));
+    }, [scriptTemplate, rubricTemplate, scriptMode]);
+
+    const activeDefaultScriptTemplate = modulePlan
+        ? getBuiltInScriptTemplate(scriptMode)
+        : DEFAULT_SCRIPT_TEMPLATE;
 
     // --- 数据库模板列表 ---
     const [dbTemplates, setDbTemplates] = useState<PromptTemplate[]>([]);
-    const [selectedScriptTemplateId, setSelectedScriptTemplateId] = useState<string>("default");
+    const [selectedScriptTemplateId, setSelectedScriptTemplateId] = useState<string>(BUILTIN_TEMPLATE_ORIGINAL);
     const [selectedRubricTemplateId, setSelectedRubricTemplateId] = useState<string>("default");
     const [templateLoading, setTemplateLoading] = useState(false);
     const [saveModalOpen, setSaveModalOpen] = useState(false);
@@ -134,6 +295,63 @@ export function TrainingGenerateInterface() {
     const [savePublic, setSavePublic] = useState(false);
     const [saveTags, setSaveTags] = useState("");
     const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        if (isBuiltInTemplateId(selectedScriptTemplateId)) {
+            setScriptTemplate(getBuiltInTemplateById(selectedScriptTemplateId));
+        }
+    }, [selectedScriptTemplateId]);
+
+    useEffect(() => {
+        setPlanValidation(validatePlanLocally(modulePlan));
+    }, [modulePlan]);
+
+    useEffect(() => {
+        if (modulePlan?.modules.length) {
+            setModuleRegenTargetId((prev) => (
+                prev && modulePlan.modules.some((module) => module.id === prev)
+                    ? prev
+                    : modulePlan.modules[0].id
+            ));
+        } else {
+            setModuleRegenTargetId("");
+        }
+    }, [modulePlan]);
+
+    useEffect(() => {
+        if (!focusedModuleId) return;
+        const node = moduleCardRefs.current[focusedModuleId];
+        if (node) {
+            node.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+        const timeout = window.setTimeout(() => setFocusedModuleId(null), 1800);
+        return () => window.clearTimeout(timeout);
+    }, [focusedModuleId]);
+
+    useEffect(() => {
+        if (focusedStageIndex === null || activeTab !== "script" || phase !== "completed") return;
+        const pane = resultPaneRef.current;
+        if (!pane) return;
+
+        const stageNumber = focusedStageIndex + 1;
+        const headingRegex = new RegExp(`阶段\\s*${stageNumber}(?!\\d)`);
+        const headingNodes = Array.from(pane.querySelectorAll("h3, h4")) as HTMLElement[];
+        const matched = headingNodes.filter((node) => headingRegex.test(node.textContent || ""));
+        const target = matched[matched.length - 1];
+        if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+
+        const timeout = window.setTimeout(() => setFocusedStageIndex(null), 1800);
+        return () => window.clearTimeout(timeout);
+    }, [focusedStageIndex, activeTab, phase]);
+
+    const syncDominantMode = useCallback((nextMode: Exclude<ScriptMode, "auto">) => {
+        setScriptMode(nextMode);
+        if (isBuiltInTemplateId(selectedScriptTemplateId)) {
+            setSelectedScriptTemplateId(getBuiltInTemplateIdByMode(nextMode));
+        }
+    }, [selectedScriptTemplateId]);
 
     // 加载数据库模板列表
     const loadTemplates = useCallback(async () => {
@@ -174,6 +392,11 @@ export function TrainingGenerateInterface() {
             setSelectedScriptTemplateId(templateId);
         } else {
             setSelectedRubricTemplateId(templateId);
+        }
+
+        if (tab === "script" && isBuiltInTemplateId(templateId)) {
+            setScriptTemplate(getBuiltInTemplateById(templateId));
+            return;
         }
 
         if (templateId === "default") {
@@ -239,9 +462,137 @@ export function TrainingGenerateInterface() {
         return { file, name: file.name };
     }, [inputMode, textContent, file]);
 
+    const handlePlanScript = useCallback(async (options?: {
+        planningFeedback?: string;
+        usePreviousPlan?: boolean;
+        currentPlan?: TrainingScriptPlan;
+        previousPlan?: TrainingScriptPlan;
+    }) => {
+        if (!generateScript) return false;
+        if (!isApiConfigured()) {
+            setShowSettings(true);
+            return false;
+        }
+
+        const doc = await getDocContent();
+        if (!doc) {
+            setErrorMessage("请先提供教师任务文档，再进行模块规划");
+            return false;
+        }
+
+        setPlanning(true);
+        setErrorMessage("");
+        try {
+            const result = await createTrainingScriptPlan({
+                teacherDocContent: doc.content || "",
+                file: doc.file,
+                teacherDocName: doc.name,
+                planningFeedback: options?.planningFeedback,
+                usePreviousPlan: options?.usePreviousPlan,
+                currentPlan: options?.currentPlan,
+                previousPlan: options?.previousPlan,
+            });
+            setModulePlan(result.plan);
+            setLastSystemPlan(result.plan);
+            setPlanValidation(result.validation);
+            setPlanAutofillApplied(Boolean(result.autofillApplied));
+            setPlanAutofillFields(result.autofillFields || []);
+            setPlanAutofillTaskFields(result.autofillTaskFields || []);
+            setPlanAutofillModuleFields(result.autofillModuleFields || {});
+            syncDominantMode(result.plan.recommendedMode);
+            setShowPlanEditor(true);
+            return true;
+        } catch (err) {
+            setErrorMessage(err instanceof Error ? err.message : "模块规划失败");
+            return false;
+        } finally {
+            setPlanning(false);
+        }
+    }, [generateScript, getDocContent, syncDominantMode]);
+
+    const openPlanRegenerateModal = useCallback(() => {
+        setPlanRegenerateFeedback("");
+        setPlanRegenerateSource("current_edited");
+        setShowPlanRegenerateModal(true);
+    }, []);
+
+    const handleRegeneratePlan = useCallback(async () => {
+        if (!modulePlan) return;
+        const ok = await handlePlanScript({
+            planningFeedback: planRegenerateFeedback.trim(),
+            usePreviousPlan: planRegenerateSource !== "teacher_doc_only",
+            currentPlan: planRegenerateSource === "current_edited" ? modulePlan : undefined,
+            previousPlan: planRegenerateSource === "previous_plan" ? lastSystemPlan || modulePlan : undefined,
+        });
+        if (ok) {
+            setShowPlanRegenerateModal(false);
+        }
+    }, [handlePlanScript, lastSystemPlan, modulePlan, planRegenerateFeedback, planRegenerateSource]);
+
+    const updateModulePlanField = useCallback(<K extends keyof TrainingScriptPlan>(field: K, value: TrainingScriptPlan[K]) => {
+        setModulePlan((prev) => prev ? { ...prev, [field]: value } : prev);
+        if (field === "recommendedMode") {
+            syncDominantMode(value as Exclude<ScriptMode, "auto">);
+        }
+    }, [syncDominantMode]);
+
+    const updateModule = useCallback((moduleId: string, updater: (module: ScriptModulePlan) => ScriptModulePlan) => {
+        setModulePlan((prev) => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                modules: prev.modules.map((module) => module.id === moduleId ? updater(module) : module),
+            };
+        });
+    }, []);
+
+    const addModule = useCallback(() => {
+        setModulePlan((prev) => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                modules: [...prev.modules, createEmptyModule(prev.modules.length)],
+            };
+        });
+        setShowPlanEditor(true);
+    }, []);
+
+    const removeModule = useCallback((moduleId: string) => {
+        setModulePlan((prev) => {
+            if (!prev || prev.modules.length <= 1) return prev;
+            return {
+                ...prev,
+                modules: prev.modules.filter((module) => module.id !== moduleId),
+            };
+        });
+        setCollapsedModuleIds((prev) => prev.filter((id) => id !== moduleId));
+    }, []);
+
+    const moveModuleByDrag = useCallback((targetId: string) => {
+        if (!draggingModuleId) return;
+        setModulePlan((prev) => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                modules: reorderModules(prev.modules, draggingModuleId, targetId),
+            };
+        });
+        setDraggingModuleId(null);
+        setDragOverModuleId(null);
+    }, [draggingModuleId]);
+
+    const toggleModuleCollapsed = useCallback((moduleId: string) => {
+        setCollapsedModuleIds((prev) => (
+            prev.includes(moduleId)
+                ? prev.filter((id) => id !== moduleId)
+                : [...prev, moduleId]
+        ));
+    }, []);
+
     const hasInput = inputMode === "text" ? textContent.trim().length > 0 : file !== null;
     const hasSelection = generateScript || generateRubric;
-    const canGenerate = hasInput && hasSelection && phase !== "generating";
+    const hasPlanErrors = planValidation.some((item) => item.level === "error");
+    const canGenerate = hasInput && hasSelection && phase !== "generating" && !hasPlanErrors;
 
     // --- 开始生成 ---
     const handleGenerate = useCallback(async () => {
@@ -258,6 +609,7 @@ export function TrainingGenerateInterface() {
         setPhase("generating");
         if (generateScript) setScriptContent("");
         if (generateRubric) setRubricContent("");
+        setDetectedScriptMode(null);
         setErrorMessage("");
         if (generateScript) setTaskName(""); // 仅生成剧本时才重置任务名
         setStatusMessage("准备中...");
@@ -277,7 +629,9 @@ export function TrainingGenerateInterface() {
                 teacherDocName: doc.name,
                 generateScript,
                 generateRubric,
-                scriptPromptTemplate: scriptTemplate !== DEFAULT_SCRIPT_TEMPLATE ? scriptTemplate : undefined,
+                scriptMode,
+                modulePlan: generateScript ? modulePlan || undefined : undefined,
+                scriptPromptTemplate: scriptTemplate !== activeDefaultScriptTemplate ? scriptTemplate : undefined,
                 rubricPromptTemplate: rubricTemplate !== DEFAULT_RUBRIC_TEMPLATE ? rubricTemplate : undefined,
                 signal: controller.signal,
                 onEvent: (event: TrainingSSEEvent) => {
@@ -307,11 +661,16 @@ export function TrainingGenerateInterface() {
                             }
                             break;
 
+                        case "script_mode_detected":
+                            setDetectedScriptMode(event.resolvedMode);
+                            break;
+
                         case "complete":
                             setPhase("completed");
                             setCurrentGeneratingPhase(null);
                             setStatusMessage("");
                             setTaskName(event.taskName || "训练配置");
+                            setDetectedScriptMode((prev) => event.resolvedScriptMode || prev);
                             // 自动切换到有内容的 tab
                             if (event.script && !event.rubric) setActiveTab("script");
                             else if (event.rubric && !event.script) setActiveTab("rubric");
@@ -319,7 +678,7 @@ export function TrainingGenerateInterface() {
                             break;
 
                         case "error":
-                            setPhase("error");
+                            setPhase(tempScript || tempRubric ? "completed" : "error");
                             setErrorMessage(event.message);
                             setCurrentGeneratingPhase(null);
                             setStatusMessage("");
@@ -332,14 +691,14 @@ export function TrainingGenerateInterface() {
                 setPhase(tempScript || tempRubric ? "completed" : "idle");
                 setStatusMessage("");
             } else {
-                setPhase("error");
+                setPhase(tempScript || tempRubric ? "completed" : "error");
                 setErrorMessage(err instanceof Error ? err.message : "生成失败");
             }
         } finally {
             abortRef.current = null;
             setCurrentGeneratingPhase(null);
         }
-    }, [canGenerate, getDocContent, generateScript, generateRubric]);
+    }, [activeDefaultScriptTemplate, canGenerate, getDocContent, generateScript, generateRubric, modulePlan, scriptMode]);
 
     const handleCancel = useCallback(() => {
         abortRef.current?.abort();
@@ -394,6 +753,7 @@ export function TrainingGenerateInterface() {
         setPhase("generating");
         if (shouldRegenScript) setScriptContent("");
         if (shouldRegenRubric) setRubricContent("");
+        if (shouldRegenScript) setDetectedScriptMode(null);
         setErrorMessage("");
         setStatusMessage("准备重新生成...");
         setCurrentGeneratingPhase(null);
@@ -412,7 +772,9 @@ export function TrainingGenerateInterface() {
                 teacherDocName: taskName || "重新生成",
                 generateScript: shouldRegenScript,
                 generateRubric: shouldRegenRubric,
-                scriptPromptTemplate: scriptTemplate !== DEFAULT_SCRIPT_TEMPLATE ? scriptTemplate : undefined,
+                scriptMode,
+                modulePlan: shouldRegenScript ? modulePlan || undefined : undefined,
+                scriptPromptTemplate: scriptTemplate !== activeDefaultScriptTemplate ? scriptTemplate : undefined,
                 rubricPromptTemplate: rubricTemplate !== DEFAULT_RUBRIC_TEMPLATE ? rubricTemplate : undefined,
                 signal: controller.signal,
                 onEvent: (event: TrainingSSEEvent) => {
@@ -439,16 +801,20 @@ export function TrainingGenerateInterface() {
                                 setRubricContent(event.fullContent);
                             }
                             break;
+                        case "script_mode_detected":
+                            setDetectedScriptMode(event.resolvedMode);
+                            break;
                         case "complete":
                             setPhase("completed");
                             setCurrentGeneratingPhase(null);
                             setStatusMessage("");
                             setTaskName(event.taskName || taskName || "训练配置");
+                            setDetectedScriptMode((prev) => event.resolvedScriptMode || prev);
                             if (shouldRegenScript && !shouldRegenRubric) setActiveTab("script");
                             else if (shouldRegenRubric && !shouldRegenScript) setActiveTab("rubric");
                             break;
                         case "error":
-                            setPhase("error");
+                            setPhase(tempScript || tempRubric ? "completed" : "error");
                             setErrorMessage(event.message);
                             setCurrentGeneratingPhase(null);
                             setStatusMessage("");
@@ -461,7 +827,7 @@ export function TrainingGenerateInterface() {
                 setPhase(tempScript || tempRubric ? "completed" : "idle");
                 setStatusMessage("");
             } else {
-                setPhase("error");
+                setPhase(tempScript || tempRubric ? "completed" : "error");
                 setErrorMessage(err instanceof Error ? err.message : "重新生成失败");
             }
         } finally {
@@ -478,6 +844,7 @@ export function TrainingGenerateInterface() {
         setRubricContent("");
         setErrorMessage("");
         setTaskName("");
+        setDetectedScriptMode(null);
         setStatusMessage("");
         localStorage.removeItem(CACHE_KEY);
     }, []);
@@ -531,6 +898,85 @@ export function TrainingGenerateInterface() {
     // --- 渲染 ---
 
     const activeContent = activeTab === "script" ? scriptContent : rubricContent;
+    const isAutoRecoveryStatus = /断点续写|自动重试|自动补救|生成中断|中断/.test(statusMessage);
+    const recommendedBuiltInTemplateId = modulePlan
+        ? getBuiltInTemplateIdByMode(modulePlan.recommendedMode)
+        : BUILTIN_TEMPLATE_ORIGINAL;
+    const builtInScriptTemplateOptions: Array<{ id: BuiltInTemplateId; label: string }> = [
+        { id: BUILTIN_TEMPLATE_ORIGINAL, label: "内置模板 · 原始模板" },
+        { id: BUILTIN_TEMPLATE_SEQUENTIAL, label: "内置模板 · 循序过关模板" },
+        { id: BUILTIN_TEMPLATE_ROLEPLAY, label: "内置模板 · 模拟人物模板" },
+        { id: BUILTIN_TEMPLATE_SUMMARY, label: "内置模板 · 总结复盘模板" },
+    ];
+    const orderedBuiltInScriptTemplateOptions = [
+        ...builtInScriptTemplateOptions.filter((option) => option.id === recommendedBuiltInTemplateId),
+        ...builtInScriptTemplateOptions.filter((option) => option.id !== recommendedBuiltInTemplateId),
+    ];
+    const scriptTemplateModeHint = modulePlan
+        ? `已完成智能规划：默认推荐使用「${SCRIPT_MODE_LABELS[modulePlan.recommendedMode]}内置模板」，你仍可在下拉框切回原始模板。`
+        : "未进行智能规划：当前默认使用原始内置模板。";
+    const scriptDiagnostics = scriptContent ? diagnoseTrainingScript(scriptContent, modulePlan) : null;
+    const scriptStructure = scriptContent ? extractScriptStructure(scriptContent) : { prefix: "", stages: [], suffix: "" };
+
+    const handleRegenerateModule = useCallback(async () => {
+        if (!modulePlan || !moduleRegenTargetId || !moduleRegenFeedback.trim()) return;
+        const targetStageIndex = modulePlan.modules.findIndex((module) => module.id === moduleRegenTargetId);
+        if (targetStageIndex < 0) return;
+
+        const doc = await getDocContent();
+        if (!doc) {
+            setErrorMessage("请先提供教师任务文档，再进行单模块重生成");
+            return;
+        }
+
+        setModuleRegenerating(true);
+        setErrorMessage("");
+        try {
+            const currentStageMarkdown = scriptStructure.stages[targetStageIndex]?.markdown || "";
+            const result = await regenerateTrainingScriptModule({
+                teacherDocContent: doc.content || "",
+                file: doc.file,
+                teacherDocName: doc.name,
+                modulePlan,
+                targetModuleId: moduleRegenTargetId,
+                feedback: moduleRegenFeedback,
+                usePreviousResult: moduleRegenUsePrevious,
+                currentStageMarkdown,
+            });
+
+            setScriptContent((prev) => replaceStageInScript(prev, result.stageIndex, result.stageMarkdown));
+            setActiveTab("script");
+            setModuleRegenFeedback("");
+            setPhase("completed");
+            setShowModuleRegenModal(false);
+        } catch (err) {
+            setErrorMessage(err instanceof Error ? err.message : "单模块重生成失败");
+        } finally {
+            setModuleRegenerating(false);
+        }
+    }, [getDocContent, modulePlan, moduleRegenFeedback, moduleRegenTargetId, moduleRegenUsePrevious, scriptStructure.stages]);
+
+    const openModuleRegenerateModal = useCallback((moduleId: string) => {
+        setModuleRegenTargetId(moduleId);
+        setModuleRegenFeedback("");
+        setModuleRegenUsePrevious(true);
+        setShowModuleRegenModal(true);
+    }, []);
+
+    const focusModuleFromDiagnostic = useCallback((stageIndex?: number) => {
+        if (stageIndex === undefined) return;
+
+        setActiveTab("script");
+        setFocusedStageIndex(null);
+        window.requestAnimationFrame(() => setFocusedStageIndex(stageIndex));
+
+        if (!modulePlan) return;
+        const targetModule = modulePlan.modules[stageIndex];
+        if (!targetModule) return;
+        setShowPlanEditor(true);
+        setFocusedModuleId(targetModule.id);
+        setCollapsedModuleIds((prev) => prev.filter((id) => id !== targetModule.id));
+    }, [modulePlan]);
 
     return (
         <div className="max-w-6xl mx-auto px-4 py-8">
@@ -697,6 +1143,353 @@ export function TrainingGenerateInterface() {
                                 </div>
                             </label>
                         </div>
+
+                        {generateScript && (
+                            <div className="mt-4 pt-4 border-t border-slate-100">
+                                <p className="text-sm font-semibold text-slate-700">主导模式</p>
+                                <p className="mt-1 text-xs text-slate-500">
+                                    主导模式由智能规划和自动识别决定，具体阶段以模块类型为准。
+                                </p>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full bg-violet-100 text-violet-700 text-xs">
+                                        {modulePlan ? `当前主导模式 ${SCRIPT_MODE_LABELS[modulePlan.recommendedMode]}` : "未规划时自动识别"}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+                            <div>
+                                <p className="text-sm font-semibold text-slate-700">模块规划</p>
+                                <p className="text-xs text-slate-500 mt-1">先规划模块，再逐模块调整类型。正式生成优先参考模块规划</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (modulePlan) {
+                                            openPlanRegenerateModal();
+                                            return;
+                                        }
+                                        void handlePlanScript();
+                                    }}
+                                    disabled={planning || !generateScript}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 rounded-lg transition-colors"
+                                >
+                                    {planning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                                    {planning ? "规划中..." : modulePlan ? "重新规划" : "智能规划"}
+                                </button>
+                                {modulePlan && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPlanEditor((v) => !v)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                                    >
+                                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showPlanEditor ? "rotate-180" : ""}`} />
+                                        {showPlanEditor ? "收起" : "展开"}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="p-5 space-y-4">
+                            {!modulePlan ? (
+                                <p className="text-xs text-slate-500">
+                                    先根据教师文档生成模块规划。规划完成后，你可以直接修改模块标题、类型、目标和关键要点，再进入正式生成。
+                                </p>
+                            ) : (
+                                <>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-xs font-medium text-slate-600 flex items-center gap-1.5 mb-1">
+                                                <span>任务名称</span>
+                                                {planAutofillTaskFields.includes("taskName") && (
+                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px]">
+                                                        自动补全
+                                                    </span>
+                                                )}
+                                            </label>
+                                            <input
+                                                value={modulePlan.taskName}
+                                                onChange={(e) => updateModulePlanField("taskName", e.target.value)}
+                                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-slate-600 block mb-1">推荐主导模式</label>
+                                            <select
+                                                value={modulePlan.recommendedMode}
+                                                onChange={(e) => updateModulePlanField("recommendedMode", e.target.value as Exclude<ScriptMode, "auto">)}
+                                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+                                            >
+                                                {Object.entries(SCRIPT_MODE_LABELS).map(([value, label]) => (
+                                                    <option key={value} value={value}>{label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-slate-600 flex items-center gap-1.5 mb-1">
+                                            <span>整体训练目标</span>
+                                            {planAutofillTaskFields.includes("overallObjective") && (
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px]">
+                                                    自动补全
+                                                </span>
+                                            )}
+                                        </label>
+                                        <textarea
+                                            value={modulePlan.overallObjective}
+                                            onChange={(e) => updateModulePlanField("overallObjective", e.target.value)}
+                                            rows={3}
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 resize-y"
+                                        />
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-2">
+                                        <span className="inline-flex items-center px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs">
+                                            模块数 {modulePlan.modules.length}
+                                        </span>
+                                        <span className="inline-flex items-center px-2 py-1 rounded-full bg-violet-100 text-violet-700 text-xs">
+                                            推荐主导模式 {SCRIPT_MODE_LABELS[modulePlan.recommendedMode]}
+                                        </span>
+                                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${planValidation.some((item) => item.level === "error")
+                                            ? "bg-rose-100 text-rose-700"
+                                            : planValidation.length > 0
+                                                ? "bg-amber-100 text-amber-700"
+                                                : "bg-emerald-100 text-emerald-700"
+                                            }`}>
+                                            {planValidation.some((item) => item.level === "error")
+                                                ? `错误 ${planValidation.filter((item) => item.level === "error").length}`
+                                                : planValidation.length > 0
+                                                    ? `警告 ${planValidation.length}`
+                                                    : "校验通过"}
+                                        </span>
+                                        {planAutofillApplied && (
+                                            <span className="inline-flex items-center px-2 py-1 rounded-full bg-sky-100 text-sky-700 text-xs">
+                                                已自动补全缺失字段
+                                            </span>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={addModule}
+                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs hover:bg-indigo-200 transition-colors"
+                                        >
+                                            <Plus className="w-3 h-3" />
+                                            新增模块
+                                        </button>
+                                    </div>
+
+                                    {planValidation.length > 0 && (
+                                        <div className="space-y-2">
+                                            {planValidation.map((issue, index) => (
+                                                <div
+                                                    key={`${issue.message}-${index}`}
+                                                    className={`px-3 py-2 rounded-lg text-xs ${issue.level === "error"
+                                                        ? "bg-rose-50 text-rose-700 border border-rose-100"
+                                                        : "bg-amber-50 text-amber-700 border border-amber-100"
+                                                        }`}
+                                                >
+                                                    {issue.message}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {planAutofillApplied && planAutofillFields.length > 0 && (
+                                        <div className="px-3 py-2 rounded-lg bg-sky-50 border border-sky-100 text-xs text-sky-700">
+                                            系统已自动补全这些缺失字段：{planAutofillFields.join("、")}
+                                        </div>
+                                    )}
+
+                                    {showPlanEditor && (
+                                        <div className="space-y-4">
+                                            <div className="px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600">
+                                                模块类型决定具体阶段的生成方式。拖拽可排序，点击诊断结果可定位到对应模块。
+                                            </div>
+                                            {modulePlan.modules.map((module, index) => (
+                                                (() => {
+                                                    const autofilledModuleFields = planAutofillModuleFields[module.id] || [];
+                                                    return (
+                                                <div
+                                                    key={module.id}
+                                                    ref={(node) => { moduleCardRefs.current[module.id] = node; }}
+                                                    draggable
+                                                    onDragStart={() => setDraggingModuleId(module.id)}
+                                                    onDragEnd={() => setDraggingModuleId(null)}
+                                                    onDragOver={(e) => {
+                                                        e.preventDefault();
+                                                        setDragOverModuleId(module.id);
+                                                    }}
+                                                    onDragLeave={() => setDragOverModuleId((prev) => prev === module.id ? null : prev)}
+                                                    onDrop={() => moveModuleByDrag(module.id)}
+                                                    className={`border rounded-xl p-4 space-y-3 transition-all ${
+                                                        focusedModuleId === module.id
+                                                            ? "border-indigo-400 ring-2 ring-indigo-200 bg-indigo-50/70"
+                                                            : draggingModuleId === module.id
+                                                                ? "border-indigo-300 bg-indigo-50/60"
+                                                                : dragOverModuleId === module.id
+                                                                    ? "border-indigo-300 bg-indigo-50/40"
+                                                                    : "border-slate-200"
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-grab"
+                                                                title="拖拽排序"
+                                                            >
+                                                                <GripVertical className="w-4 h-4" />
+                                                            </button>
+                                                            <p className="text-sm font-semibold text-slate-700">模块 {index + 1}</p>
+                                                            {autofilledModuleFields.length > 0 && (
+                                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px]">
+                                                                    含自动补全字段
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => toggleModuleCollapsed(module.id)}
+                                                                className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                                                                title={collapsedModuleIds.includes(module.id) ? "展开模块" : "收起模块"}
+                                                            >
+                                                                <ChevronDown className={`w-4 h-4 transition-transform ${collapsedModuleIds.includes(module.id) ? "-rotate-90" : ""}`} />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openModuleRegenerateModal(module.id)}
+                                                                disabled={!scriptContent || phase !== "completed"}
+                                                                className="p-1.5 rounded-md text-slate-400 hover:text-violet-600 hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                                                title={scriptContent && phase === "completed" ? "单模块重生成" : "请先生成完整剧本后再进行单模块重生成"}
+                                                            >
+                                                                <RotateCcw className="w-4 h-4" />
+                                                            </button>
+                                                            <select
+                                                                value={module.moduleType}
+                                                                onChange={(e) => updateModule(module.id, (prev) => ({ ...prev, moduleType: e.target.value as typeof prev.moduleType }))}
+                                                                className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+                                                            >
+                                                                {Object.entries(SCRIPT_MODE_LABELS).map(([value, label]) => (
+                                                                    <option key={value} value={value}>{label}</option>
+                                                                ))}
+                                                            </select>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => removeModule(module.id)}
+                                                                disabled={modulePlan.modules.length <= 1}
+                                                                className="p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                                                title="删除模块"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {dragOverModuleId === module.id && draggingModuleId && draggingModuleId !== module.id && (
+                                                        <div className="px-3 py-2 rounded-lg bg-indigo-100 text-indigo-700 text-xs border border-indigo-200">
+                                                            松手后会把当前拖拽模块移动到这里
+                                                        </div>
+                                                    )}
+
+                                                    {!collapsedModuleIds.includes(module.id) && (
+                                                        <>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                        <div>
+                                                            <label className="text-xs font-medium text-slate-600 flex items-center gap-1.5 mb-1">
+                                                                <span>标题</span>
+                                                                {autofilledModuleFields.includes("title") && (
+                                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px]">
+                                                                        自动补全
+                                                                    </span>
+                                                                )}
+                                                            </label>
+                                                            <input
+                                                                value={module.title}
+                                                                onChange={(e) => updateModule(module.id, (prev) => ({ ...prev, title: e.target.value }))}
+                                                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs font-medium text-slate-600 block mb-1">建议轮次</label>
+                                                            <input
+                                                                type="number"
+                                                                min={1}
+                                                                max={6}
+                                                                value={module.suggestedRounds}
+                                                                onChange={(e) => updateModule(module.id, (prev) => ({ ...prev, suggestedRounds: Number(e.target.value) || 1 }))}
+                                                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="text-xs font-medium text-slate-600 flex items-center gap-1.5 mb-1">
+                                                            <span>训练目的</span>
+                                                            {autofilledModuleFields.includes("objective") && (
+                                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px]">
+                                                                    自动补全
+                                                                </span>
+                                                            )}
+                                                        </label>
+                                                        <textarea
+                                                            value={module.objective}
+                                                            onChange={(e) => updateModule(module.id, (prev) => ({ ...prev, objective: e.target.value }))}
+                                                            rows={2}
+                                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 resize-y"
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="text-xs font-medium text-slate-600 flex items-center gap-1.5 mb-1">
+                                                            <span>模块说明</span>
+                                                            {autofilledModuleFields.includes("description") && (
+                                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px]">
+                                                                    自动补全
+                                                                </span>
+                                                            )}
+                                                        </label>
+                                                        <textarea
+                                                            value={module.description}
+                                                            onChange={(e) => updateModule(module.id, (prev) => ({ ...prev, description: e.target.value }))}
+                                                            rows={3}
+                                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 resize-y"
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="text-xs font-medium text-slate-600 flex items-center gap-1.5 mb-1">
+                                                            <span>关键要点（每行一个）</span>
+                                                            {autofilledModuleFields.includes("keyPoints") && (
+                                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px]">
+                                                                    自动补全
+                                                                </span>
+                                                            )}
+                                                        </label>
+                                                        <textarea
+                                                            value={module.keyPoints.join("\n")}
+                                                            onChange={(e) => updateModule(module.id, (prev) => ({
+                                                                ...prev,
+                                                                keyPoints: e.target.value.split("\n").map((item) => item.trim()).filter(Boolean),
+                                                            }))}
+                                                            rows={3}
+                                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 resize-y"
+                                                        />
+                                                    </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                                    );
+                                                })()
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
                     </div>
                     {/* 自定义 Prompt 编辑区 */}
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -708,7 +1501,7 @@ export function TrainingGenerateInterface() {
                             <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                                 <Sparkles className="w-4 h-4 text-indigo-400" />
                                 Prompt 模板
-                                {(scriptTemplate !== DEFAULT_SCRIPT_TEMPLATE || rubricTemplate !== DEFAULT_RUBRIC_TEMPLATE) && (
+                                {(scriptTemplate !== activeDefaultScriptTemplate || rubricTemplate !== DEFAULT_RUBRIC_TEMPLATE) && (
                                     <span className="px-1.5 py-0.5 bg-violet-100 text-violet-600 text-xs rounded-full">已修改</span>
                                 )}
                                 {dbTemplates.length > 0 && (
@@ -755,9 +1548,22 @@ export function TrainingGenerateInterface() {
                                             className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
                                             disabled={templateLoading}
                                         >
-                                            <option value="default">内置默认模板</option>
+                                            {activePromptTab === "script" && (
+                                                <>
+                                                    {orderedBuiltInScriptTemplateOptions.map((option) => (
+                                                        <option key={option.id} value={option.id}>
+                                                            {option.label}
+                                                            {recommendedBuiltInTemplateId === option.id ? " ⭐推荐" : ""}
+                                                        </option>
+                                                    ))}
+                                                </>
+                                            )}
+                                            {activePromptTab === "rubric" && (
+                                                <option value="default">内置默认模板</option>
+                                            )}
                                             {dbTemplates
                                                 .filter(t => t.type === activePromptTab)
+                                                .filter(t => !(activePromptTab === "script" && t.is_default))
                                                 .map(t => (
                                                     <option key={t.id} value={t.id}>
                                                         {t.is_default ? "⭐ " : t.is_public ? "🌐 " : "🔒 "}
@@ -788,6 +1594,11 @@ export function TrainingGenerateInterface() {
                                     <p className="text-xs text-slate-500">
                                         使用 <code className="bg-slate-100 px-1 py-0.5 rounded text-violet-600">{'{teacherDoc}'}</code> 作为文档内容占位符，生成时会自动替换
                                     </p>
+                                    {activePromptTab === "script" && (
+                                        <p className="text-xs text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-2">
+                                            {scriptTemplateModeHint}
+                                        </p>
+                                    )}
 
                                     {activePromptTab === "script" ? (
                                         <>
@@ -803,7 +1614,7 @@ export function TrainingGenerateInterface() {
                                             />
                                             <button
                                                 type="button"
-                                                onClick={() => { setScriptTemplate(DEFAULT_SCRIPT_TEMPLATE); setSelectedScriptTemplateId("default"); }}
+                                                onClick={() => { setScriptTemplate(DEFAULT_SCRIPT_TEMPLATE); setSelectedScriptTemplateId(BUILTIN_TEMPLATE_ORIGINAL); }}
                                                 className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors"
                                             >
                                                 <RotateCcw className="w-3 h-3" />
@@ -944,7 +1755,7 @@ export function TrainingGenerateInterface() {
                         <div className="flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl">
                             <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
                             <p className="text-xs text-amber-700">
-                                请先在导航栏「设置」中配置 API Key 和 API 地址，才能使用生成功能。
+                                请先在导航栏「设置」中配置 API 地址；如你的服务需要鉴权，再额外填写 API Key。
                             </p>
                         </div>
                     )}
@@ -1017,8 +1828,53 @@ export function TrainingGenerateInterface() {
                         )}
                     </div>
 
+                    {generateScript && detectedScriptMode && (
+                        <div className="px-5 py-2.5 border-b border-slate-100 bg-slate-50/80 flex items-center gap-2 text-xs">
+                            <span className="text-slate-500">本次主导模式</span>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">
+                                {SCRIPT_MODE_LABELS[detectedScriptMode]}
+                            </span>
+                            {scriptMode === "auto" && (
+                                <span className="text-slate-400">由自动识别选择，具体阶段仍以模块类型为准</span>
+                            )}
+                        </div>
+                    )}
+
+                    {phase === "completed" && generateScript && scriptDiagnostics && activeTab === "script" && (
+                        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/60 space-y-2">
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                                <span className="text-slate-500">结构诊断</span>
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium ${scriptDiagnostics.canInject ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                                    {scriptDiagnostics.canInject ? "可注入" : "存在阻塞问题"}
+                                </span>
+                            </div>
+                            {scriptDiagnostics.issues.length === 0 ? (
+                                <p className="text-xs text-emerald-700">未发现结构问题，当前剧本满足基础注入要求。</p>
+                            ) : (
+                                <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                                    {scriptDiagnostics.issues.map((issue, index) => (
+                                                <div
+                                                    key={`${issue.message}-${index}`}
+                                                    onClick={() => focusModuleFromDiagnostic(issue.stageIndex)}
+                                                    className={`px-2.5 py-2 rounded-lg text-xs ${issue.level === "error" ? "bg-rose-50 text-rose-700 border border-rose-100" : "bg-amber-50 text-amber-700 border border-amber-100"} ${issue.stageIndex !== undefined ? "cursor-pointer hover:shadow-sm" : ""}`}
+                                                >
+                                                    {issue.stageIndex !== undefined ? `阶段 ${issue.stageIndex + 1}：` : ""}
+                                                    {issue.message}
+                                                    {issue.stageIndex !== undefined && (
+                                                        <span className="ml-2 inline-flex items-center gap-1 text-[11px] opacity-80">
+                                                            <Crosshair className="w-3 h-3" />
+                                                            定位模块
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* 内容区 */}
-                    <div className="flex-1 overflow-y-auto p-5">
+                    <div ref={resultPaneRef} className="flex-1 overflow-y-auto p-5">
                         {phase === "idle" && !activeContent && (
                             <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3">
                                 <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center">
@@ -1031,6 +1887,16 @@ export function TrainingGenerateInterface() {
 
                         {phase === "generating" && (
                             <div className="space-y-4">
+                                {isAutoRecoveryStatus && (
+                                    <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                                        <RefreshCw className="w-4 h-4 text-amber-600 animate-spin flex-shrink-0" />
+                                        <div>
+                                            <p className="text-sm font-medium text-amber-700">系统正在自动补救（断点续写/重试）</p>
+                                            <p className="text-xs text-amber-600 mt-0.5">无需手动操作，请稍候，系统会在补全后自动继续输出。</p>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* 进度指示 */}
                                 <div className="flex items-center gap-3 p-3 bg-indigo-50 border border-indigo-100 rounded-xl">
                                     <Loader2 className="w-4 h-4 text-indigo-500 animate-spin flex-shrink-0" />
@@ -1176,11 +2042,177 @@ export function TrainingGenerateInterface() {
                                         )}
                                     </button>
                                 </div>
+
                             </div>
                         </div>
                     )}
                 </div>
             </div>
+
+            {showPlanRegenerateModal && modulePlan && (
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => !planning && setShowPlanRegenerateModal(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
+                        <div className="bg-gradient-to-r from-indigo-600 to-violet-600 p-4 text-white">
+                            <h3 className="font-bold text-lg flex items-center gap-2">
+                                <Sparkles className="w-5 h-5" />
+                                整体重新规划
+                            </h3>
+                            <p className="text-indigo-100 text-sm mt-1">
+                                结合教师文档、你的修改意见，以及当前页面规划重新生成模块结构
+                            </p>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div className="space-y-2">
+                                <p className="text-sm font-medium text-slate-700">重新规划依据</p>
+                                <label className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-sm cursor-pointer transition-colors ${planRegenerateSource === "current_edited" ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-slate-50 border-slate-200 text-slate-600"}`}>
+                                    <input
+                                        type="radio"
+                                        name="plan-regenerate-source"
+                                        checked={planRegenerateSource === "current_edited"}
+                                        onChange={() => setPlanRegenerateSource("current_edited")}
+                                        disabled={planning}
+                                        className="w-4 h-4 mt-0.5 border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    <span>基于当前页面已编辑的模块规划继续优化</span>
+                                </label>
+                                <label className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-sm cursor-pointer transition-colors ${planRegenerateSource === "previous_plan" ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-slate-50 border-slate-200 text-slate-600"}`}>
+                                    <input
+                                        type="radio"
+                                        name="plan-regenerate-source"
+                                        checked={planRegenerateSource === "previous_plan"}
+                                        onChange={() => setPlanRegenerateSource("previous_plan")}
+                                        disabled={planning || !lastSystemPlan}
+                                        className="w-4 h-4 mt-0.5 border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    <span>{lastSystemPlan ? "参考上一次系统规划" : "参考上一次系统规划（当前暂无可参考快照）"}</span>
+                                </label>
+                                <label className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-sm cursor-pointer transition-colors ${planRegenerateSource === "teacher_doc_only" ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-slate-50 border-slate-200 text-slate-600"}`}>
+                                    <input
+                                        type="radio"
+                                        name="plan-regenerate-source"
+                                        checked={planRegenerateSource === "teacher_doc_only"}
+                                        onChange={() => setPlanRegenerateSource("teacher_doc_only")}
+                                        disabled={planning}
+                                        className="w-4 h-4 mt-0.5 border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    <span>不参考旧规划，仅按教师文档和修改意见重来</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium text-slate-700 block mb-1">修改意见</label>
+                                <textarea
+                                    value={planRegenerateFeedback}
+                                    onChange={(e) => setPlanRegenerateFeedback(e.target.value)}
+                                    rows={5}
+                                    disabled={planning}
+                                    placeholder="例如：文档里实际有 8 个阶段，不要合并第 5/6/7 阶段；新增一个独立的总结模块；保留我刚才手动拆分出来的结构。"
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-y"
+                                />
+                            </div>
+                            <p className="text-xs text-slate-500">
+                                {planRegenerateSource === "current_edited"
+                                    ? "当前模式：始终会带上原始教师文档和你的修改建议，并优先参考你在页面上已经手动修改过的模块结构。"
+                                    : planRegenerateSource === "previous_plan"
+                                        ? "当前模式：始终会带上原始教师文档和你的修改建议，并参考上一次系统规划结果，但不直接继承当前页面的手动编辑内容。"
+                                        : "当前模式：始终会带上原始教师文档和你的修改建议，但不参考旧规划，直接重新规划。"}
+                            </p>
+                        </div>
+                        <div className="flex gap-3 p-5 pt-0">
+                            <button
+                                onClick={() => setShowPlanRegenerateModal(false)}
+                                disabled={planning}
+                                className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={() => void handleRegeneratePlan()}
+                                disabled={planning}
+                                className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                            >
+                                {planning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                                {planning ? "重新规划中..." : "开始重新规划"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showModuleRegenModal && modulePlan && (
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => !moduleRegenerating && setShowModuleRegenModal(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
+                        <div className="bg-gradient-to-r from-violet-600 to-indigo-600 p-4 text-white">
+                            <h3 className="font-bold text-lg flex items-center gap-2">
+                                <RotateCcw className="w-5 h-5" />
+                                单模块重生成
+                            </h3>
+                            <p className="text-violet-100 text-sm mt-1">
+                                只替换一个阶段，其余阶段保持不变
+                            </p>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div>
+                                <label className="text-sm font-medium text-slate-700 block mb-1">目标模块</label>
+                                <select
+                                    value={moduleRegenTargetId}
+                                    onChange={(e) => setModuleRegenTargetId(e.target.value)}
+                                    disabled={moduleRegenerating}
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                                >
+                                    {modulePlan.modules.map((module, index) => (
+                                        <option key={module.id} value={module.id}>
+                                            阶段 {index + 1} · {module.title || `模块 ${index + 1}`}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <label className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-600">
+                                <input
+                                    type="checkbox"
+                                    checked={moduleRegenUsePrevious}
+                                    onChange={(e) => setModuleRegenUsePrevious(e.target.checked)}
+                                    disabled={moduleRegenerating}
+                                    className="w-4 h-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                                />
+                                参考当前阶段结果再修订
+                            </label>
+                            <div>
+                                <label className="text-sm font-medium text-slate-700 block mb-1">修改建议</label>
+                                <textarea
+                                    value={moduleRegenFeedback}
+                                    onChange={(e) => setModuleRegenFeedback(e.target.value)}
+                                    rows={4}
+                                    disabled={moduleRegenerating}
+                                    placeholder={moduleRegenUsePrevious ? "例如：保留原有结构，但把这一阶段的追问更聚焦，并减少提示泄题。" : "例如：不要参考当前版本，直接把这一阶段改成模拟人物型问答。"}
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 resize-y"
+                                />
+                            </div>
+                            <p className="text-xs text-slate-500">
+                                {moduleRegenUsePrevious
+                                    ? "当前模式：参考原阶段结果，并结合你的修改建议进行局部修订。"
+                                    : "当前模式：忽略原阶段结果，直接根据教师文档、模块规划和你的建议重新生成该阶段。"}
+                            </p>
+                        </div>
+                        <div className="flex gap-3 p-5 pt-0">
+                            <button
+                                onClick={() => setShowModuleRegenModal(false)}
+                                disabled={moduleRegenerating}
+                                className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={handleRegenerateModule}
+                                disabled={moduleRegenerating || !moduleRegenFeedback.trim() || !moduleRegenTargetId}
+                                className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50 rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                            >
+                                {moduleRegenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                                {moduleRegenerating ? "重生成中..." : "开始重生成"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* 设置弹窗 */}
             <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />

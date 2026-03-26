@@ -1,13 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+function isSupabaseUnavailable(error: unknown): boolean {
+    const anyError = error as { message?: string; details?: string; code?: string };
+    const combined = `${anyError?.message || ""} ${anyError?.details || ""} ${anyError?.code || ""}`.toLowerCase();
+    return (
+        combined.includes("fetch failed") ||
+        combined.includes("timeout") ||
+        combined.includes("connecttimeouterror") ||
+        combined.includes("und_err_connect_timeout") ||
+        combined.includes("econnrefused") ||
+        combined.includes("enotfound")
+    );
+}
+
 // GET: 获取当前用户的个人资料
 export async function GET() {
     try {
         const supabase = await createClient();
 
         const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
+        if (authError) {
+            if (isSupabaseUnavailable(authError)) {
+                return NextResponse.json({ error: "认证服务暂时不可用", degraded: true }, { status: 503 });
+            }
+            return NextResponse.json({ error: "未登录" }, { status: 401 });
+        }
+        if (!user) {
             return NextResponse.json({ error: "未登录" }, { status: 401 });
         }
 
@@ -26,6 +45,9 @@ export async function GET() {
         return NextResponse.json({ profile: profile || null });
     } catch (e) {
         console.error("获取个人资料异常:", e);
+        if (isSupabaseUnavailable(e)) {
+            return NextResponse.json({ error: "认证服务暂时不可用", degraded: true }, { status: 503 });
+        }
         return NextResponse.json({ error: "服务器内部错误" }, { status: 500 });
     }
 }
@@ -36,7 +58,13 @@ export async function PATCH(request: NextRequest) {
         const supabase = await createClient();
 
         const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
+        if (authError) {
+            if (isSupabaseUnavailable(authError)) {
+                return NextResponse.json({ error: "认证服务暂时不可用", degraded: true }, { status: 503 });
+            }
+            return NextResponse.json({ error: "未登录" }, { status: 401 });
+        }
+        if (!user) {
             return NextResponse.json({ error: "未登录" }, { status: 401 });
         }
 
@@ -84,6 +112,9 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ profile: result.data });
     } catch (e) {
         console.error("更新个人资料异常:", e);
+        if (isSupabaseUnavailable(e)) {
+            return NextResponse.json({ error: "认证服务暂时不可用", degraded: true }, { status: 503 });
+        }
         return NextResponse.json({ error: "服务器内部错误" }, { status: 500 });
     }
 }

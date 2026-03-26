@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Save, Key, Globe, Cpu } from 'lucide-react';
-import { getModels, ModelInfo } from '@/lib/api';
+import { X, Settings, Save, Key, Globe, Cpu, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { getModels, ModelInfo, testLlmConnectivity } from '@/lib/api';
 import { normalizeModelId } from '@/lib/config';
 
 interface SettingsModalProps {
@@ -10,23 +10,38 @@ interface SettingsModalProps {
     onClose: () => void;
 }
 
+const DEFAULT_API_URL = "https://llm-service.polymas.com/api/openai/v1/chat/completions";
+const LEGACY_INTERNAL_API_URL = "http://llm-service.polymas.com/api/openai/v1/chat/completions";
+
+function persistSettings(apiKey: string, apiUrl: string, model: string) {
+    const settings = {
+        apiKey,
+        apiUrl,
+        model: normalizeModelId(model),
+    };
+    localStorage.setItem('llm-eval-settings', JSON.stringify(settings));
+    window.dispatchEvent(new Event('llm-settings-updated'));
+}
+
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const [apiKey, setApiKey] = useState('');
-    const [apiUrl, setApiUrl] = useState('http://llm-service.polymas.com/api/openai/v1/chat/completions');
+    const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
     const [model, setModel] = useState('gpt-4o');
     const [models, setModels] = useState<ModelInfo[]>([]);
+    const [testing, setTesting] = useState(false);
+    const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
     const loadSettingsFromStorage = () => {
         const saved = localStorage.getItem('llm-eval-settings');
         if (saved) {
             const settings = JSON.parse(saved);
             setApiKey(settings.apiKey || '');
-            setApiUrl(settings.apiUrl || 'http://llm-service.polymas.com/api/openai/v1/chat/completions');
+            setApiUrl((settings.apiUrl || DEFAULT_API_URL));
             setModel(normalizeModelId(settings.model) || 'gpt-4o');
             return;
         }
         setApiKey('');
-        setApiUrl('http://llm-service.polymas.com/api/openai/v1/chat/completions');
+        setApiUrl(DEFAULT_API_URL);
         setModel('gpt-4o');
     };
 
@@ -41,6 +56,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     useEffect(() => {
         if (!isOpen) return;
         loadSettingsFromStorage();
+        setTestResult(null);
     }, [isOpen]);
 
     // 监听跨组件/跨标签页更新
@@ -58,11 +74,42 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }, []);
 
     const handleSave = () => {
-        const settings = { apiKey, apiUrl, model: normalizeModelId(model) };
-        localStorage.setItem('llm-eval-settings', JSON.stringify(settings));
-        // 触发自定义事件通知其他组件更新
-        window.dispatchEvent(new Event('llm-settings-updated'));
+        persistSettings(apiKey, apiUrl, model);
         onClose();
+    };
+
+    const handleTestConnectivity = async () => {
+        setTesting(true);
+        setTestResult(null);
+
+        try {
+            const result = await testLlmConnectivity({
+                apiKey,
+                baseUrl: apiUrl,
+                model,
+            });
+
+            if (result.ok) {
+                persistSettings(apiKey, apiUrl, model);
+                const latency = typeof result.latencyMs === 'number' ? `，耗时 ${result.latencyMs} ms` : '';
+                setTestResult({
+                    ok: true,
+                    message: `${result.message || '连接测试成功'}${latency}。当前设置已自动保存。`,
+                });
+            } else {
+                setTestResult({
+                    ok: false,
+                    message: result.error || '连接测试失败',
+                });
+            }
+        } catch (error) {
+            setTestResult({
+                ok: false,
+                message: error instanceof Error ? error.message : '连接测试失败',
+            });
+        } finally {
+            setTesting(false);
+        }
     };
 
     if (!isOpen) return null;
@@ -103,7 +150,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         <input
                             type="password"
                             value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
+                            onChange={(e) => {
+                                setApiKey(e.target.value);
+                                setTestResult(null);
+                            }}
                             placeholder="sk-..."
                             className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-base text-slate-900"
                         />
@@ -119,10 +169,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         <input
                             type="text"
                             value={apiUrl}
-                            onChange={(e) => setApiUrl(e.target.value)}
+                            onChange={(e) => {
+                                setApiUrl(e.target.value);
+                                setTestResult(null);
+                            }}
                             placeholder="https://api.openai.com/v1/chat/completions"
                             className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-base text-slate-900"
                         />
+                        <p className="text-xs text-slate-400 mt-1.5">请填写当前网络可访问的完整 Chat Completions 地址</p>
                     </div>
 
                     {/* Model Selection */}
@@ -133,7 +187,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         </label>
                         <select
                             value={model}
-                            onChange={(e) => setModel(e.target.value)}
+                            onChange={(e) => {
+                                setModel(e.target.value);
+                                setTestResult(null);
+                            }}
                             className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all appearance-none bg-white cursor-pointer text-base text-slate-900"
                         >
                             {models.length > 0 ? (
@@ -160,6 +217,31 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 </>
                             )}
                         </select>
+                    </div>
+
+                    <div className="space-y-3">
+                        <button
+                            onClick={handleTestConnectivity}
+                            disabled={testing || !apiUrl.trim()}
+                            className="w-full px-4 py-3 bg-white hover:bg-slate-50 border-2 border-slate-300 rounded-xl font-semibold text-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
+                            {testing ? "测试中..." : "连通性测试"}
+                        </button>
+
+                        {testResult && (
+                            <div className={`flex items-start gap-2.5 p-3 rounded-xl border ${testResult.ok
+                                ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                                : "bg-rose-50 border-rose-200 text-rose-800"
+                                }`}>
+                                {testResult.ok ? (
+                                    <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                ) : (
+                                    <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                )}
+                                <p className="text-sm">{testResult.message}</p>
+                            </div>
+                        )}
                     </div>
 
                 </div>

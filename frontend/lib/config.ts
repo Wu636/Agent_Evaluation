@@ -226,9 +226,7 @@ export function normalizeModelId(model: string | undefined | null): string {
 export function getEnvConfig() {
   return {
     llmApiKey: process.env.LLM_API_KEY || "",
-    llmBaseUrl:
-      process.env.LLM_BASE_URL ||
-      "http://llm-service.polymas.com/api/openai/v1/chat/completions",
+    llmBaseUrl: process.env.LLM_BASE_URL || "https://llm-service.polymas.com/api/openai/v1/chat/completions",
     llmModel: process.env.LLM_MODEL || "gpt-4o",
     historyFile: process.env.HISTORY_FILE || "evaluations_history.json",
     dataDir: process.env.DATA_DIR || process.cwd(),

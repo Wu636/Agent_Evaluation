@@ -19,6 +19,8 @@ import {
     createScoreItem,
     editConfiguration,
     generateBackgroundImage,
+    generateCourseCoverImageSource,
+    uploadCoverImageFromUrl,
     parsePolymasUrl,
 } from "@/lib/training-injector/api";
 import { InjectProgressEvent, PolymasCredentials } from "@/lib/training-injector/types";
@@ -50,6 +52,10 @@ export async function POST(request: NextRequest) {
                     credentials,
                     llmSettings,
                     extractionMode = "hybrid",
+                    coverStylePrompt,
+                    imageModel,
+                    injectCoverImage = true,
+                    injectBackgroundImage = true,
                     scriptMarkdown,
                     rubricMarkdown,
                     injectMode = "replace",
@@ -60,6 +66,10 @@ export async function POST(request: NextRequest) {
                     credentials: PolymasCredentials;
                     llmSettings?: LLMSettings;
                     extractionMode?: "hybrid" | "llm" | "regex";
+                    coverStylePrompt?: string;
+                    imageModel?: string;
+                    injectCoverImage?: boolean;
+                    injectBackgroundImage?: boolean;
                     scriptMarkdown?: string;
                     rubricMarkdown?: string;
                     injectMode: "replace" | "append";
@@ -146,7 +156,45 @@ export async function POST(request: NextRequest) {
                         return;
                     }
 
-                    // 3. 更新基础配置（如果提供了 courseId 并且 LLM 提取到了任务配置）
+                    // 3.1 课程封面图：先生成源图，再走上传接口，最终用于 trainTaskCover
+                    let trainTaskCover: { fileId: string; fileUrl: string } | null = null;
+                    if (!injectCoverImage) {
+                        send({ type: "progress", phase: "script", message: "已跳过课程封面图注入", current: 0, total: steps.length });
+                    } else if (finalCourseId && taskConfig?.trainTaskName) {
+                        send({ type: "progress", phase: "script", message: "正在生成课程封面图...", current: 0, total: steps.length });
+                        try {
+                            const coverSource = await generateCourseCoverImageSource(
+                                {
+                                    trainName: taskConfig.trainTaskName,
+                                    trainDescription: taskConfig?.description || "",
+                                    coverStylePrompt: (coverStylePrompt || "").trim() || undefined,
+                                    arkApiKey: llmSettings?.apiKey,
+                                    llmApiUrl: llmSettings?.apiUrl,
+                                    imageModel: imageModel || undefined,
+                                },
+                                credentials
+                            );
+
+                            if (coverSource?.fileUrl) {
+                                send({ type: "progress", phase: "script", message: "正在上传课程封面图...", current: 0, total: steps.length });
+                                trainTaskCover = await uploadCoverImageFromUrl(coverSource.fileUrl, credentials);
+                                if (trainTaskCover) {
+                                    send({ type: "progress", phase: "script", message: "课程封面图准备完成", current: 0, total: steps.length });
+                                } else {
+                                    send({ type: "progress", phase: "script", message: "课程封面图上传失败，将跳过封面设置", current: 0, total: steps.length });
+                                }
+                            } else {
+                                send({ type: "progress", phase: "script", message: "课程封面图生成失败，将跳过封面设置", current: 0, total: steps.length });
+                            }
+                        } catch (err) {
+                            console.warn("课程封面图生成/上传失败:", err);
+                            send({ type: "progress", phase: "script", message: "课程封面图处理异常，将跳过封面设置", current: 0, total: steps.length });
+                        }
+                    } else if (injectCoverImage) {
+                        send({ type: "progress", phase: "script", message: "缺少课程ID或任务名称，跳过课程封面图注入", current: 0, total: steps.length });
+                    }
+
+                    // 3. 更新基础配置（如果提供了 courseId 并且提取到了任务配置）
                     if (finalCourseId && taskConfig?.trainTaskName && taskConfig?.description) {
                         send({ type: "progress", phase: "script", message: "正在更新任务基础配置（名称、描述）...", current: 0, total: steps.length });
                         const ok = await editConfiguration(
@@ -155,6 +203,7 @@ export async function POST(request: NextRequest) {
                                 courseId: finalCourseId,
                                 trainTaskName: taskConfig.trainTaskName,
                                 description: taskConfig.description,
+                                trainTaskCover,
                             },
                             credentials
                         );
@@ -171,9 +220,12 @@ export async function POST(request: NextRequest) {
                     });
 
                     // 提前检测背景图能力
-                    const canSetBgImage = !!(finalCourseId && finalLibraryFolderId);
+                    const canSetBgImage = !!(injectBackgroundImage && finalCourseId && finalLibraryFolderId);
                     if (!canSetBgImage) {
-                        send({ type: "progress", phase: "script", message: "⚠️ 未检测到 libraryFolderId，将跳过背景图设置（提示：使用包含 libraryId 参数的完整链接可启用背景图）", current: 0, total: steps.length });
+                        const reason = !injectBackgroundImage
+                            ? "已手动关闭背景图注入"
+                            : "未检测到 libraryFolderId（提示：使用包含 libraryId 参数的完整链接可启用背景图）";
+                        send({ type: "progress", phase: "script", message: `⚠️ ${reason}，将跳过背景图设置`, current: 0, total: steps.length });
                     }
 
                     // 查询现有节点和连线
@@ -236,6 +288,9 @@ export async function POST(request: NextRequest) {
                                         trainDescription: trainDesc,
                                         stageName: step.stepName,
                                         stageDescription: step.description || "",
+                                        arkApiKey: llmSettings?.apiKey,
+                                        llmApiUrl: llmSettings?.apiUrl,
+                                        imageModel: imageModel || undefined,
                                     },
                                     credentials
                                 );

@@ -208,7 +208,91 @@ VALUES (
     system_prompt = EXCLUDED.system_prompt,
     updated_at = NOW();
 
--- 8. 插入系统默认模板 - 评分标准
+-- 8. 插入系统默认模板 - 优化版循序过关型剧本
+INSERT INTO prompt_templates (id, user_id, name, description, type, prompt_template, system_prompt, is_default, is_public, tags)
+VALUES (
+    '10000000-0000-0000-0000-000000000003'::UUID,
+    NULL,
+    '优化版-循序过关型训练剧本模板',
+    '适合知识点递进、阶段闯关、通过即推进的训练剧本。强化关卡判定、分支互斥、反剧透与禁止跳关。',
+    'script',
+    '你是一名专业的实训剧本架构师。请将教师文档转为“循序过关型”训练剧本配置。
+
+核心要求：
+1. 保持系统既有 Markdown 外层格式，确保可被注入器解析。
+2. 每个阶段在“提示词”中必须包含：# Role、# Opening Line、# Workflow & Interaction Rules、# Response Constraints。
+3. Workflow 必须采用“步骤0 + 步骤1”结构：
+   - 步骤0：回读全部对话，判定当前通关进度与当前所处关卡。
+   - 步骤1：分支互斥，优先处理无关输入，再处理当前关卡。
+4. 每个阶段必须区分分析关卡或简单关卡，写清通过标准。
+5. 必须显式写出：绝对禁止跳关、通过即关闭、满足条件时仅输出跳转关键词、严禁泄露答案。
+6. 直接输出完整 Markdown 配置，不要输出解释。',
+    '你是一名专业的实训剧本架构师，擅长将任务文档转化为循序递进式训练剧本。输出必须是完整 Markdown，不要输出 JSON、分析过程或无关内容。',
+    TRUE,
+    TRUE,
+    ARRAY['优化版', '剧本', '循序过关']
+) ON CONFLICT (id) DO UPDATE SET
+    prompt_template = EXCLUDED.prompt_template,
+    system_prompt = EXCLUDED.system_prompt,
+    updated_at = NOW();
+
+-- 9. 插入系统默认模板 - 优化版模拟人物型剧本
+INSERT INTO prompt_templates (id, user_id, name, description, type, prompt_template, system_prompt, is_default, is_public, tags)
+VALUES (
+    '10000000-0000-0000-0000-000000000004'::UUID,
+    NULL,
+    '优化版-模拟人物型训练剧本模板',
+    '适合模拟病人、模拟客户、模拟家属等学生主动提问场景。强调问一答一、封闭知识库、结束意图跳转。',
+    'script',
+    '你是一名专业的实训剧本架构师。请将教师文档转为“模拟人物型”训练剧本配置。
+
+核心要求：
+1. 保持系统既有 Markdown 外层格式，确保可被注入器解析。
+2. 每个阶段在“提示词”中必须体现：问一答一、知识库优先、背景信息延申、结束意图跳转。
+3. Role 中必须给出明确人物身份、人设、当前情境和封闭知识库。
+4. Workflow 必须采用“步骤0 + 步骤1”结构：
+   - 步骤0：识别当前输入属于正常询问、结束意图、模糊问题、错误前提、背景信息还是完全无关。
+   - 步骤1：按优先级仅执行一个分支。
+5. 严禁主动泄露学生未问到的信息，结束时仅输出跳转关键词。
+6. 直接输出完整 Markdown 配置，不要解释。',
+    '你是一名专业的实训剧本架构师，擅长生成被动应答式角色模拟剧本。输出必须是完整 Markdown，不要输出 JSON、分析过程或无关内容。',
+    TRUE,
+    TRUE,
+    ARRAY['优化版', '剧本', '模拟人物']
+) ON CONFLICT (id) DO UPDATE SET
+    prompt_template = EXCLUDED.prompt_template,
+    system_prompt = EXCLUDED.system_prompt,
+    updated_at = NOW();
+
+-- 10. 插入系统默认模板 - 优化版总结复盘型剧本
+INSERT INTO prompt_templates (id, user_id, name, description, type, prompt_template, system_prompt, is_default, is_public, tags)
+VALUES (
+    '10000000-0000-0000-0000-000000000005'::UUID,
+    NULL,
+    '优化版-总结复盘型训练剧本模板',
+    '适合训练后段总结、动态复盘、答疑和结束。强调先总后分、强制先输出总结、总结后才允许答疑或结束。',
+    'script',
+    '你是一名专业的实训剧本架构师。请将教师文档转为“总结复盘型”训练剧本配置。
+
+核心要求：
+1. 保持系统既有 Markdown 外层格式，确保可被注入器解析。
+2. 总结阶段的提示词必须体现：总结未输出前强制先输出总结；总结必须先给总体评价，再分维度复盘。
+3. 做得好的部分必须基于真实对话，查漏补缺必须基于真实遗漏，严禁幻觉。
+4. Workflow 必须采用“步骤0 + 步骤1”结构：
+   - 步骤0：判定总结是否已输出；若未输出，扫描前序表现。
+   - 步骤1：优先强制总结，其次处理结束，再处理答疑和无关话题。
+5. 总结未输出前禁止跳转；满足结束条件时仅输出跳转关键词。
+6. 直接输出完整 Markdown 配置，不要解释。',
+    '你是一名专业的实训剧本架构师，擅长生成训练末段的复盘总结型剧本。输出必须是完整 Markdown，不要输出 JSON、分析过程或无关内容。',
+    TRUE,
+    TRUE,
+    ARRAY['优化版', '剧本', '总结复盘']
+) ON CONFLICT (id) DO UPDATE SET
+    prompt_template = EXCLUDED.prompt_template,
+    system_prompt = EXCLUDED.system_prompt,
+    updated_at = NOW();
+
+-- 11. 插入系统默认模板 - 评分标准
 INSERT INTO prompt_templates (id, user_id, name, description, type, prompt_template, system_prompt, is_default, is_public, tags)
 VALUES (
     '10000000-0000-0000-0000-000000000002'::UUID,

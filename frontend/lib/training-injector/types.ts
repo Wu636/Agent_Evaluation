@@ -39,6 +39,7 @@ export interface InjectRequest {
     credentials: PolymasCredentials;
     scriptMarkdown?: string;     // 训练剧本 Markdown 内容
     rubricMarkdown?: string;     // 评分标准 Markdown 内容
+    coverStylePrompt?: string;   // 课程封面图风格提示
     injectMode: 'replace' | 'append';  // 全新创建 / 追加
 }
 
@@ -65,6 +66,20 @@ export interface PolymasScriptStep {
     stepDetailDTO: {
         nodeType: string;     // 'SCRIPT_NODE' | 'SCRIPT_START' | 'SCRIPT_END'
         stepName: string;
+        description?: string;
+        prologue?: string;
+        modelId?: string;
+        llmPrompt?: string;
+        trainerName?: string;
+        interactiveRounds?: number;
+        agentId?: string;
+        avatarNid?: string;
+        scriptStepCover?: Record<string, string>;
+        backgroundTheme?: string | null;
+    };
+    positionDTO?: {
+        x?: number;
+        y?: number;
     };
 }
 

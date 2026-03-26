@@ -6,6 +6,63 @@ import type { LLMResponse, ApiConfig, DialogueData, IssueItem, HighlightItem } f
 
 import { jsonrepair } from 'jsonrepair';
 
+function formatLlmNetworkError(baseUrl: string, error: unknown): Error {
+    const anyError = error as {
+        message?: string;
+        cause?: { message?: string; code?: string };
+    };
+    const message = String(anyError?.message || error || "");
+    const causeMessage = String(anyError?.cause?.message || "");
+    const causeCode = String(anyError?.cause?.code || "");
+    const combined = `${message} ${causeMessage} ${causeCode}`.toLowerCase();
+
+    if (
+        combined.includes("fetch failed") ||
+        combined.includes("timeout") ||
+        combined.includes("connecttimeouterror") ||
+        combined.includes("und_err_connect_timeout") ||
+        combined.includes("econnrefused") ||
+        combined.includes("enotfound")
+    ) {
+        return new Error(
+            `当前 LLM API 地址不可达：${baseUrl}。请检查 API URL 是否正确、当前网络是否能访问该地址，必要时改为可直连的 HTTPS 地址。`
+        );
+    }
+
+    return error instanceof Error ? error : new Error(String(error || "LLM 请求失败"));
+}
+
+function buildLlmHeaders(apiKey?: string): Record<string, string> {
+    const headers: Record<string, string> = {
+        "api-key": apiKey || "",
+        "Content-Type": "application/json",
+    };
+
+    if (apiKey) {
+        headers.Authorization = `Bearer ${apiKey}`;
+    }
+
+    return headers;
+}
+
+function normalizeChatCompletionEndpoint(baseUrl: string): string {
+    const trimmed = baseUrl.trim().replace(/\/+$/, "");
+    if (!trimmed) return "";
+    if (trimmed.includes("/chat/completions")) return trimmed;
+    return `${trimmed}/chat/completions`;
+}
+
+function getStreamEndpoint(baseUrl: string): string {
+    const normalized = normalizeChatCompletionEndpoint(baseUrl);
+    if (!normalized) return normalized;
+
+    if (normalized === "https://llm-service.polymas.com/api/openai/v1/chat/completions") {
+        return "http://llm-service.polymas.com/api/openai/v1/chat/completions/stream";
+    }
+
+    return normalized.endsWith("/stream") ? normalized : `${normalized}/stream`;
+}
+
 /**
  * 格式化对话记录为 LLM 可读格式
  */
@@ -174,7 +231,6 @@ export async function callLLM(
 ): Promise<string> {
     const { apiKey, baseUrl, model } = config;
 
-    if (!apiKey) throw new Error("未配置 LLM API 密钥");
     if (!baseUrl) throw new Error("未配置 LLM API 地址");
 
     const payload = {
@@ -209,15 +265,18 @@ export async function callLLM(
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 180000); // 3分钟超时
 
-        const response = await fetch(baseUrl, {
-            method: "POST",
-            headers: {
-                "api-key": apiKey,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
-            signal: controller.signal,
-        });
+        let response: Response;
+        try {
+            response = await fetch(baseUrl, {
+                method: "POST",
+                headers: buildLlmHeaders(apiKey),
+                body: JSON.stringify(payload),
+                signal: controller.signal,
+            });
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw formatLlmNetworkError(baseUrl, error);
+        }
 
         clearTimeout(timeoutId);
 
@@ -273,7 +332,6 @@ export async function* callLLMStream(
 ): AsyncGenerator<string, void, unknown> {
     const { apiKey, baseUrl, model } = config;
 
-    if (!apiKey) throw new Error("未配置 LLM API 密钥");
     if (!baseUrl) throw new Error("未配置 LLM API 地址");
 
     const defaultSystemPrompt = `你是一位资深的教学质量评估专家。你的任务是分析教学智能体的对话质量并输出评分结果。
@@ -307,16 +365,18 @@ export async function* callLLMStream(
     const startTime = Date.now();
 
     // 流式接口需要在原 URL 后加上 /stream
-    const streamUrl = baseUrl.endsWith('/stream') ? baseUrl : `${baseUrl}/stream`;
+    const streamUrl = getStreamEndpoint(baseUrl);
 
-    const response = await fetch(streamUrl, {
-        method: "POST",
-        headers: {
-            "api-key": apiKey,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-    });
+    let response: Response;
+    try {
+        response = await fetch(streamUrl, {
+            method: "POST",
+            headers: buildLlmHeaders(apiKey),
+            body: JSON.stringify(payload),
+        });
+    } catch (error) {
+        throw formatLlmNetworkError(streamUrl, error);
+    }
 
     if (!response.ok) {
         const errorText = await response.text();
@@ -388,4 +448,3 @@ export async function* callLLMStream(
         console.log(`[LLM流式完成] 耗时: ${elapsed}ms`);
     }
 }
-

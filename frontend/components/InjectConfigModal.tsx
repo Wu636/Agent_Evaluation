@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { X, Save, Shield, Key, FilePlus, Loader2, CheckCircle2, AlertCircle, Play, Cpu, Upload, ChevronDown, ChevronRight, FileText } from "lucide-react";
+import { X, Shield, Key, FilePlus, Loader2, CheckCircle2, AlertCircle, Play, Cpu, Upload, ChevronDown, ChevronRight, FileText, RefreshCw } from "lucide-react";
 import { PolymasCredentials, InjectProgressEvent, InjectSummary } from "@/lib/training-injector/types";
 import { parsePolymasUrl } from "@/lib/training-injector/api";
 import { AVAILABLE_MODELS, normalizeModelId } from "@/lib/config";
+import { parseTaskConfig, parseTrainingScript } from "@/lib/training-injector/parser";
 
 interface InjectConfigModalProps {
     isOpen: boolean;
@@ -14,6 +15,16 @@ interface InjectConfigModalProps {
 }
 
 const STORAGE_KEY = "training-injector-credentials";
+const IMAGE_MODELS = [
+    { id: "dall-e-3", name: "openai · dall-e-3" },
+    { id: "general_v2.0_L", name: "豆包 · general_v2.0_L" },
+    { id: "doubao-seedream-3-0-t2i-250415", name: "豆包 · doubao-seedream-3-0-t2i-250415" },
+];
+
+interface StageOption {
+    stepId: string;
+    stepName: string;
+}
 
 export function InjectConfigModal({
     isOpen,
@@ -38,6 +49,16 @@ export function InjectConfigModal({
     const [summary, setSummary] = useState<InjectSummary | null>(null);
     const [extractionMode, setExtractionMode] = useState<"hybrid" | "llm" | "regex">("regex");
     const [llmModel, setLlmModel] = useState("");
+    const [coverStylePrompt, setCoverStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染， 电影级光影 高清细节，16:9宽屏构图");
+    const [imageModel, setImageModel] = useState("dall-e-3");
+    const [injectCoverImage, setInjectCoverImage] = useState(true);
+    const [injectBackgroundImage, setInjectBackgroundImage] = useState(true);
+    const [regenTarget, setRegenTarget] = useState<"cover" | "background" | "all">("cover");
+    const [regenStages, setRegenStages] = useState<StageOption[]>([]);
+    const [regenStepId, setRegenStepId] = useState("");
+    const [loadingStages, setLoadingStages] = useState(false);
+    const [regeneratingImage, setRegeneratingImage] = useState(false);
+    const [regenMessage, setRegenMessage] = useState("");
 
     // --- 自定义文档状态 ---
     const [customDocExpanded, setCustomDocExpanded] = useState(false);
@@ -156,30 +177,236 @@ export function InjectConfigModal({
         return true;
     };
 
-    const handleInject = async () => {
-        if (!handleSaveCredentials()) return;
-
+    const resolveTaskIds = () => {
         let finalTaskId = taskId.trim();
         let finalCourseId = courseId.trim();
+        let finalLibraryFolderId = libraryFolderId.trim();
 
-        // 尝试解析 URL
         if (finalTaskId.includes("http") || finalTaskId.includes("?")) {
             const parsed = parsePolymasUrl(finalTaskId);
             if (parsed) {
                 finalTaskId = parsed.trainTaskId;
-                finalCourseId = parsed.courseId;
-                setTaskId(finalTaskId);
-                setCourseId(finalCourseId);
+                finalCourseId = finalCourseId || parsed.courseId;
+                finalLibraryFolderId = finalLibraryFolderId || parsed.libraryFolderId;
+                setTaskId(parsed.trainTaskId);
+                setCourseId(parsed.courseId);
                 setLibraryFolderId(parsed.libraryFolderId || "");
             }
         }
 
-        const finalLibraryFolderId = libraryFolderId || (() => {
+        if (!finalLibraryFolderId) {
             try {
                 const parsed = parsePolymasUrl(taskId.trim().includes("http") ? taskId.trim() : `https://example.com?${taskId.trim()}`);
-                return parsed?.libraryFolderId || "";
-            } catch { return ""; }
-        })();
+                finalLibraryFolderId = parsed?.libraryFolderId || "";
+            } catch {
+                // ignore
+            }
+        }
+
+        return { finalTaskId, finalCourseId, finalLibraryFolderId };
+    };
+
+    const loadStages = async () => {
+        setError("");
+        if (!handleSaveCredentials()) return;
+        const { finalTaskId } = resolveTaskIds();
+        if (!finalTaskId) {
+            setError("请先填写目标训练任务 ID 或完整链接");
+            return;
+        }
+
+        setLoadingStages(true);
+        setRegenMessage("正在加载阶段列表...");
+        try {
+            const response = await fetch("/api/training-inject/stages", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    trainTaskId: finalTaskId,
+                    credentials: {
+                        authorization: authorization.trim(),
+                        cookie: cookie.trim(),
+                    },
+                }),
+            });
+
+            const rawText = await response.text();
+            let data: any = {};
+            try {
+                data = rawText ? JSON.parse(rawText) : {};
+            } catch {
+                data = { success: false, error: rawText || "加载阶段列表失败" };
+            }
+
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || "加载阶段列表失败");
+            }
+            const loadedStages = Array.isArray(data.stages) ? data.stages : [];
+            setRegenStages(loadedStages);
+            if (loadedStages.length > 0) {
+                setRegenStepId((prev) => prev || loadedStages[0].stepId);
+                setRegenMessage(`阶段列表已加载：${loadedStages.length} 个阶段`);
+            } else {
+                setRegenStepId("");
+                setRegenMessage("未查询到可用阶段，请确认任务中已存在 SCRIPT_NODE 节点");
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "加载阶段列表失败");
+            setRegenMessage("");
+        } finally {
+            setLoadingStages(false);
+        }
+    };
+
+    const handleRegenerateImage = async () => {
+        setError("");
+        if (!handleSaveCredentials()) return;
+
+        const { finalTaskId, finalCourseId, finalLibraryFolderId } = resolveTaskIds();
+        if (!finalTaskId) {
+            setError("请先填写目标训练任务 ID 或完整链接");
+            return;
+        }
+        if (regenTarget === "background" && !regenStepId) {
+            setError("请选择要重生背景图的阶段");
+            return;
+        }
+
+        let llmSettings: any = undefined;
+        try {
+            const storedConfig = localStorage.getItem("llm-eval-settings");
+            if (storedConfig) {
+                llmSettings = JSON.parse(storedConfig);
+                if (llmModel) llmSettings.model = llmModel;
+            }
+        } catch {
+            // ignore
+        }
+
+        let trainTaskName = "训练任务";
+        let trainDescription = "";
+        let selectedStageDescription = "";
+        const parsedConfig = effectiveScriptMd ? parseTaskConfig(effectiveScriptMd) : null;
+        if (parsedConfig?.trainTaskName) trainTaskName = parsedConfig.trainTaskName;
+        if (parsedConfig?.description) trainDescription = parsedConfig.description;
+
+        if (regenTarget === "background" && effectiveScriptMd) {
+            const parsedSteps = parseTrainingScript(effectiveScriptMd);
+            const selectedStage = regenStages.find((s) => s.stepId === regenStepId);
+            const matched = parsedSteps.find((s) => s.stepName === selectedStage?.stepName);
+            selectedStageDescription = matched?.description || "";
+        }
+
+        setRegeneratingImage(true);
+        setRegenMessage(
+            regenTarget === "cover"
+                ? "正在重新生成课程封面图..."
+                : regenTarget === "background"
+                    ? "正在重新生成阶段背景图..."
+                    : "正在重新生成全部图片（封面+所有阶段背景）..."
+        );
+        try {
+            const response = await fetch("/api/training-inject/regenerate-image", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    trainTaskId: finalTaskId,
+                    courseId: finalCourseId,
+                    libraryFolderId: finalLibraryFolderId,
+                    credentials: {
+                        authorization: authorization.trim(),
+                        cookie: cookie.trim(),
+                    },
+                    llmSettings,
+                    coverStylePrompt: coverStylePrompt.trim() || undefined,
+                    imageModel,
+                    targetType: regenTarget,
+                    stepId: regenTarget === "background" ? regenStepId : undefined,
+                    trainTaskName,
+                    trainDescription,
+                    stageDescription: selectedStageDescription || undefined,
+                }),
+            });
+
+            const contentType = response.headers.get("content-type") || "";
+            if (regenTarget === "all" && contentType.includes("text/event-stream")) {
+                if (!response.ok) {
+                    throw new Error(`请求失败: ${response.status} ${response.statusText}`);
+                }
+                const reader = response.body?.getReader();
+                if (!reader) {
+                    throw new Error("无法读取重生进度流");
+                }
+
+                const decoder = new TextDecoder();
+                let buffer = "";
+                let completed = false;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop() || "";
+
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed.startsWith("data: ")) continue;
+                        try {
+                            const event = JSON.parse(trimmed.slice(6)) as {
+                                type: "start" | "progress" | "complete" | "error";
+                                message?: string;
+                                current?: number;
+                                total?: number;
+                            };
+
+                            if (event.type === "error") {
+                                throw new Error(event.message || "重生图片失败");
+                            }
+                            if (event.type === "start" || event.type === "progress") {
+                                setRegenMessage(event.message || "正在重生图片...");
+                            }
+                            if (event.type === "complete") {
+                                completed = true;
+                                setRegenMessage(event.message || "重生图片成功");
+                            }
+                        } catch (parseErr) {
+                            if (parseErr instanceof Error) {
+                                throw parseErr;
+                            }
+                        }
+                    }
+                }
+
+                if (!completed) {
+                    throw new Error("重生进度流中断，未收到完成事件，请重试");
+                }
+
+                await loadStages();
+                return;
+            }
+
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || "重生图片失败");
+            }
+            setRegenMessage(data.message || "重生图片成功");
+
+            if (regenTarget === "background" || regenTarget === "all") {
+                await loadStages();
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "重生图片失败");
+            setRegenMessage("");
+        } finally {
+            setRegeneratingImage(false);
+        }
+    };
+
+    const handleInject = async () => {
+        if (!handleSaveCredentials()) return;
+        const { finalTaskId, finalCourseId, finalLibraryFolderId } = resolveTaskIds();
 
         if (!finalTaskId) {
             setError("请填写目标训练任务 ID (TASK_ID) 或粘贴完整链接");
@@ -249,6 +476,10 @@ export function InjectConfigModal({
                     },
                     llmSettings,
                     extractionMode,
+                    coverStylePrompt: coverStylePrompt.trim() || undefined,
+                    imageModel,
+                    injectCoverImage,
+                    injectBackgroundImage,
                     scriptMarkdown: injectScript ? effectiveScriptMd : undefined,
                     rubricMarkdown: injectRubric ? effectiveRubricMd : undefined,
                     injectMode,
@@ -463,25 +694,139 @@ export function InjectConfigModal({
                                     )}
                                 </div>
 
-                                {/* LLM 模型选择 */}
                                 <div className="pt-3 border-t border-slate-100 space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <Cpu className="w-3.5 h-3.5 text-slate-500" />
-                                        <label className="text-xs font-medium text-slate-700">AI 提取模型</label>
-                                    </div>
+                                    <label className="text-xs font-medium text-slate-700 block">课程封面图风格（可选）</label>
+                                    <input
+                                        type="text"
+                                        value={coverStylePrompt}
+                                        onChange={(e) => setCoverStylePrompt(e.target.value)}
+                                        placeholder="例如：蓝白医疗风、极简科技感、无人物、留标题区"
+                                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                    />
+                                    <p className="text-xs text-slate-400">仅影响课程封面图，不影响阶段背景图。</p>
+                                </div>
+
+                                <div className="pt-3 border-t border-slate-100 space-y-2">
+                                    <label className="text-xs font-medium text-slate-700 block">生图模型</label>
                                     <select
-                                        value={llmModel}
-                                        onChange={(e) => setLlmModel(e.target.value)}
+                                        value={imageModel}
+                                        onChange={(e) => setImageModel(e.target.value)}
                                         className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white"
                                     >
-                                        <option value="" disabled>请选择模型...</option>
-                                        {AVAILABLE_MODELS.map((m) => (
-                                            <option key={m.id} value={m.id}>{m.name} — {m.description}</option>
+                                        {IMAGE_MODELS.map((item) => (
+                                            <option key={item.id} value={item.id}>{item.name}</option>
                                         ))}
                                     </select>
-                                    {!llmModel && (
-                                        <p className="text-xs text-amber-600">⚠ 未检测到模型配置，请先在全局设置中配置 API Key 和模型，或在此处选择</p>
+                                    <p className="text-xs text-slate-400">封面图与背景图都使用此模型生成。</p>
+                                </div>
+
+                                <div className="pt-3 border-t border-slate-100 space-y-2">
+                                    <label className="text-xs font-medium text-slate-700 block">图片注入开关</label>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                        <label className="flex items-center gap-2 p-2 rounded-lg border hover:bg-slate-50 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={injectCoverImage}
+                                                onChange={(e) => setInjectCoverImage(e.target.checked)}
+                                                className="rounded text-indigo-600 focus:ring-indigo-500"
+                                            />
+                                            <span className="text-sm text-slate-700">注入课程封面图</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 p-2 rounded-lg border hover:bg-slate-50 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={injectBackgroundImage}
+                                                onChange={(e) => setInjectBackgroundImage(e.target.checked)}
+                                                className="rounded text-indigo-600 focus:ring-indigo-500"
+                                            />
+                                            <span className="text-sm text-slate-700">注入阶段背景图</span>
+                                        </label>
+                                    </div>
+                                    <p className="text-xs text-slate-400">关闭后会跳过对应生图步骤，可用于先快速验证文字配置。</p>
+                                </div>
+
+                                <div className="pt-3 border-t border-slate-100 space-y-3">
+                                    <div className="flex items-center gap-2">
+                                        <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                                        <label className="text-xs font-medium text-slate-700">图片重生（可选）</label>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <label className={`p-2 border rounded-lg cursor-pointer transition-colors ${regenTarget === 'cover' ? 'border-indigo-500 bg-indigo-50/50' : 'hover:bg-slate-50 border-slate-200'}`}>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="radio"
+                                                    checked={regenTarget === 'cover'}
+                                                    onChange={() => setRegenTarget('cover')}
+                                                    className="text-indigo-600 focus:ring-indigo-500"
+                                                />
+                                                <span className="text-sm font-medium text-slate-800">重新生成课程封面图</span>
+                                            </div>
+                                        </label>
+
+                                        <label className={`p-2 border rounded-lg cursor-pointer transition-colors ${regenTarget === 'background' ? 'border-indigo-500 bg-indigo-50/50' : 'hover:bg-slate-50 border-slate-200'}`}>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="radio"
+                                                    checked={regenTarget === 'background'}
+                                                    onChange={() => setRegenTarget('background')}
+                                                    className="text-indigo-600 focus:ring-indigo-500"
+                                                />
+                                                <span className="text-sm font-medium text-slate-800">重新生成某阶段背景图</span>
+                                            </div>
+                                        </label>
+
+                                        <label className={`p-2 border rounded-lg cursor-pointer transition-colors ${regenTarget === 'all' ? 'border-indigo-500 bg-indigo-50/50' : 'hover:bg-slate-50 border-slate-200'}`}>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="radio"
+                                                    checked={regenTarget === 'all'}
+                                                    onChange={() => setRegenTarget('all')}
+                                                    className="text-indigo-600 focus:ring-indigo-500"
+                                                />
+                                                <span className="text-sm font-medium text-slate-800">重生全部图片</span>
+                                            </div>
+                                        </label>
+                                    </div>
+
+                                    {regenTarget === 'background' && (
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={loadStages}
+                                                    disabled={loadingStages || regeneratingImage || injecting}
+                                                    className="px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-50"
+                                                >
+                                                    {loadingStages ? "加载中..." : "加载阶段列表"}
+                                                </button>
+                                                <span className="text-xs text-slate-400">从当前任务读取可选阶段</span>
+                                            </div>
+                                            <select
+                                                value={regenStepId}
+                                                onChange={(e) => setRegenStepId(e.target.value)}
+                                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white"
+                                            >
+                                                {regenStages.length === 0 && <option value="">请先加载阶段列表</option>}
+                                                {regenStages.map((stage) => (
+                                                    <option key={stage.stepId} value={stage.stepId}>{stage.stepName}</option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     )}
+
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleRegenerateImage}
+                                            disabled={regeneratingImage || injecting || (regenTarget === 'background' && !regenStepId)}
+                                            className="px-3 py-2 text-sm bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white rounded-lg font-medium flex items-center gap-2"
+                                        >
+                                            {regeneratingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                            {regeneratingImage ? "重生中..." : "执行图片重生"}
+                                        </button>
+                                        {regenMessage && <span className="text-xs text-emerald-600">{regenMessage}</span>}
+                                    </div>
                                 </div>
 
                                 {/* 提取模式选择 */}
@@ -528,6 +873,28 @@ export function InjectConfigModal({
                                         }
                                     </p>
                                 </div>
+
+                                {extractionMode !== 'regex' && (
+                                    <div className="pt-3 border-t border-slate-100 space-y-2">
+                                        <div className="flex items-center gap-2">
+                                            <Cpu className="w-3.5 h-3.5 text-slate-500" />
+                                            <label className="text-xs font-medium text-slate-700">AI 提取模型</label>
+                                        </div>
+                                        <select
+                                            value={llmModel}
+                                            onChange={(e) => setLlmModel(e.target.value)}
+                                            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white"
+                                        >
+                                            <option value="" disabled>请选择模型...</option>
+                                            {AVAILABLE_MODELS.map((m) => (
+                                                <option key={m.id} value={m.id}>{m.name} — {m.description}</option>
+                                            ))}
+                                        </select>
+                                        {!llmModel && (
+                                            <p className="text-xs text-amber-600">⚠ 未检测到模型配置，请先在全局设置中配置 API Key 和模型，或在此处选择</p>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* 自定义文档上传（可折叠） */}
                                 <div className="pt-3 border-t border-slate-100">

@@ -3,6 +3,19 @@ import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { PromptTemplatePayload } from "@/lib/training-generator/types";
 
+function isSupabaseTransientError(error: unknown): boolean {
+    const anyError = error as { message?: string; details?: string; code?: string };
+    const combined = `${anyError?.message || ""} ${anyError?.details || ""} ${anyError?.code || ""}`.toLowerCase();
+    return (
+        combined.includes("fetch failed") ||
+        combined.includes("timeout") ||
+        combined.includes("connecttimeouterror") ||
+        combined.includes("und_err_connect_timeout") ||
+        combined.includes("econnrefused") ||
+        combined.includes("enotfound")
+    );
+}
+
 // GET: 获取 Prompt 模板列表
 // 支持 ?type=script|rubric 筛选
 export async function GET(request: NextRequest) {
@@ -35,6 +48,9 @@ export async function GET(request: NextRequest) {
 
         if (error) {
             console.error("获取 Prompt 模板列表失败:", error);
+            if (isSupabaseTransientError(error)) {
+                return NextResponse.json({ templates: [], degraded: true });
+            }
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
@@ -64,6 +80,10 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ templates });
     } catch (e) {
         console.error("获取 Prompt 模板列表异常:", e);
+        // 模板市场属于增强能力，Supabase 暂时不可用时降级为空列表，避免阻塞主功能
+        if (isSupabaseTransientError(e)) {
+            return NextResponse.json({ templates: [], degraded: true });
+        }
         return NextResponse.json({ error: "服务器内部错误" }, { status: 500 });
     }
 }

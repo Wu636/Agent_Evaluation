@@ -141,6 +141,34 @@ export async function getModels(): Promise<{ models: ModelInfo[] }> {
     return response.json();
 }
 
+export interface LlmConnectivityResult {
+    ok: boolean;
+    endpoint?: string;
+    latencyMs?: number;
+    model?: string;
+    message?: string;
+    error?: string;
+    status?: number;
+}
+
+export async function testLlmConnectivity(apiConfig: ApiConfig = {}): Promise<LlmConnectivityResult> {
+    const response = await fetch('/api/llm-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            apiKey: apiConfig.apiKey || '',
+            apiUrl: apiConfig.baseUrl || '',
+            model: apiConfig.model || '',
+        }),
+    });
+
+    const data = await response.json().catch(() => ({ ok: false, error: `请求失败: ${response.status}` }));
+    if (!response.ok && !data?.error) {
+        throw new Error(`请求失败: ${response.status}`);
+    }
+    return data;
+}
+
 export async function getHistory(): Promise<{ history: HistoryItem[] }> {
     const response = await fetch('/api/history');
     if (!response.ok) throw new Error('Failed to fetch history');

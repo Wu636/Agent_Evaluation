@@ -64,7 +64,7 @@ export function InjectConfigModal({
     const [summary, setSummary] = useState<InjectSummary | null>(null);
     const [extractionMode, setExtractionMode] = useState<"hybrid" | "llm" | "regex">("regex");
     const [llmModel, setLlmModel] = useState("");
-    const [coverStylePrompt, setCoverStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染， 电影级光影 高清细节，16:9宽屏构图");
+    const [coverStylePrompt, setCoverStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染， 电影级光影 高清细节，16:9宽屏构图，中国风格优先");
     const [imageProviderMode, setImageProviderMode] = useState<"cloudapi" | "openai">("cloudapi");
     const [injectCoverImage, setInjectCoverImage] = useState(true);
     const [injectBackgroundImage, setInjectBackgroundImage] = useState(true);

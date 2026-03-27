@@ -179,8 +179,15 @@ export async function POST(request: NextRequest) {
                             );
 
                             if (coverSource?.fileUrl) {
-                                send({ type: "progress", phase: "script", message: "正在上传课程封面图...", current: 0, total: steps.length });
-                                trainTaskCover = await uploadCoverImageFromUrl(coverSource.fileUrl, credentials);
+                                if (coverSource.fileId) {
+                                    trainTaskCover = {
+                                        fileId: coverSource.fileId,
+                                        fileUrl: coverSource.fileUrl,
+                                    };
+                                } else {
+                                    send({ type: "progress", phase: "script", message: "正在上传课程封面图...", current: 0, total: steps.length });
+                                    trainTaskCover = await uploadCoverImageFromUrl(coverSource.fileUrl, credentials);
+                                }
                                 if (trainTaskCover) {
                                     send({ type: "progress", phase: "script", message: "课程封面图准备完成", current: 0, total: steps.length });
                                 } else {

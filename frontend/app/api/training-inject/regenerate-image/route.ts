@@ -113,7 +113,9 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            const uploaded = await uploadCoverImageFromUrl(coverSource.fileUrl, credentials);
+            const uploaded = coverSource.fileId
+                ? { fileId: coverSource.fileId, fileUrl: coverSource.fileUrl }
+                : await uploadCoverImageFromUrl(coverSource.fileUrl, credentials);
             if (!uploaded) {
                 return NextResponse.json(
                     { success: false, error: "封面图上传失败" },
@@ -301,7 +303,9 @@ export async function POST(request: NextRequest) {
                         );
 
                         if (coverSource?.fileUrl) {
-                            const uploaded = await uploadCoverImageFromUrl(coverSource.fileUrl, credentials);
+                            const uploaded = coverSource.fileId
+                                ? { fileId: coverSource.fileId, fileUrl: coverSource.fileUrl }
+                                : await uploadCoverImageFromUrl(coverSource.fileUrl, credentials);
                             if (uploaded) {
                                 const coverOk = await editConfiguration(
                                     {

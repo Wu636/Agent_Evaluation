@@ -3,6 +3,7 @@
  */
 
 import { ApiConfig } from "../llm/types";
+import { jsonrepair } from "jsonrepair";
 import { callLLM, callLLMStream } from "../llm/utils";
 import { buildScriptGeneratorPrompt, buildRubricGeneratorPrompt } from "./prompts";
 import {
@@ -384,18 +385,60 @@ function fallbackParsePlanFromMarkdown(content: string): TrainingScriptPlan {
     });
 }
 
-function parseTrainingPlanContent(content: string): TrainingScriptPlan {
-    const cleaned = content
+function sanitizePlanResponse(content: string): string {
+    return content
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
         .replace(/^```(?:json|markdown|md)?\s*/i, "")
         .replace(/\s*```$/i, "")
         .trim();
+}
+
+function extractPlanJsonCandidate(content: string): string | null {
+    const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (codeBlockMatch?.[1]?.trim()) {
+        return codeBlockMatch[1].trim();
+    }
+
+    const firstBrace = content.indexOf("{");
+    const lastBrace = content.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        return content.slice(firstBrace, lastBrace + 1).trim();
+    }
+
+    return null;
+}
+
+function parseTrainingPlanContent(content: string): TrainingScriptPlan {
+    const cleaned = sanitizePlanResponse(content);
+    const jsonCandidate = extractPlanJsonCandidate(cleaned);
 
     try {
         return normalizePlan(JSON.parse(cleaned));
     } catch {
+        if (jsonCandidate && jsonCandidate !== cleaned) {
+            try {
+                return normalizePlan(JSON.parse(jsonCandidate));
+            } catch {
+                // Continue to repair attempts below.
+            }
+        }
+
+        const repairTargets = [cleaned];
+        if (jsonCandidate && jsonCandidate !== cleaned) {
+            repairTargets.unshift(jsonCandidate);
+        }
+
+        for (const target of repairTargets) {
+            try {
+                return normalizePlan(JSON.parse(jsonrepair(target)));
+            } catch {
+                // Continue to next strategy.
+            }
+        }
+
         const fallback = fallbackParsePlanFromMarkdown(cleaned);
         if (fallback.modules.length > 0) return fallback;
-        throw new Error("规划结果格式异常：模型未返回合法 JSON，且 Markdown 兜底解析失败。请重试，或缩短教师文档后再规划。");
+        throw new Error("规划结果格式异常：模型未返回合法 JSON，自动修复后仍无法解析，且 Markdown 兜底解析失败。请重试，或缩短教师文档后再规划。");
     }
 }
 

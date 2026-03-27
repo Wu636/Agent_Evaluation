@@ -21,12 +21,12 @@ const POLYMAS_IMAGE_FALLBACK_API_KEY =
 type ImageProvider = "cloudapi" | "openai";
 const DEFAULT_IMAGE_PROVIDER_PRIORITY: ImageProvider[] = ["cloudapi", "openai"];
 
-const DEFAULT_BG_IMAGE_REQUIREMENT = "专业、清晰、教学场景背景图，严格16:9横版宽屏构图，无任何文字";
-const DEFAULT_COVER_STYLE_REQUIREMENT = "专业、简洁、教学场景感，16:9 横版封面，无任何文字";
+const DEFAULT_BG_IMAGE_REQUIREMENT = "专业、清晰、教学场景背景图，严格16:9横版宽屏构图，无任何文字和英文单词，中国风格优先";
+const DEFAULT_COVER_STYLE_REQUIREMENT = "专业、简洁、教学场景感，16:9 横版封面，无任何文字和英文单词，中国风格优先";
 
 const IMAGE_GENERATE_TIMEOUT_MS = 25000;
 const COVER_GENERATE_TIMEOUT_MS = 60000;
-const IMAGE_DOWNLOAD_TIMEOUT_MS = 30000;
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 90000;
 const IMAGE_UPLOAD_TIMEOUT_MS = 60000;
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
@@ -399,7 +399,7 @@ export async function generateCourseCoverImageSource(
         imageProviderPriority?: string | ImageProvider[];
     },
     credentials: PolymasCredentials
-): Promise<{ fileUrl: string } | null> {
+): Promise<{ fileUrl: string; fileId?: string } | null> {
     const targetUrl = `${POLYMAS_AI_BASE}/image/generate`;
     const preferredPrompt = buildCoverFallbackPrompt(params);
     const providerPriority = resolveImageProviderPriority(params.imageProviderPriority);
@@ -430,8 +430,12 @@ export async function generateCourseCoverImageSource(
                     const result = await res.json();
                     if (result.code === 200 || result.success === true) {
                         const fileUrl = extractImageUrlFromData(result.data);
+                        const fileId = result?.data?.fileId;
                         if (fileUrl) {
-                            return { fileUrl };
+                            return {
+                                fileUrl,
+                                fileId: typeof fileId === "string" && fileId.trim() ? fileId : undefined,
+                            };
                         }
                         console.error("[course-cover] cloudapi 返回成功但无可用URL:", JSON.stringify(result.data).substring(0, 300));
                     } else {

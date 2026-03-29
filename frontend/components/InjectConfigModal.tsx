@@ -15,11 +15,69 @@ interface InjectConfigModalProps {
 }
 
 const STORAGE_KEY = "training-injector-credentials";
+const TASK_CONTEXT_STORAGE_KEY = "training-injector-task-contexts";
 const IMAGE_PROVIDER_OPTIONS = [
     { id: "cloudapi", name: "cloudapi（优先）" },
-    { id: "openai", name: "OpenAI（优先）" },
+    { id: "openai", name: "OpenAI 兼容接口（优先）" },
+];
+const IMAGE_MODEL_OPTIONS = [
+    { id: "doubao-seedream-4-0-250828", name: "豆包 Seedream 4.0" },
+    { id: "dall-e-3", name: "DALL-E 3" },
 ];
 const BACKGROUND_IMAGE_CONCURRENCY = 2;
+
+interface StoredTaskContext {
+    courseId: string;
+    libraryFolderId: string;
+    updatedAt: number;
+}
+
+function readStoredTaskContexts(): Record<string, StoredTaskContext> {
+    if (typeof window === "undefined") return {};
+    try {
+        const raw = localStorage.getItem(TASK_CONTEXT_STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed as Record<string, StoredTaskContext> : {};
+    } catch {
+        return {};
+    }
+}
+
+function writeStoredTaskContexts(contexts: Record<string, StoredTaskContext>) {
+    if (typeof window === "undefined") return;
+    try {
+        localStorage.setItem(TASK_CONTEXT_STORAGE_KEY, JSON.stringify(contexts));
+    } catch {
+        // ignore
+    }
+}
+
+function getStoredTaskContext(trainTaskId: string): StoredTaskContext | null {
+    const key = String(trainTaskId || "").trim();
+    if (!key) return null;
+    const contexts = readStoredTaskContexts();
+    return contexts[key] || null;
+}
+
+function persistTaskContext(trainTaskId: string, courseId?: string, libraryFolderId?: string) {
+    const key = String(trainTaskId || "").trim();
+    if (!key) return;
+
+    const contexts = readStoredTaskContexts();
+    const existing = contexts[key];
+    const nextCourseId = String(courseId || "").trim() || existing?.courseId || "";
+    const nextLibraryFolderId = String(libraryFolderId || "").trim() || existing?.libraryFolderId || "";
+
+    if (!nextCourseId && !nextLibraryFolderId) return;
+
+    contexts[key] = {
+        courseId: nextCourseId,
+        libraryFolderId: nextLibraryFolderId,
+        updatedAt: Date.now(),
+    };
+    writeStoredTaskContexts(contexts);
+}
 
 interface StageOption {
     stepId: string;
@@ -66,6 +124,11 @@ export function InjectConfigModal({
     const [llmModel, setLlmModel] = useState("");
     const [coverStylePrompt, setCoverStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染， 电影级光影 高清细节，16:9宽屏构图，中国风格优先");
     const [imageProviderMode, setImageProviderMode] = useState<"cloudapi" | "openai">("cloudapi");
+    const [imageModel, setImageModel] = useState("doubao-seedream-4-0-250828");
+    const [taskContextHint, setTaskContextHint] = useState("");
+    const [cloudapiProbeStatus, setCloudapiProbeStatus] = useState<"idle" | "testing" | "success" | "failed">("idle");
+    const [cloudapiProbeMessage, setCloudapiProbeMessage] = useState("");
+    const [cloudapiProbeCredentialKey, setCloudapiProbeCredentialKey] = useState("");
     const [injectCoverImage, setInjectCoverImage] = useState(true);
     const [injectBackgroundImage, setInjectBackgroundImage] = useState(true);
     const [regenTarget, setRegenTarget] = useState<"cover" | "background" | "all">("cover");
@@ -153,9 +216,19 @@ export function InjectConfigModal({
                 setProgressLogs([]);
                 setError("");
                 setSummary(null);
+                setTaskContextHint("");
+                setCloudapiProbeStatus("idle");
+                setCloudapiProbeMessage("");
+                setCloudapiProbeCredentialKey("");
             }
         }
     }, [isOpen]);
+
+    useEffect(() => {
+        setCloudapiProbeStatus("idle");
+        setCloudapiProbeMessage("");
+        setCloudapiProbeCredentialKey("");
+    }, [authorization, cookie]);
 
     // 自动滚动日志
     useEffect(() => {
@@ -195,6 +268,134 @@ export function InjectConfigModal({
         return true;
     };
 
+    const buildCredentialKey = () => `${authorization.trim()}::${cookie.trim()}`;
+
+    const runCloudapiProbe = async (options?: {
+        force?: boolean;
+        autoSwitchOnFailure?: boolean;
+        silent?: boolean;
+    }): Promise<{ available: boolean; message: string; autoSwitched: boolean }> => {
+        const auth = authorization.trim();
+        const cookieValue = cookie.trim();
+        if (!auth || !cookieValue) {
+            const message = "请先填写 Authorization 和 Cookie";
+            if (!options?.silent) setError(message);
+            return { available: false, message, autoSwitched: false };
+        }
+
+        const credentialKey = buildCredentialKey();
+        if (!options?.force && credentialKey === cloudapiProbeCredentialKey) {
+            if (cloudapiProbeStatus === "success") {
+                return {
+                    available: true,
+                    message: cloudapiProbeMessage || "cloudapi 生图测试通过",
+                    autoSwitched: false,
+                };
+            }
+            if (cloudapiProbeStatus === "failed") {
+                let message = cloudapiProbeMessage || "cloudapi 生图测试失败";
+                let autoSwitched = false;
+                if (options?.autoSwitchOnFailure && imageProviderMode === "cloudapi") {
+                    setImageProviderMode("openai");
+                    autoSwitched = true;
+                    message = `${message}；已自动切换为 OpenAI 兼容接口（优先）`;
+                    setCloudapiProbeMessage(message);
+                }
+                return {
+                    available: false,
+                    message,
+                    autoSwitched,
+                };
+            }
+        }
+
+        setCloudapiProbeStatus("testing");
+        setCloudapiProbeMessage("正在测试 cloudapi 生图接口...");
+        if (!options?.silent) setError("");
+
+        try {
+            const response = await fetch("/api/training-inject/test-image-provider", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    credentials: {
+                        authorization: auth,
+                        cookie: cookieValue,
+                    },
+                }),
+            });
+
+            const rawText = await response.text();
+            let data: any = {};
+            try {
+                data = rawText ? JSON.parse(rawText) : {};
+            } catch {
+                data = { success: false, error: rawText || "cloudapi 生图测试失败" };
+            }
+
+            const success = !!data.success;
+            setCloudapiProbeCredentialKey(credentialKey);
+
+            if (success) {
+                const message = data.message || "cloudapi 生图测试通过";
+                setCloudapiProbeStatus("success");
+                setCloudapiProbeMessage(message);
+                return { available: true, message, autoSwitched: false };
+            }
+
+            let message = data.error || `cloudapi 生图测试失败: ${response.status}`;
+            let autoSwitched = false;
+            if (options?.autoSwitchOnFailure && imageProviderMode === "cloudapi") {
+                setImageProviderMode("openai");
+                autoSwitched = true;
+                message = `${message}；已自动切换为 OpenAI 兼容接口（优先）`;
+            }
+            setCloudapiProbeStatus("failed");
+            setCloudapiProbeMessage(message);
+            return { available: false, message, autoSwitched };
+        } catch (error) {
+            let message = error instanceof Error ? error.message : "cloudapi 生图测试失败";
+            let autoSwitched = false;
+            if (options?.autoSwitchOnFailure && imageProviderMode === "cloudapi") {
+                setImageProviderMode("openai");
+                autoSwitched = true;
+                message = `${message}；已自动切换为 OpenAI 兼容接口（优先）`;
+            }
+            setCloudapiProbeCredentialKey(credentialKey);
+            setCloudapiProbeStatus("failed");
+            setCloudapiProbeMessage(message);
+            return { available: false, message, autoSwitched };
+        }
+    };
+
+    const prepareImageExecutionPlan = async (needsImageWork: boolean) => {
+        if (!needsImageWork || imageProviderMode !== "cloudapi") {
+            return {
+                effectiveProviderMode: imageProviderMode,
+                effectiveImageProviderPriority: imageProviderPriority,
+                effectiveSwitchedImageProviderPriority: switchedImageProviderPriority,
+                precheckMessage: "",
+            };
+        }
+
+        const probe = await runCloudapiProbe({ autoSwitchOnFailure: true, silent: true });
+        if (!probe.available) {
+            return {
+                effectiveProviderMode: "openai" as const,
+                effectiveImageProviderPriority: "openai",
+                effectiveSwitchedImageProviderPriority: "openai",
+                precheckMessage: probe.message,
+            };
+        }
+
+        return {
+            effectiveProviderMode: imageProviderMode,
+            effectiveImageProviderPriority: imageProviderPriority,
+            effectiveSwitchedImageProviderPriority: switchedImageProviderPriority,
+            precheckMessage: probe.message,
+        };
+    };
+
     const resolveTaskIds = () => {
         let finalTaskId = taskId.trim();
         let finalCourseId = courseId.trim();
@@ -212,13 +413,21 @@ export function InjectConfigModal({
             }
         }
 
-        if (!finalLibraryFolderId) {
-            try {
-                const parsed = parsePolymasUrl(taskId.trim().includes("http") ? taskId.trim() : `https://example.com?${taskId.trim()}`);
-                finalLibraryFolderId = parsed?.libraryFolderId || "";
-            } catch {
-                // ignore
+        const storedContext = finalTaskId ? getStoredTaskContext(finalTaskId) : null;
+        if (storedContext) {
+            if (!finalCourseId) finalCourseId = storedContext.courseId || "";
+            if (!finalLibraryFolderId) finalLibraryFolderId = storedContext.libraryFolderId || "";
+
+            if (!courseId.trim() && storedContext.courseId) {
+                setCourseId(storedContext.courseId);
             }
+            if (!libraryFolderId.trim() && storedContext.libraryFolderId) {
+                setLibraryFolderId(storedContext.libraryFolderId);
+            }
+        }
+
+        if (finalTaskId && (finalCourseId || finalLibraryFolderId)) {
+            persistTaskContext(finalTaskId, finalCourseId, finalLibraryFolderId);
         }
 
         return { finalTaskId, finalCourseId, finalLibraryFolderId };
@@ -285,10 +494,23 @@ export function InjectConfigModal({
             setError("请先填写目标训练任务 ID 或完整链接");
             return;
         }
+        if (regenTarget === "cover" && !finalCourseId) {
+            setError("重新生成课程封面图需要 courseId，请粘贴完整任务链接后重试");
+            return;
+        }
         if (regenTarget === "background" && !regenStepId) {
             setError("请选择要重生背景图的阶段");
             return;
         }
+        if (regenTarget === "background" && (!finalCourseId || !finalLibraryFolderId)) {
+            setError("重新生成阶段背景图需要 courseId 与 libraryFolderId，请粘贴完整任务链接后重试");
+            return;
+        }
+
+        const imageExecutionPlan = await prepareImageExecutionPlan(true);
+        const effectiveProviderMode = imageExecutionPlan.effectiveProviderMode;
+        const effectiveImageProviderPriority = imageExecutionPlan.effectiveImageProviderPriority;
+        const effectiveSwitchedImageProviderPriority = imageExecutionPlan.effectiveSwitchedImageProviderPriority;
 
         let llmSettings: any = undefined;
         try {
@@ -317,7 +539,9 @@ export function InjectConfigModal({
 
         setRegeneratingImage(true);
         setRegenMessage(
-            regenTarget === "cover"
+            imageExecutionPlan.precheckMessage && effectiveProviderMode !== imageProviderMode
+                ? imageExecutionPlan.precheckMessage
+                : regenTarget === "cover"
                 ? "正在重新生成课程封面图..."
                 : regenTarget === "background"
                     ? "正在重新生成阶段背景图..."
@@ -355,7 +579,8 @@ export function InjectConfigModal({
                 },
                 llmSettings,
                 coverStylePrompt: coverStylePrompt.trim() || undefined,
-                imageProviderPriority,
+                imageModel: effectiveProviderMode === "openai" ? imageModel : undefined,
+                imageProviderPriority: effectiveImageProviderPriority,
                 trainTaskName,
                 trainDescription,
             };
@@ -365,10 +590,14 @@ export function InjectConfigModal({
                     await callRegenerateApi({
                         ...basePayload,
                         targetType: "cover",
-                        imageProviderPriority,
+                        imageProviderPriority: effectiveImageProviderPriority,
                     });
                     return true;
                 } catch (firstErr) {
+                    if (effectiveSwitchedImageProviderPriority === effectiveImageProviderPriority) {
+                        console.warn("[InjectModal] 重生封面失败，当前执行计划已禁用 cloudapi 回退:", firstErr);
+                        return false;
+                    }
                     console.warn("[InjectModal] 重生封面首次失败，切换提供方重试:", firstErr);
                     setRegenMessage("封面图首次生成失败，正在切换生图方式重试（1/1）...");
                     await new Promise((resolve) => setTimeout(resolve, 1200));
@@ -376,7 +605,7 @@ export function InjectConfigModal({
                         await callRegenerateApi({
                             ...basePayload,
                             targetType: "cover",
-                            imageProviderPriority: switchedImageProviderPriority,
+                            imageProviderPriority: effectiveSwitchedImageProviderPriority,
                         });
                         return true;
                     } catch (secondErr) {
@@ -554,7 +783,12 @@ export function InjectConfigModal({
         setSummary(null);
         setProgressLogs([]);
 
-        const shouldRunPostImageBatch = injectScript && (injectCoverImage || injectBackgroundImage);
+        const needsImageWork = injectScript && (injectCoverImage || injectBackgroundImage);
+        const imageExecutionPlan = await prepareImageExecutionPlan(needsImageWork);
+        const effectiveProviderMode = imageExecutionPlan.effectiveProviderMode;
+        const effectiveImageProviderPriority = imageExecutionPlan.effectiveImageProviderPriority;
+        const effectiveSwitchedImageProviderPriority = imageExecutionPlan.effectiveSwitchedImageProviderPriority;
+        const shouldRunPostImageBatch = needsImageWork;
         const shouldInjectCoverInMain = injectCoverImage && !shouldRunPostImageBatch;
         const shouldInjectBgInMain = injectBackgroundImage && !shouldRunPostImageBatch;
 
@@ -584,6 +818,15 @@ export function InjectConfigModal({
             if (shouldRunPostImageBatch) {
                 setProgressLogs((prev) => [
                     ...prev,
+                    ...(imageExecutionPlan.precheckMessage && effectiveProviderMode !== imageProviderMode
+                        ? [{
+                            type: "progress" as const,
+                            phase: "script" as const,
+                            message: imageExecutionPlan.precheckMessage,
+                            current: 0,
+                            total: 1,
+                        }]
+                        : []),
                     {
                         type: "progress",
                         phase: "script",
@@ -608,7 +851,8 @@ export function InjectConfigModal({
                     llmSettings,
                     extractionMode,
                     coverStylePrompt: coverStylePrompt.trim() || undefined,
-                    imageProviderPriority,
+                    imageModel: effectiveProviderMode === "openai" ? imageModel : undefined,
+                    imageProviderPriority: effectiveImageProviderPriority,
                     injectCoverImage: shouldInjectCoverInMain,
                     injectBackgroundImage: shouldInjectBgInMain,
                     scriptMarkdown: injectScript ? effectiveScriptMd : undefined,
@@ -747,7 +991,8 @@ export function InjectConfigModal({
                     },
                     llmSettings,
                     coverStylePrompt: coverStylePrompt.trim() || undefined,
-                    imageProviderPriority,
+                    imageModel: effectiveProviderMode === "openai" ? imageModel : undefined,
+                    imageProviderPriority: effectiveImageProviderPriority,
                     trainTaskName: parseTaskConfig(effectiveScriptMd || "")?.trainTaskName || "训练任务",
                     trainDescription: parseTaskConfig(effectiveScriptMd || "")?.description || "",
                 };
@@ -757,10 +1002,14 @@ export function InjectConfigModal({
                         await callRegenerateApi({
                             ...baseRegenPayload,
                             targetType: "cover",
-                            imageProviderPriority,
+                            imageProviderPriority: effectiveImageProviderPriority,
                         });
                         return true;
                     } catch (firstErr) {
+                        if (effectiveSwitchedImageProviderPriority === effectiveImageProviderPriority) {
+                            console.warn("[InjectModal] 注入后补全封面失败，当前执行计划已禁用 cloudapi 回退:", firstErr);
+                            return false;
+                        }
                         console.warn("[InjectModal] 注入后补全封面首次失败，切换提供方重试:", firstErr);
                         pushImageLog("封面图首次补全失败，正在切换生图方式重试（1/1）...", currentImageTask, totalImageTasks);
                         await new Promise((resolve) => setTimeout(resolve, 1200));
@@ -768,7 +1017,7 @@ export function InjectConfigModal({
                             await callRegenerateApi({
                                 ...baseRegenPayload,
                                 targetType: "cover",
-                                imageProviderPriority: switchedImageProviderPriority,
+                                imageProviderPriority: effectiveSwitchedImageProviderPriority,
                             });
                             return true;
                         } catch (secondErr) {
@@ -966,15 +1215,46 @@ export function InjectConfigModal({
                                         value={taskId}
                                         onChange={(e) => {
                                             const val = e.target.value;
+                                            const trimmed = val.trim();
                                             setTaskId(val);
-                                            // 边输入边解析
-                                            if (val.includes("http") || val.includes("?")) {
-                                                const parsed = parsePolymasUrl(val);
+
+                                            if (!trimmed) {
+                                                setCourseId("");
+                                                setLibraryFolderId("");
+                                                setTaskContextHint("");
+                                                return;
+                                            }
+
+                                            // 边输入边解析完整链接，并把解析出的上下文按 trainTaskId 缓存
+                                            if (trimmed.includes("http") || trimmed.includes("?")) {
+                                                const parsed = parsePolymasUrl(trimmed);
                                                 if (parsed) {
+                                                    const storedContext = getStoredTaskContext(parsed.trainTaskId);
+                                                    const resolvedCourseId = parsed.courseId || storedContext?.courseId || "";
+                                                    const resolvedLibraryFolderId = parsed.libraryFolderId || storedContext?.libraryFolderId || "";
                                                     setTaskId(parsed.trainTaskId);
-                                                    setCourseId(parsed.courseId);
-                                                    setLibraryFolderId(parsed.libraryFolderId || "");
+                                                    setCourseId(resolvedCourseId);
+                                                    setLibraryFolderId(resolvedLibraryFolderId);
+                                                    if (!parsed.libraryFolderId && storedContext?.libraryFolderId) {
+                                                        setTaskContextHint("已从本地缓存恢复该实训的 libraryFolderId");
+                                                    } else {
+                                                        setTaskContextHint("");
+                                                    }
+                                                    persistTaskContext(parsed.trainTaskId, resolvedCourseId, resolvedLibraryFolderId);
+                                                    return;
                                                 }
+                                            }
+
+                                            const storedContext = getStoredTaskContext(trimmed);
+                                            if (storedContext) {
+                                                setCourseId(storedContext.courseId || "");
+                                                setLibraryFolderId(storedContext.libraryFolderId || "");
+                                                setTaskContextHint("已从本地缓存恢复该实训的 libraryFolderId");
+                                            } else {
+                                                // 切换到一个没有缓存的新任务时，清掉上一个任务残留的上下文
+                                                setCourseId("");
+                                                setLibraryFolderId("");
+                                                setTaskContextHint("");
                                             }
                                         }}
                                         placeholder="请完整复制平台中该任务的 URL 链接并粘贴到此处"
@@ -983,6 +1263,11 @@ export function InjectConfigModal({
                                     {courseId && (
                                         <p className="text-xs text-emerald-600 mt-1.5 ml-1">
                                             ✅ 已自动解析提取出双 ID (业务 ID: {courseId})
+                                        </p>
+                                    )}
+                                    {taskContextHint && (
+                                        <p className="text-xs text-amber-600 mt-1.5 ml-1">
+                                            {taskContextHint}
                                         </p>
                                     )}
                                 </div>
@@ -1052,7 +1337,28 @@ export function InjectConfigModal({
                                 </div>
 
                                 <div className="pt-3 border-t border-slate-100 space-y-2">
-                                    <label className="text-xs font-medium text-slate-700 block">生图方式</label>
+                                    <div className="flex items-center justify-between gap-3">
+                                        <label className="text-xs font-medium text-slate-700 block">生图方式</label>
+                                        <button
+                                            type="button"
+                                            onClick={async () => {
+                                                if (!handleSaveCredentials()) return;
+                                                const result = await runCloudapiProbe({ force: true, autoSwitchOnFailure: true });
+                                                if (!result.available && result.autoSwitched) {
+                                                    setError("");
+                                                }
+                                            }}
+                                            disabled={cloudapiProbeStatus === "testing"}
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            {cloudapiProbeStatus === "testing" ? (
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            ) : (
+                                                <Play className="w-3.5 h-3.5" />
+                                            )}
+                                            测试 cloudapi
+                                        </button>
+                                    </div>
                                     <select
                                         value={imageProviderMode}
                                         onChange={(e) => setImageProviderMode(e.target.value as "cloudapi" | "openai")}
@@ -1062,8 +1368,29 @@ export function InjectConfigModal({
                                             <option key={item.id} value={item.id}>{item.name}</option>
                                         ))}
                                     </select>
-                                    <p className="text-xs text-slate-400">仅选择调用方式：当前方式失败后会自动回退到另一种方式。</p>
+                                    <p className="text-xs text-slate-400">可先测试 cloudapi 可用性。若当前账号下 cloudapi 不可用，正式执行前也会自动切到 OpenAI 兼容接口，避免每张图都先失败一遍。</p>
+                                    {cloudapiProbeMessage && (
+                                        <p className={`text-xs ${cloudapiProbeStatus === "success" ? "text-emerald-600" : cloudapiProbeStatus === "failed" ? "text-amber-600" : "text-slate-500"}`}>
+                                            {cloudapiProbeMessage}
+                                        </p>
+                                    )}
                                 </div>
+
+                                {imageProviderMode === "openai" && (
+                                    <div className="pt-3 border-t border-slate-100 space-y-2">
+                                        <label className="text-xs font-medium text-slate-700 block">图片模型</label>
+                                        <select
+                                            value={imageModel}
+                                            onChange={(e) => setImageModel(e.target.value)}
+                                            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white"
+                                        >
+                                            {IMAGE_MODEL_OPTIONS.map((item) => (
+                                                <option key={item.id} value={item.id}>{item.name}</option>
+                                            ))}
+                                        </select>
+                                        <p className="text-xs text-slate-400">仅在 OpenAI 兼容接口生图时生效。当前支持 `doubao-seedream-4-0-250828` 和 `dall-e-3`。</p>
+                                    </div>
+                                )}
 
                                 <div className="pt-3 border-t border-slate-100 space-y-2">
                                     <label className="text-xs font-medium text-slate-700 block">图片注入开关</label>

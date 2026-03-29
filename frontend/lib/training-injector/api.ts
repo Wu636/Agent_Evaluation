@@ -9,11 +9,15 @@ import { PolymasCredentials, PolymasScriptStep, PolymasScriptFlow } from "./type
 const POLYMAS_BASE = "https://cloudapi.polymas.com/teacher-course/abilityTrain";
 const POLYMAS_AI_BASE = "https://cloudapi.polymas.com/ai-tools";
 const POLYMAS_RESOURCE_BASE = "https://cloudapi.polymas.com/basic-resource";
-const POLYMAS_OPENAI_IMAGE_ENDPOINT =
+const POLYMAS_COMPAT_IMAGE_ENDPOINT =
+    process.env.POLYMAS_COMPAT_IMAGE_ENDPOINT ||
     process.env.POLYMAS_OPENAI_IMAGE_ENDPOINT ||
     "https://llm-service-beta.polymas.com/api/openai/v1/images/generations";
+const POLYMAS_DALLE_IMAGE_ENDPOINT =
+    process.env.POLYMAS_DALLE_IMAGE_ENDPOINT ||
+    "https://llm-service.polymas.com/api/openai/v1/images/generations";
 const ARK_IMAGE_ENDPOINT = process.env.ARK_IMAGE_ENDPOINT || "https://ark.cn-beijing.volces.com/api/v3/images/generations";
-const ARK_IMAGE_MODEL = process.env.ARK_IMAGE_MODEL || "dall-e-3";
+const ARK_IMAGE_MODEL = process.env.ARK_IMAGE_MODEL || "doubao-seedream-4-0-250828";
 const POLYMAS_IMAGE_FALLBACK_API_KEY =
     process.env.POLYMAS_IMAGE_FALLBACK_API_KEY ||
     "sk-jqzsYB7vjZ6NEdfsP7oZ17Gti45cSMrHSCxQJzq7hz8Coq7h";
@@ -21,8 +25,15 @@ const POLYMAS_IMAGE_FALLBACK_API_KEY =
 type ImageProvider = "cloudapi" | "openai";
 const DEFAULT_IMAGE_PROVIDER_PRIORITY: ImageProvider[] = ["cloudapi", "openai"];
 
-const DEFAULT_BG_IMAGE_REQUIREMENT = "专业、清晰、教学场景背景图，严格16:9横版宽屏构图，无任何文字和英文单词，中国风格优先";
-const DEFAULT_COVER_STYLE_REQUIREMENT = "专业、简洁、教学场景感，16:9 横版封面，无任何文字和英文单词，中国风格优先";
+const DEFAULT_BG_IMAGE_REQUIREMENT = "专业写实教学场景背景图，严格16:9横版宽屏构图，单一完整场景，画面干净稳定，适合作为课程阶段背景；禁止拼贴、多宫格、海报排版、极端透视、鱼眼、抽象艺术、卡通漫画；无任何文字、英文单词、logo、字幕、水印，中国视觉风格优先";
+const DEFAULT_COVER_STYLE_REQUIREMENT = "专业、简洁、写实的课程封面图，严格16:9横版宽屏构图，主体明确、构图完整、画面克制；禁止拼贴、多宫格、海报排版、卡通漫画、抽象风格；无任何文字、英文单词、logo、水印，中国风格优先";
+const DEFAULT_SEEDREAM_4_IMAGE_SIZE = "1792x1024";
+const CLOUDAPI_PROBE_PAYLOAD = {
+    trainName: "生图连通性测试",
+    trainDescription: "用于检测当前平台凭证下 cloudapi 生图接口是否可用",
+    stageName: "接口预检查",
+    stageDescription: "生成一张专业、简洁、16:9 横版教学场景背景图，无任何文字和英文单词",
+};
 
 const IMAGE_GENERATE_TIMEOUT_MS = 25000;
 const COVER_GENERATE_TIMEOUT_MS = 60000;
@@ -111,6 +122,77 @@ export interface BgImageResult {
     fileUrl: string;
 }
 
+export interface ProviderProbeResult {
+    ok: boolean;
+    error?: string;
+    fileId?: string;
+    fileUrl?: string;
+}
+
+async function requestCloudapiImageGeneration(
+    payload: {
+        trainName: string;
+        trainDescription: string;
+        stageName: string;
+        stageDescription: string;
+    },
+    credentials: PolymasCredentials,
+    timeoutMs: number
+): Promise<ProviderProbeResult> {
+    try {
+        const res = await fetchWithTimeout(`${POLYMAS_AI_BASE}/image/generate`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json; charset=utf-8",
+                Authorization: credentials.authorization,
+                Cookie: credentials.cookie,
+                "User-Agent":
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+            },
+            body: JSON.stringify(payload),
+        }, timeoutMs);
+
+        if (!res.ok) {
+            const rawText = await res.text().catch(() => "");
+            return {
+                ok: false,
+                error: `cloudapi 请求失败: ${res.status} ${res.statusText}${rawText ? ` - ${rawText.substring(0, 160)}` : ""}`,
+            };
+        }
+
+        const result = await res.json();
+        if (result.code === 200 || result.success === true) {
+            const fileUrl = extractImageUrlFromData(result.data);
+            const fileId = typeof result?.data?.fileId === "string" ? result.data.fileId : "";
+            if (fileUrl) {
+                return {
+                    ok: true,
+                    fileId: fileId || undefined,
+                    fileUrl,
+                };
+            }
+            return {
+                ok: false,
+                error: "cloudapi 返回成功，但缺少可用图片地址",
+            };
+        }
+
+        return {
+            ok: false,
+            error: String(result?.msg || result?.message || result?.error || "cloudapi 生图失败"),
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : "cloudapi 生图探测失败",
+        };
+    }
+}
+
+export async function probeCloudapiImageGeneration(credentials: PolymasCredentials): Promise<ProviderProbeResult> {
+    return requestCloudapiImageGeneration(CLOUDAPI_PROBE_PAYLOAD, credentials, IMAGE_GENERATE_TIMEOUT_MS);
+}
+
 function extractImageUrlFromData(data: any): string | null {
     if (!data || typeof data !== "object") return null;
     return (
@@ -139,6 +221,32 @@ function normalizeEndpoint(url?: string): string {
     if (!raw) return "";
     if (/^https?:\/\//i.test(raw)) return raw;
     return `https://${raw.replace(/^\/\//, "")}`;
+}
+
+function isDalleImageModel(model?: string): boolean {
+    return /^dall-e/i.test(String(model || "").trim());
+}
+
+function isSeedream4ImageModel(model?: string): boolean {
+    return /^doubao-seedream-4/i.test(String(model || "").trim());
+}
+
+function buildImageEndpointCandidates(selectedModel: string, preferredEndpoint?: string): string[] {
+    const preferred = normalizeEndpoint(preferredEndpoint);
+    const candidates = isDalleImageModel(selectedModel)
+        ? [
+            preferred,
+            normalizeEndpoint(POLYMAS_DALLE_IMAGE_ENDPOINT),
+        ]
+        : [
+            preferred,
+            normalizeEndpoint(POLYMAS_COMPAT_IMAGE_ENDPOINT),
+            normalizeEndpoint(ARK_IMAGE_ENDPOINT),
+        ];
+
+    return candidates
+        .filter(Boolean)
+        .filter((endpoint, index, arr) => arr.indexOf(endpoint) === index);
 }
 
 function extractGeneratedImageFileUrl(result: any): string | null {
@@ -188,12 +296,13 @@ function parseImageProviderPriority(input?: string | ImageProvider[]): ImageProv
 function resolveImageProviderPriority(customPriority?: string | ImageProvider[]): ImageProvider[] {
     const envPriority = parseImageProviderPriority(process.env.POLYMAS_IMAGE_PROVIDER_PRIORITY);
     const customParsed = parseImageProviderPriority(customPriority);
-    const base = customParsed.length > 0 ? customParsed : (envPriority.length > 0 ? envPriority : DEFAULT_IMAGE_PROVIDER_PRIORITY);
-    const merged = [...base];
-    for (const provider of DEFAULT_IMAGE_PROVIDER_PRIORITY) {
-        if (!merged.includes(provider)) merged.push(provider);
+    if (customParsed.length > 0) {
+        return customParsed;
     }
-    return merged;
+    if (envPriority.length > 0) {
+        return envPriority;
+    }
+    return DEFAULT_IMAGE_PROVIDER_PRIORITY;
 }
 
 async function generateImageViaArk(
@@ -213,13 +322,8 @@ async function generateImageViaArk(
         ? Number(options?.timeoutMs)
         : IMAGE_GENERATE_TIMEOUT_MS;
 
-    const endpointCandidates = [
-        normalizeEndpoint(options?.endpoint),
-        normalizeEndpoint(POLYMAS_OPENAI_IMAGE_ENDPOINT),
-        normalizeEndpoint(ARK_IMAGE_ENDPOINT),
-    ]
-        .filter(Boolean)
-        .filter((endpoint, index, arr) => arr.indexOf(endpoint) === index);
+    const selectedModel = options?.imageModel || ARK_IMAGE_MODEL;
+    const endpointCandidates = buildImageEndpointCandidates(selectedModel, options?.endpoint);
 
     for (const endpoint of endpointCandidates) {
         for (const apiKey of apiKeys) {
@@ -229,8 +333,8 @@ async function generateImageViaArk(
                 { "api-key": apiKey, Authorization: `Bearer ${apiKey}` },
             ];
 
-            const selectedModel = options?.imageModel || ARK_IMAGE_MODEL;
-            const isDalleModel = /^dall-e/i.test(selectedModel);
+            const isDalleModel = isDalleImageModel(selectedModel);
+            const isSeedream4Model = isSeedream4ImageModel(selectedModel);
             const requestBody = isDalleModel
                 ? {
                     model: selectedModel,
@@ -239,7 +343,16 @@ async function generateImageViaArk(
                     size: "1792x1024",
                     quality: "standard",
                 }
-                : {
+                : isSeedream4Model
+                    ? {
+                        model: selectedModel,
+                        prompt,
+                        size: DEFAULT_SEEDREAM_4_IMAGE_SIZE,
+                        response_format: "url",
+                        sequential_image_generation: "disabled",
+                        watermark: true,
+                    }
+                    : {
                     model: selectedModel,
                     prompt,
                     watermark: true,

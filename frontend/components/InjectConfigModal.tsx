@@ -123,6 +123,7 @@ export function InjectConfigModal({
     const [extractionMode, setExtractionMode] = useState<"hybrid" | "llm" | "regex">("regex");
     const [llmModel, setLlmModel] = useState("");
     const [coverStylePrompt, setCoverStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染， 电影级光影 高清细节，16:9宽屏构图，中国风格优先");
+    const [backgroundStylePrompt, setBackgroundStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染，电影级光影，16:9宽屏构图，单一完整场景，适合作为教学阶段背景，中国风格优先");
     const [imageProviderMode, setImageProviderMode] = useState<"cloudapi" | "openai">("cloudapi");
     const [imageModel, setImageModel] = useState("doubao-seedream-4-0-250828");
     const [taskContextHint, setTaskContextHint] = useState("");
@@ -579,6 +580,7 @@ export function InjectConfigModal({
                 },
                 llmSettings,
                 coverStylePrompt: coverStylePrompt.trim() || undefined,
+                backgroundStylePrompt: backgroundStylePrompt.trim() || undefined,
                 imageModel: effectiveProviderMode === "openai" ? imageModel : undefined,
                 imageProviderPriority: effectiveImageProviderPriority,
                 trainTaskName,
@@ -851,6 +853,7 @@ export function InjectConfigModal({
                     llmSettings,
                     extractionMode,
                     coverStylePrompt: coverStylePrompt.trim() || undefined,
+                    backgroundStylePrompt: backgroundStylePrompt.trim() || undefined,
                     imageModel: effectiveProviderMode === "openai" ? imageModel : undefined,
                     imageProviderPriority: effectiveImageProviderPriority,
                     injectCoverImage: shouldInjectCoverInMain,
@@ -991,6 +994,7 @@ export function InjectConfigModal({
                     },
                     llmSettings,
                     coverStylePrompt: coverStylePrompt.trim() || undefined,
+                    backgroundStylePrompt: backgroundStylePrompt.trim() || undefined,
                     imageModel: effectiveProviderMode === "openai" ? imageModel : undefined,
                     imageProviderPriority: effectiveImageProviderPriority,
                     trainTaskName: parseTaskConfig(effectiveScriptMd || "")?.trainTaskName || "训练任务",
@@ -1334,6 +1338,18 @@ export function InjectConfigModal({
                                         className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
                                     />
                                     <p className="text-xs text-slate-400">仅影响课程封面图，不影响阶段背景图。</p>
+                                </div>
+
+                                <div className="pt-3 border-t border-slate-100 space-y-2">
+                                    <label className="text-xs font-medium text-slate-700 block">阶段背景图风格（可选）</label>
+                                    <input
+                                        type="text"
+                                        value={backgroundStylePrompt}
+                                        onChange={(e) => setBackgroundStylePrompt(e.target.value)}
+                                        placeholder="例如：现代医学实训室、暖色教学空间、少人物、干净写实、禁止海报拼贴"
+                                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                    />
+                                    <p className="text-xs text-slate-400">仅影响阶段背景图，不影响课程封面图。</p>
                                 </div>
 
                                 <div className="pt-3 border-t border-slate-100 space-y-2">

@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
                     llmSettings,
                     extractionMode = "hybrid",
                     coverStylePrompt,
+                    backgroundStylePrompt,
                     imageModel,
                     imageProviderPriority,
                     injectCoverImage = true,
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
                     llmSettings?: LLMSettings;
                     extractionMode?: "hybrid" | "llm" | "regex";
                     coverStylePrompt?: string;
+                    backgroundStylePrompt?: string;
                     imageModel?: string;
                     imageProviderPriority?: string;
                     injectCoverImage?: boolean;
@@ -292,6 +294,7 @@ export async function POST(request: NextRequest) {
                                         trainDescription: trainDesc,
                                         stageName: step.stepName,
                                         stageDescription: step.description || "",
+                                        backgroundStylePrompt: (backgroundStylePrompt || "").trim() || undefined,
                                         arkApiKey: llmSettings?.apiKey,
                                         llmApiUrl: llmSettings?.apiUrl,
                                         imageModel: imageModel || undefined,

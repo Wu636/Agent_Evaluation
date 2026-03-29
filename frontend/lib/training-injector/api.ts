@@ -58,12 +58,14 @@ function buildBackgroundFallbackPrompt(params: {
     trainDescription: string;
     stageName: string;
     stageDescription: string;
+    backgroundStylePrompt?: string;
 }): string {
     return [
         `训练任务：${params.trainName}`,
         `任务描述：${params.trainDescription}`,
         `阶段：${params.stageName}`,
         `阶段描述：${params.stageDescription}`,
+        ...(params.backgroundStylePrompt ? [`背景风格要求：${params.backgroundStylePrompt}`] : []),
         `要求：${DEFAULT_BG_IMAGE_REQUIREMENT}`,
     ].join("\n");
 }
@@ -427,6 +429,7 @@ export async function generateBackgroundImage(
         trainDescription: string;
         stageName: string;
         stageDescription: string;
+        backgroundStylePrompt?: string;
         arkApiKey?: string;
         llmApiUrl?: string;
         imageModel?: string;
@@ -454,7 +457,9 @@ export async function generateBackgroundImage(
                         trainName: params.trainName,
                         trainDescription: params.trainDescription,
                         stageName: params.stageName,
-                        stageDescription: params.stageDescription,
+                        stageDescription: params.backgroundStylePrompt
+                            ? `${params.stageDescription}\n背景风格要求：${params.backgroundStylePrompt}`
+                            : params.stageDescription,
                     }),
                 }, IMAGE_GENERATE_TIMEOUT_MS);
 

@@ -40,6 +40,7 @@ export interface InjectRequest {
     scriptMarkdown?: string;     // 训练剧本 Markdown 内容
     rubricMarkdown?: string;     // 评分标准 Markdown 内容
     coverStylePrompt?: string;   // 课程封面图风格提示
+    backgroundStylePrompt?: string; // 阶段背景图风格提示
     injectMode: 'replace' | 'append';  // 全新创建 / 追加
 }
 

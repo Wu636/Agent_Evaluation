@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
             credentials,
             llmSettings,
             coverStylePrompt,
+            backgroundStylePrompt,
             imageModel,
             imageProviderPriority,
             targetType,
@@ -38,6 +39,7 @@ export async function POST(request: NextRequest) {
             credentials: PolymasCredentials;
             llmSettings?: LLMSettings;
             coverStylePrompt?: string;
+            backgroundStylePrompt?: string;
             imageModel?: string;
             imageProviderPriority?: string;
             targetType: "cover" | "background" | "all";
@@ -211,6 +213,7 @@ export async function POST(request: NextRequest) {
                     trainDescription: String(trainDescription || "").trim() || "",
                     stageName,
                     stageDescription: description,
+                    backgroundStylePrompt: String(backgroundStylePrompt || "").trim() || undefined,
                     arkApiKey: llmSettings?.apiKey,
                     llmApiUrl: llmSettings?.apiUrl,
                     imageModel: String(imageModel || "").trim() || undefined,
@@ -349,6 +352,7 @@ export async function POST(request: NextRequest) {
                                     trainDescription: finalDesc,
                                     stageName,
                                     stageDescription: description,
+                                    backgroundStylePrompt: String(backgroundStylePrompt || "").trim() || undefined,
                                     arkApiKey: llmSettings?.apiKey,
                                     llmApiUrl: llmSettings?.apiUrl,
                                     imageModel: String(imageModel || "").trim() || undefined,

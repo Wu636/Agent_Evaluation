@@ -16,6 +16,7 @@ import {
     getScriptModeLabel,
     validateTrainingScriptPlan,
 } from "@/lib/training-generator/generator";
+import { extractScriptStructure } from "@/lib/training-generator/script-tools";
 import { parseRubricMarkdown, parseTaskConfig, parseTrainingScript } from "@/lib/training-injector/parser";
 import { convertDocxToText } from "@/lib/converters/docx-converter";
 import { ScriptMode, TrainingScriptPlan } from "@/lib/training-generator/types";
@@ -147,9 +148,17 @@ export async function POST(request: NextRequest) {
                 const continueDeadline = Date.now() + 600_000;
                 const maxContinuationAttempts = 12;
 
+                const extractStageNumber = (heading: string): number | null => {
+                    const match = heading.match(/^###\s*阶段\s*(\d+)(?:\b|[：:])/i);
+                    if (!match) return null;
+                    const value = Number.parseInt(match[1], 10);
+                    return Number.isFinite(value) ? value : null;
+                };
+
                 const validateScriptStructure = (content: string): { ok: boolean; reason?: string } => {
                     const parsedTask = parseTaskConfig(content);
                     const parsedSteps = parseTrainingScript(content);
+                    const structure = extractScriptStructure(content);
 
                     if (!parsedTask?.trainTaskName) {
                         return { ok: false, reason: "缺少任务名称" };
@@ -159,10 +168,32 @@ export async function POST(request: NextRequest) {
                         return { ok: false, reason: "未解析到任何阶段" };
                     }
 
+                    let lastStageNumber: number | null = null;
+                    for (const stage of structure.stages) {
+                        const stageNumber = extractStageNumber(stage.heading);
+                        if (stageNumber === null) {
+                            continue;
+                        }
+                        if (lastStageNumber !== null && stageNumber <= lastStageNumber) {
+                            return {
+                                ok: false,
+                                reason: `阶段编号出现回卷（阶段${lastStageNumber}后出现阶段${stageNumber}）`,
+                            };
+                        }
+                        lastStageNumber = stageNumber;
+                    }
+
                     if (modulePlan?.modules?.length && parsedSteps.length < modulePlan.modules.length) {
                         return {
                             ok: false,
                             reason: `阶段数量不足（期望≥${modulePlan.modules.length}，实际=${parsedSteps.length})`,
+                        };
+                    }
+
+                    if (modulePlan?.modules?.length && parsedSteps.length > modulePlan.modules.length) {
+                        return {
+                            ok: false,
+                            reason: `阶段数量异常重复（期望=${modulePlan.modules.length}，实际=${parsedSteps.length})`,
                         };
                     }
 
@@ -201,6 +232,116 @@ export async function POST(request: NextRequest) {
                     return clean.trim();
                 };
 
+                const enforceMonotonicStageOrder = (content: string): string => {
+                    const structure = extractScriptStructure(content);
+                    if (structure.stages.length <= 1) {
+                        return content;
+                    }
+
+                    const guardedStages: string[] = [];
+                    let lastStageNumber: number | null = null;
+                    let truncated = false;
+
+                    for (const stage of structure.stages) {
+                        const stageNumber = extractStageNumber(stage.heading);
+                        if (stageNumber !== null && lastStageNumber !== null && stageNumber <= lastStageNumber) {
+                            truncated = true;
+                            break;
+                        }
+
+                        guardedStages.push(stage.markdown.trim());
+                        if (stageNumber !== null) {
+                            lastStageNumber = stageNumber;
+                        }
+
+                        if (modulePlan?.modules?.length && guardedStages.length >= modulePlan.modules.length) {
+                            if (structure.stages.length > guardedStages.length) {
+                                truncated = true;
+                            }
+                            break;
+                        }
+                    }
+
+                    if (!truncated) {
+                        return content;
+                    }
+
+                    return [
+                        structure.prefix,
+                        guardedStages.join("\n\n"),
+                    ]
+                        .filter(Boolean)
+                        .join("\n\n")
+                        .trim();
+                };
+
+                const applyScriptContinuationGuards = (content: string): string => {
+                    const clean = cleanupMarkdownFence(content);
+                    return enforceMonotonicStageOrder(normalizeScriptRestartLoop(clean));
+                };
+
+                    const scoreScriptCompleteness = (content: string): number => {
+                        const parsedTask = parseTaskConfig(content);
+                        const parsedSteps = parseTrainingScript(content);
+                        let score = parsedTask?.trainTaskName ? 2 : 0;
+
+                        parsedSteps.forEach((step) => {
+                            if (String(step.description || "").trim()) score += 1;
+                            if (String(step.prologue || "").trim()) score += 1;
+                            if (String(step.llmPrompt || "").trim()) score += 3;
+                            if (String(step.flowCondition || "").trim()) score += 3;
+                            if (String(step.transitionPrompt || "").trim()) score += 1;
+                        });
+
+                        score += Math.min(content.length / 6000, 3);
+                        return score;
+                    };
+
+                    const normalizeScriptRestartLoop = (content: string): string => {
+                        const expectedStageCount = modulePlan?.modules?.length || 0;
+                        if (!expectedStageCount) return content;
+
+                        const structure = extractScriptStructure(content);
+                        if (structure.stages.length <= expectedStageCount) {
+                            return content;
+                        }
+
+                        let bestCandidate = content;
+                        let bestScore = -Infinity;
+
+                        for (let start = 0; start <= structure.stages.length - expectedStageCount; start++) {
+                            const selectedStages = structure.stages
+                                .slice(start, start + expectedStageCount)
+                                .map((stage) => stage.markdown.trim())
+                                .filter(Boolean);
+
+                            if (selectedStages.length !== expectedStageCount) continue;
+
+                            const candidate = [
+                                structure.prefix,
+                                selectedStages.join("\n\n"),
+                                structure.suffix,
+                            ].filter(Boolean).join("\n\n").trim();
+
+                            const parsedSteps = parseTrainingScript(candidate);
+                            if (parsedSteps.length !== expectedStageCount) continue;
+
+                            let score = scoreScriptCompleteness(candidate);
+                            const firstHeading = structure.stages[start]?.heading || "";
+                            if (/^###\s*阶段\s*1(?:\b|[：:])/i.test(firstHeading)) {
+                                score += 1;
+                            }
+                            score += start * 0.05;
+
+                            if (score > bestScore) {
+                                bestScore = score;
+                                bestCandidate = candidate;
+                            }
+                        }
+
+                        return bestScore > -Infinity ? bestCandidate : content;
+                    };
+
                 const isRetryableStreamError = (err: unknown): boolean => {
                     const anyErr = err as any;
                     const msg = String(anyErr?.message || err || '').toLowerCase();
@@ -223,6 +364,7 @@ export async function POST(request: NextRequest) {
 
                     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                         let fullContent = '';
+                        let emittedGuardedScript = '';
                         try {
                             if (attempt === 1) {
                                 send({ type: 'start', phase, message: startMessage });
@@ -233,10 +375,25 @@ export async function POST(request: NextRequest) {
                             const phaseStream = streamFactory();
                             for await (const chunk of phaseStream) {
                                 fullContent += chunk;
-                                send({ type: 'chunk', phase, content: chunk });
+                                if (phase === 'script') {
+                                    const guardedSnapshot = applyScriptContinuationGuards(fullContent);
+                                    const delta = guardedSnapshot.startsWith(emittedGuardedScript)
+                                        ? guardedSnapshot.slice(emittedGuardedScript.length)
+                                        : "";
+
+                                    if (delta.trim()) {
+                                        send({ type: 'chunk', phase, content: delta });
+                                    }
+
+                                    emittedGuardedScript = guardedSnapshot;
+                                } else {
+                                    send({ type: 'chunk', phase, content: chunk });
+                                }
                             }
 
-                            return cleanupMarkdownFence(fullContent);
+                            return phase === 'script'
+                                ? applyScriptContinuationGuards(fullContent)
+                                : cleanupMarkdownFence(fullContent);
                         } catch (err) {
                             lastError = err;
                             if (attempt < maxAttempts && isRetryableStreamError(err)) {
@@ -296,6 +453,7 @@ export async function POST(request: NextRequest) {
                             : `开始生成${getScriptModeLabel(resolvedScriptMode)}剧本配置...`,
                         () => generateTrainingScriptStream(teacherDocContent, apiConfig, scriptPromptTemplate || undefined, resolvedScriptMode || "general", modulePlan)
                     );
+                    fullScript = applyScriptContinuationGuards(fullScript);
 
                     for (let continuationAttempt = 1; continuationAttempt <= maxContinuationAttempts; continuationAttempt++) {
                         const scriptValidation = validateScriptStructure(fullScript);
@@ -314,6 +472,7 @@ export async function POST(request: NextRequest) {
                         });
 
                         try {
+                            const scriptBeforeContinue = fullScript;
                             let continued = "";
                             for await (const chunk of continueTrainingScriptStream(
                                 teacherDocContent,
@@ -324,9 +483,18 @@ export async function POST(request: NextRequest) {
                                 modulePlan
                             )) {
                                 continued += chunk;
-                                send({ type: 'chunk', phase: 'script', content: chunk });
                             }
-                            fullScript = cleanupMarkdownFence(`${fullScript}\n${continued}`);
+
+                            const merged = applyScriptContinuationGuards(`${scriptBeforeContinue}\n${continued}`);
+                            const delta = merged.startsWith(scriptBeforeContinue)
+                                ? merged.slice(scriptBeforeContinue.length)
+                                : "";
+
+                            if (delta.trim()) {
+                                send({ type: 'chunk', phase: 'script', content: delta });
+                            }
+
+                            fullScript = merged;
                         } catch (continueErr) {
                             console.warn("[training-generate] 剧本断点续写失败，准备继续续写重试:", continueErr);
                             if (continuationAttempt < maxContinuationAttempts && Date.now() <= continueDeadline) {
@@ -341,6 +509,7 @@ export async function POST(request: NextRequest) {
                         }
                     }
 
+                    fullScript = applyScriptContinuationGuards(fullScript);
                     const finalScriptValidation = validateScriptStructure(fullScript);
                     if (!finalScriptValidation.ok) {
                         throw new Error(`生成结果疑似截断：${finalScriptValidation.reason || "剧本结构不完整"}，请重试`);

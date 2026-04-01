@@ -14,6 +14,7 @@ import {
     generateTrainingScriptStream,
     generateTrainingRubricStream,
     getScriptModeLabel,
+    repairTrainingScriptStructure,
     validateTrainingScriptPlan,
 } from "@/lib/training-generator/generator";
 import { extractScriptStructure } from "@/lib/training-generator/script-tools";
@@ -145,7 +146,7 @@ export async function POST(request: NextRequest) {
                 const send = (event: unknown) => {
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
                 };
-                const continueDeadline = Date.now() + 600_000;
+                const continuationWindowMs = 600_000;
                 const maxContinuationAttempts = 12;
 
                 const extractStageNumber = (heading: string): number | null => {
@@ -159,6 +160,8 @@ export async function POST(request: NextRequest) {
                     const parsedTask = parseTaskConfig(content);
                     const parsedSteps = parseTrainingScript(content);
                     const structure = extractScriptStructure(content);
+                    const stageCount = structure.stages.length || parsedSteps.length;
+                    const stageOneMatches = structure.stages.filter((stage) => /^###\s*阶段\s*1(?:\b|[：:])/i.test(stage.heading));
 
                     if (!parsedTask?.trainTaskName) {
                         return { ok: false, reason: "缺少任务名称" };
@@ -166,6 +169,10 @@ export async function POST(request: NextRequest) {
 
                     if (parsedSteps.length === 0) {
                         return { ok: false, reason: "未解析到任何阶段" };
+                    }
+
+                    if (stageOneMatches.length > 1) {
+                        return { ok: false, reason: "检测到剧本内容从阶段1重新开始，疑似重复生成" };
                     }
 
                     let lastStageNumber: number | null = null;
@@ -183,17 +190,17 @@ export async function POST(request: NextRequest) {
                         lastStageNumber = stageNumber;
                     }
 
-                    if (modulePlan?.modules?.length && parsedSteps.length < modulePlan.modules.length) {
+                    if (modulePlan?.modules?.length && stageCount < modulePlan.modules.length) {
                         return {
                             ok: false,
-                            reason: `阶段数量不足（期望≥${modulePlan.modules.length}，实际=${parsedSteps.length})`,
+                            reason: `阶段数量不足（期望≥${modulePlan.modules.length}，实际=${stageCount})`,
                         };
                     }
 
-                    if (modulePlan?.modules?.length && parsedSteps.length > modulePlan.modules.length) {
+                    if (modulePlan?.modules?.length && stageCount > modulePlan.modules.length) {
                         return {
                             ok: false,
-                            reason: `阶段数量异常重复（期望=${modulePlan.modules.length}，实际=${parsedSteps.length})`,
+                            reason: `阶段数量异常重复（期望=${modulePlan.modules.length}，实际=${stageCount})`,
                         };
                     }
 
@@ -230,6 +237,105 @@ export async function POST(request: NextRequest) {
                         clean = clean.substring(0, clean.length - 3);
                     }
                     return clean.trim();
+                };
+
+                const findStrongTextOverlap = (previous: string, continuation: string): number => {
+                    const base = previous.trimEnd();
+                    const addition = continuation.trimStart();
+                    const maxOverlap = Math.min(base.length, addition.length, 4000);
+
+                    for (let len = maxOverlap; len >= 80; len--) {
+                        if (base.slice(-len) === addition.slice(0, len)) {
+                            return len;
+                        }
+                    }
+
+                    return 0;
+                };
+
+                const scoreScriptCompleteness = (content: string): number => {
+                    const parsedTask = parseTaskConfig(content);
+                    const parsedSteps = parseTrainingScript(content);
+                    let score = parsedTask?.trainTaskName ? 2 : 0;
+
+                    parsedSteps.forEach((step) => {
+                        if (String(step.description || "").trim()) score += 1;
+                        if (String(step.prologue || "").trim()) score += 1;
+                        if (String(step.llmPrompt || "").trim()) score += 3;
+                        if (String(step.flowCondition || "").trim()) score += 3;
+                        if (String(step.transitionPrompt || "").trim()) score += 1;
+                    });
+
+                    score += Math.min(content.length / 6000, 3);
+                    return score;
+                };
+
+                const scoreScriptCandidate = (content: string): number => {
+                    const cleaned = cleanupMarkdownFence(content);
+                    const parsedSteps = parseTrainingScript(cleaned);
+                    const structure = extractScriptStructure(cleaned);
+                    const stageOneMatches = cleaned.match(/^###\s*阶段\s*1(?:\b|[：:])/gim) || [];
+                    const validation = validateScriptStructure(cleaned);
+
+                    let score = scoreScriptCompleteness(cleaned);
+                    score += parsedSteps.length * 4;
+                    score += structure.stages.length * 2;
+                    if (validation.ok) score += 12;
+                    else score -= 12;
+                    if (stageOneMatches.length > 1) {
+                        score -= (stageOneMatches.length - 1) * 25;
+                    }
+                    return score;
+                };
+
+                const chooseBestScriptCandidate = (candidates: string[]): string => {
+                    let bestCandidate = cleanupMarkdownFence(candidates[0] || "");
+                    let bestScore = Number.NEGATIVE_INFINITY;
+                    const seen = new Set<string>();
+
+                    for (const candidate of candidates) {
+                        const cleaned = cleanupMarkdownFence(candidate);
+                        if (!cleaned || seen.has(cleaned)) continue;
+                        seen.add(cleaned);
+                        const score = scoreScriptCandidate(cleaned);
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestCandidate = cleaned;
+                        }
+                    }
+
+                    return bestCandidate;
+                };
+
+                const normalizeRepeatedStageOneRestart = (content: string): string => {
+                    const clean = cleanupMarkdownFence(content);
+                    const stageOneMatches = Array.from(clean.matchAll(/^###\s*阶段\s*1(?:\b|[：:]).*$/gim));
+                    if (stageOneMatches.length <= 1) {
+                        return clean;
+                    }
+
+                    const structure = extractScriptStructure(clean);
+                    const candidates = [clean];
+
+                    for (let i = 1; i < stageOneMatches.length; i++) {
+                        const restartIndex = stageOneMatches[i].index ?? -1;
+                        if (restartIndex < 0) continue;
+
+                        const prefixCandidate = clean.slice(0, restartIndex).trim();
+                        if (prefixCandidate) {
+                            candidates.push(prefixCandidate);
+                        }
+
+                        const restartCandidate = [
+                            structure.prefix,
+                            clean.slice(restartIndex).trim(),
+                        ].filter(Boolean).join("\n\n").trim();
+                        if (restartCandidate) {
+                            candidates.push(restartCandidate);
+                        }
+                    }
+
+                    return chooseBestScriptCandidate(candidates);
                 };
 
                 const enforceMonotonicStageOrder = (content: string): string => {
@@ -277,70 +383,111 @@ export async function POST(request: NextRequest) {
 
                 const applyScriptContinuationGuards = (content: string): string => {
                     const clean = cleanupMarkdownFence(content);
-                    return enforceMonotonicStageOrder(normalizeScriptRestartLoop(clean));
+                    return enforceMonotonicStageOrder(normalizeScriptRestartLoop(normalizeRepeatedStageOneRestart(clean)));
                 };
 
-                    const scoreScriptCompleteness = (content: string): number => {
-                        const parsedTask = parseTaskConfig(content);
-                        const parsedSteps = parseTrainingScript(content);
-                        let score = parsedTask?.trainTaskName ? 2 : 0;
+                const mergeScriptContinuationContent = (previousContent: string, continuationContent: string): string => {
+                    const previous = applyScriptContinuationGuards(previousContent);
+                    const continuation = cleanupMarkdownFence(continuationContent);
+                    if (!continuation.trim()) {
+                        return previous;
+                    }
 
-                        parsedSteps.forEach((step) => {
-                            if (String(step.description || "").trim()) score += 1;
-                            if (String(step.prologue || "").trim()) score += 1;
-                            if (String(step.llmPrompt || "").trim()) score += 3;
-                            if (String(step.flowCondition || "").trim()) score += 3;
-                            if (String(step.transitionPrompt || "").trim()) score += 1;
+                    const guardedCandidates: string[] = [];
+                    const pushGuardedCandidate = (candidate: string) => {
+                        const guarded = applyScriptContinuationGuards(candidate);
+                        if (guarded.trim()) {
+                            guardedCandidates.push(guarded);
+                        }
+                    };
+
+                    pushGuardedCandidate(`${previous}\n${continuation}`);
+
+                    const overlap = findStrongTextOverlap(previous, continuation);
+                    if (overlap > 0) {
+                        pushGuardedCandidate(`${previous}\n${continuation.trimStart().slice(overlap)}`);
+                    }
+
+                    const previousStructure = extractScriptStructure(previous);
+                    const continuationStructure = extractScriptStructure(continuation);
+
+                    if (previousStructure.stages.length > 0 && continuationStructure.stages.length > 0) {
+                        const previousStageIndexByNumber = new Map<number, number>();
+                        previousStructure.stages.forEach((stage, index) => {
+                            const stageNumber = extractStageNumber(stage.heading);
+                            if (stageNumber !== null && !previousStageIndexByNumber.has(stageNumber)) {
+                                previousStageIndexByNumber.set(stageNumber, index);
+                            }
                         });
 
-                        score += Math.min(content.length / 6000, 3);
-                        return score;
-                    };
+                        continuationStructure.stages.forEach((stage, index) => {
+                            const stageNumber = extractStageNumber(stage.heading);
+                            if (stageNumber === null) return;
+                            const previousIndex = previousStageIndexByNumber.get(stageNumber);
+                            if (previousIndex === undefined) return;
 
-                    const normalizeScriptRestartLoop = (content: string): string => {
-                        const expectedStageCount = modulePlan?.modules?.length || 0;
-                        if (!expectedStageCount) return content;
+                            const mergedStages = [
+                                ...previousStructure.stages.slice(0, previousIndex).map((item) => item.markdown.trim()),
+                                ...continuationStructure.stages.slice(index).map((item) => item.markdown.trim()),
+                            ].filter(Boolean);
 
-                        const structure = extractScriptStructure(content);
-                        if (structure.stages.length <= expectedStageCount) {
-                            return content;
+                            if (mergedStages.length === 0) return;
+
+                            pushGuardedCandidate([
+                                previousStructure.prefix,
+                                mergedStages.join("\n\n"),
+                                continuationStructure.suffix || previousStructure.suffix,
+                            ].filter(Boolean).join("\n\n"));
+                        });
+                    }
+
+                    return chooseBestScriptCandidate([previous, ...guardedCandidates]);
+                };
+
+                const normalizeScriptRestartLoop = (content: string): string => {
+                    const expectedStageCount = modulePlan?.modules?.length || 0;
+                    if (!expectedStageCount) return content;
+
+                    const structure = extractScriptStructure(content);
+                    if (structure.stages.length <= expectedStageCount) {
+                        return content;
+                    }
+
+                    let bestCandidate = content;
+                    let bestScore = -Infinity;
+
+                    for (let start = 0; start <= structure.stages.length - expectedStageCount; start++) {
+                        const selectedStages = structure.stages
+                            .slice(start, start + expectedStageCount)
+                            .map((stage) => stage.markdown.trim())
+                            .filter(Boolean);
+
+                        if (selectedStages.length !== expectedStageCount) continue;
+
+                        const candidate = [
+                            structure.prefix,
+                            selectedStages.join("\n\n"),
+                            structure.suffix,
+                        ].filter(Boolean).join("\n\n").trim();
+
+                        const parsedSteps = parseTrainingScript(candidate);
+                        if (parsedSteps.length !== expectedStageCount) continue;
+
+                        let score = scoreScriptCompleteness(candidate);
+                        const firstHeading = structure.stages[start]?.heading || "";
+                        if (/^###\s*阶段\s*1(?:\b|[：:])/i.test(firstHeading)) {
+                            score += 1;
                         }
+                        score += start * 0.05;
 
-                        let bestCandidate = content;
-                        let bestScore = -Infinity;
-
-                        for (let start = 0; start <= structure.stages.length - expectedStageCount; start++) {
-                            const selectedStages = structure.stages
-                                .slice(start, start + expectedStageCount)
-                                .map((stage) => stage.markdown.trim())
-                                .filter(Boolean);
-
-                            if (selectedStages.length !== expectedStageCount) continue;
-
-                            const candidate = [
-                                structure.prefix,
-                                selectedStages.join("\n\n"),
-                                structure.suffix,
-                            ].filter(Boolean).join("\n\n").trim();
-
-                            const parsedSteps = parseTrainingScript(candidate);
-                            if (parsedSteps.length !== expectedStageCount) continue;
-
-                            let score = scoreScriptCompleteness(candidate);
-                            const firstHeading = structure.stages[start]?.heading || "";
-                            if (/^###\s*阶段\s*1(?:\b|[：:])/i.test(firstHeading)) {
-                                score += 1;
-                            }
-                            score += start * 0.05;
-
-                            if (score > bestScore) {
-                                bestScore = score;
-                                bestCandidate = candidate;
-                            }
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestCandidate = candidate;
                         }
+                    }
 
-                        return bestScore > -Infinity ? bestCandidate : content;
-                    };
+                    return bestScore > -Infinity ? bestCandidate : content;
+                };
 
                 const isRetryableStreamError = (err: unknown): boolean => {
                     const anyErr = err as any;
@@ -364,7 +511,6 @@ export async function POST(request: NextRequest) {
 
                     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                         let fullContent = '';
-                        let emittedGuardedScript = '';
                         try {
                             if (attempt === 1) {
                                 send({ type: 'start', phase, message: startMessage });
@@ -376,16 +522,9 @@ export async function POST(request: NextRequest) {
                             for await (const chunk of phaseStream) {
                                 fullContent += chunk;
                                 if (phase === 'script') {
-                                    const guardedSnapshot = applyScriptContinuationGuards(fullContent);
-                                    const delta = guardedSnapshot.startsWith(emittedGuardedScript)
-                                        ? guardedSnapshot.slice(emittedGuardedScript.length)
-                                        : "";
-
-                                    if (delta.trim()) {
-                                        send({ type: 'chunk', phase, content: delta });
+                                    if (attempt === 1) {
+                                        send({ type: 'chunk', phase, content: chunk });
                                     }
-
-                                    emittedGuardedScript = guardedSnapshot;
                                 } else {
                                     send({ type: 'chunk', phase, content: chunk });
                                 }
@@ -414,6 +553,8 @@ export async function POST(request: NextRequest) {
 
                 // 1. 生成剧本配置
                 if (generateScript) {
+                    let scriptContinueDeadline: number | null = null;
+                    let scriptStructureRepairAttempted = false;
                     if (resolvedScriptMode === "auto" && !scriptPromptTemplate) {
                         send({ type: 'start', phase: 'script', message: '正在自动识别剧本模式...' });
                         try {
@@ -461,7 +602,39 @@ export async function POST(request: NextRequest) {
                             break;
                         }
 
-                        if (Date.now() > continueDeadline) {
+                        const shouldRepairStructure = Boolean(
+                            !scriptStructureRepairAttempted &&
+                            modulePlan?.modules?.length &&
+                            /阶段数量异常重复|阶段编号出现回卷/.test(scriptValidation.reason || "")
+                        );
+
+                        if (shouldRepairStructure) {
+                            scriptStructureRepairAttempted = true;
+                            send({
+                                type: 'start',
+                                phase: 'script',
+                                message: `检测到阶段结构与模块规划不一致（${scriptValidation.reason || "结构异常"}），正在自动整理阶段结构...`,
+                            });
+                            try {
+                                fullScript = applyScriptContinuationGuards(await repairTrainingScriptStructure(
+                                    teacherDocContent,
+                                    fullScript,
+                                    apiConfig,
+                                    scriptPromptTemplate || undefined,
+                                    resolvedScriptMode || "general",
+                                    modulePlan
+                                ));
+                                continue;
+                            } catch (repairErr) {
+                                console.warn("[training-generate] 剧本结构修复失败，回退续写/重试策略:", repairErr);
+                            }
+                        }
+
+                        if (!scriptContinueDeadline) {
+                            scriptContinueDeadline = Date.now() + continuationWindowMs;
+                        }
+
+                        if (Date.now() > scriptContinueDeadline) {
                             throw new Error(`生成结果疑似截断：${scriptValidation.reason || "剧本结构不完整"}（续写超时），请重试`);
                         }
 
@@ -485,7 +658,7 @@ export async function POST(request: NextRequest) {
                                 continued += chunk;
                             }
 
-                            const merged = applyScriptContinuationGuards(`${scriptBeforeContinue}\n${continued}`);
+                            const merged = mergeScriptContinuationContent(scriptBeforeContinue, continued);
                             const delta = merged.startsWith(scriptBeforeContinue)
                                 ? merged.slice(scriptBeforeContinue.length)
                                 : "";
@@ -497,7 +670,7 @@ export async function POST(request: NextRequest) {
                             fullScript = merged;
                         } catch (continueErr) {
                             console.warn("[training-generate] 剧本断点续写失败，准备继续续写重试:", continueErr);
-                            if (continuationAttempt < maxContinuationAttempts && Date.now() <= continueDeadline) {
+                            if (continuationAttempt < maxContinuationAttempts && Date.now() <= scriptContinueDeadline) {
                                 send({
                                     type: 'start',
                                     phase: 'script',
@@ -519,6 +692,7 @@ export async function POST(request: NextRequest) {
 
                 // 2. 生成评分标准
                 if (generateRubric) {
+                    let rubricContinueDeadline: number | null = null;
                     fullRubric = await generatePhaseWithRetry(
                         'rubric',
                         '开始生成评分标准...',
@@ -530,7 +704,11 @@ export async function POST(request: NextRequest) {
                             break;
                         }
 
-                        if (Date.now() > continueDeadline) {
+                        if (!rubricContinueDeadline) {
+                            rubricContinueDeadline = Date.now() + continuationWindowMs;
+                        }
+
+                        if (Date.now() > rubricContinueDeadline) {
                             throw new Error('生成结果疑似截断：评分标准结构不完整（续写超时），请重试');
                         }
 
@@ -553,7 +731,7 @@ export async function POST(request: NextRequest) {
                             fullRubric = cleanupMarkdownFence(`${fullRubric}\n${continued}`);
                         } catch (continueErr) {
                             console.warn("[training-generate] 评分标准断点续写失败，准备继续续写重试:", continueErr);
-                            if (continuationAttempt < maxContinuationAttempts && Date.now() <= continueDeadline) {
+                            if (continuationAttempt < maxContinuationAttempts && Date.now() <= rubricContinueDeadline) {
                                 send({
                                     type: 'start',
                                     phase: 'rubric',

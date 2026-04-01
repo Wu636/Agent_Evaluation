@@ -53,6 +53,70 @@ type GeneratePhase = "idle" | "generating" | "completed" | "error";
 type ResultTab = "script" | "rubric";
 type PlanRegenerateSource = "current_edited" | "previous_plan" | "teacher_doc_only";
 
+const RESULT_CACHE_KEY = "training-generate-result";
+const MODULE_PLAN_CACHE_KEY = "training-generate-module-plan";
+const MODULE_PLAN_CACHE_VERSION = 1;
+const MODULE_PLAN_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+interface CachedModulePlanState {
+    _v: number;
+    modulePlan: TrainingScriptPlan | null;
+    lastSystemPlan: TrainingScriptPlan | null;
+    planAutofillApplied: boolean;
+    planAutofillFields: string[];
+    planAutofillTaskFields: string[];
+    planAutofillModuleFields: Record<string, string[]>;
+    updatedAt: number;
+}
+
+const EMPTY_MODULE_PLAN_CACHE: CachedModulePlanState = {
+    _v: MODULE_PLAN_CACHE_VERSION,
+    modulePlan: null,
+    lastSystemPlan: null,
+    planAutofillApplied: false,
+    planAutofillFields: [],
+    planAutofillTaskFields: [],
+    planAutofillModuleFields: {},
+    updatedAt: 0,
+};
+
+function loadCachedModulePlanState(): CachedModulePlanState {
+    if (typeof window === "undefined") return EMPTY_MODULE_PLAN_CACHE;
+
+    try {
+        const raw = localStorage.getItem(MODULE_PLAN_CACHE_KEY);
+        if (!raw) return EMPTY_MODULE_PLAN_CACHE;
+
+        const parsed = JSON.parse(raw) as Partial<CachedModulePlanState>;
+        const updatedAt = Number(parsed.updatedAt || 0);
+        if (!updatedAt || Date.now() - updatedAt > MODULE_PLAN_CACHE_TTL_MS) {
+            localStorage.removeItem(MODULE_PLAN_CACHE_KEY);
+            return EMPTY_MODULE_PLAN_CACHE;
+        }
+
+        if (parsed._v !== MODULE_PLAN_CACHE_VERSION) {
+            localStorage.removeItem(MODULE_PLAN_CACHE_KEY);
+            return EMPTY_MODULE_PLAN_CACHE;
+        }
+
+        return {
+            _v: MODULE_PLAN_CACHE_VERSION,
+            modulePlan: parsed.modulePlan || null,
+            lastSystemPlan: parsed.lastSystemPlan || null,
+            planAutofillApplied: Boolean(parsed.planAutofillApplied),
+            planAutofillFields: Array.isArray(parsed.planAutofillFields) ? parsed.planAutofillFields : [],
+            planAutofillTaskFields: Array.isArray(parsed.planAutofillTaskFields) ? parsed.planAutofillTaskFields : [],
+            planAutofillModuleFields: parsed.planAutofillModuleFields && typeof parsed.planAutofillModuleFields === "object"
+                ? parsed.planAutofillModuleFields
+                : {},
+            updatedAt,
+        };
+    } catch {
+        localStorage.removeItem(MODULE_PLAN_CACHE_KEY);
+        return EMPTY_MODULE_PLAN_CACHE;
+    }
+}
+
 const SCRIPT_MODE_LABELS: Record<Exclude<ScriptMode, "auto">, string> = {
     general: "通用",
     sequential: "循序过关型",
@@ -189,15 +253,15 @@ export function TrainingGenerateInterface() {
     const abortRef = useRef<AbortController | null>(null);
 
     // --- 结果（从 localStorage 恢复）---
-    const CACHE_KEY = "training-generate-result";
     const loadCached = () => {
         try {
-            const raw = typeof window !== "undefined" ? localStorage.getItem(CACHE_KEY) : null;
+            const raw = typeof window !== "undefined" ? localStorage.getItem(RESULT_CACHE_KEY) : null;
             if (!raw) return { script: "", rubric: "", name: "" };
             return JSON.parse(raw) as { script: string; rubric: string; name: string };
         } catch { return { script: "", rubric: "", name: "" }; }
     };
     const cached = loadCached();
+    const [initialModulePlanCache] = useState<CachedModulePlanState>(() => loadCachedModulePlanState());
     const [scriptContent, setScriptContent] = useState(cached.script);
     const [rubricContent, setRubricContent] = useState(cached.rubric);
     const [activeTab, setActiveTab] = useState<ResultTab>("script");
@@ -207,7 +271,7 @@ export function TrainingGenerateInterface() {
     // 生成完成后自动持久化
     useEffect(() => {
         if (phase === "completed" && (scriptContent || rubricContent)) {
-            localStorage.setItem(CACHE_KEY, JSON.stringify({ script: scriptContent, rubric: rubricContent, name: taskName }));
+            localStorage.setItem(RESULT_CACHE_KEY, JSON.stringify({ script: scriptContent, rubric: rubricContent, name: taskName }));
         }
     }, [phase, scriptContent, rubricContent, taskName]);
 
@@ -225,15 +289,16 @@ export function TrainingGenerateInterface() {
     const [showInjectModal, setShowInjectModal] = useState(false);
     const [showPromptEditor, setShowPromptEditor] = useState(false);
     const [activePromptTab, setActivePromptTab] = useState<"script" | "rubric">("script");
-    const [modulePlan, setModulePlan] = useState<TrainingScriptPlan | null>(null);
-    const [lastSystemPlan, setLastSystemPlan] = useState<TrainingScriptPlan | null>(null);
+    const [modulePlan, setModulePlan] = useState<TrainingScriptPlan | null>(initialModulePlanCache.modulePlan);
+    const [lastSystemPlan, setLastSystemPlan] = useState<TrainingScriptPlan | null>(initialModulePlanCache.lastSystemPlan);
     const [planValidation, setPlanValidation] = useState<ScriptPlanValidationIssue[]>([]);
-    const [planAutofillApplied, setPlanAutofillApplied] = useState(false);
-    const [planAutofillFields, setPlanAutofillFields] = useState<string[]>([]);
-    const [planAutofillTaskFields, setPlanAutofillTaskFields] = useState<string[]>([]);
-    const [planAutofillModuleFields, setPlanAutofillModuleFields] = useState<Record<string, string[]>>({});
+    const [planAutofillApplied, setPlanAutofillApplied] = useState(initialModulePlanCache.planAutofillApplied);
+    const [planAutofillFields, setPlanAutofillFields] = useState<string[]>(initialModulePlanCache.planAutofillFields);
+    const [planAutofillTaskFields, setPlanAutofillTaskFields] = useState<string[]>(initialModulePlanCache.planAutofillTaskFields);
+    const [planAutofillModuleFields, setPlanAutofillModuleFields] = useState<Record<string, string[]>>(initialModulePlanCache.planAutofillModuleFields);
     const [planning, setPlanning] = useState(false);
-    const [showPlanEditor, setShowPlanEditor] = useState(false);
+    const [showPlanEditor, setShowPlanEditor] = useState(Boolean(initialModulePlanCache.modulePlan));
+    const [planCacheRestored, setPlanCacheRestored] = useState(Boolean(initialModulePlanCache.modulePlan));
     const [draggingModuleId, setDraggingModuleId] = useState<string | null>(null);
     const [dragOverModuleId, setDragOverModuleId] = useState<string | null>(null);
     const [collapsedModuleIds, setCollapsedModuleIds] = useState<string[]>([]);
@@ -316,6 +381,35 @@ export function TrainingGenerateInterface() {
             setModuleRegenTargetId("");
         }
     }, [modulePlan]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+
+        if (!modulePlan && !lastSystemPlan) {
+            localStorage.removeItem(MODULE_PLAN_CACHE_KEY);
+            return;
+        }
+
+        const payload: CachedModulePlanState = {
+            _v: MODULE_PLAN_CACHE_VERSION,
+            modulePlan,
+            lastSystemPlan,
+            planAutofillApplied,
+            planAutofillFields,
+            planAutofillTaskFields,
+            planAutofillModuleFields,
+            updatedAt: Date.now(),
+        };
+
+        localStorage.setItem(MODULE_PLAN_CACHE_KEY, JSON.stringify(payload));
+    }, [
+        modulePlan,
+        lastSystemPlan,
+        planAutofillApplied,
+        planAutofillFields,
+        planAutofillTaskFields,
+        planAutofillModuleFields,
+    ]);
 
     useEffect(() => {
         if (!focusedModuleId) return;
@@ -498,6 +592,7 @@ export function TrainingGenerateInterface() {
             setPlanAutofillFields(result.autofillFields || []);
             setPlanAutofillTaskFields(result.autofillTaskFields || []);
             setPlanAutofillModuleFields(result.autofillModuleFields || {});
+            setPlanCacheRestored(false);
             syncDominantMode(result.plan.recommendedMode);
             setShowPlanEditor(true);
             return true;
@@ -513,6 +608,27 @@ export function TrainingGenerateInterface() {
         setPlanRegenerateFeedback("");
         setPlanRegenerateSource("current_edited");
         setShowPlanRegenerateModal(true);
+    }, []);
+
+    const clearModulePlan = useCallback(() => {
+        if (typeof window !== "undefined") {
+            const confirmed = window.confirm("清空当前模块规划及本地缓存后，将需要重新智能规划。是否继续？");
+            if (!confirmed) return;
+            localStorage.removeItem(MODULE_PLAN_CACHE_KEY);
+        }
+
+        setModulePlan(null);
+        setLastSystemPlan(null);
+        setPlanValidation([]);
+        setPlanAutofillApplied(false);
+        setPlanAutofillFields([]);
+        setPlanAutofillTaskFields([]);
+        setPlanAutofillModuleFields({});
+        setPlanCacheRestored(false);
+        setShowPlanEditor(false);
+        setCollapsedModuleIds([]);
+        setFocusedModuleId(null);
+        setModuleRegenTargetId("");
     }, []);
 
     const handleRegeneratePlan = useCallback(async () => {
@@ -832,7 +948,7 @@ export function TrainingGenerateInterface() {
         setErrorMessage("");
         setTaskName("");
         setStatusMessage("");
-        localStorage.removeItem(CACHE_KEY);
+        localStorage.removeItem(RESULT_CACHE_KEY);
     }, []);
 
     // --- 文件操作 ---
@@ -1157,6 +1273,16 @@ export function TrainingGenerateInterface() {
                                 {modulePlan && (
                                     <button
                                         type="button"
+                                        onClick={clearModulePlan}
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        清空规划
+                                    </button>
+                                )}
+                                {modulePlan && (
+                                    <button
+                                        type="button"
                                         onClick={() => setShowPlanEditor((v) => !v)}
                                         className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
                                     >
@@ -1174,6 +1300,11 @@ export function TrainingGenerateInterface() {
                                 </p>
                             ) : (
                                 <>
+                                    {planCacheRestored && (
+                                        <div className="px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-100 text-xs text-indigo-700">
+                                            已从本地缓存恢复上一次模块规划，可直接继续编辑；如当前教师文档已经更换，建议重新智能规划一次。
+                                        </div>
+                                    )}
                                     <div>
                                         <label className="text-xs font-medium text-slate-600 flex items-center gap-1.5 mb-1">
                                             <span>任务名称</span>

@@ -13,6 +13,74 @@ export interface ParsedTaskConfig {
     description: string;
 }
 
+const SCRIPT_FIELD_LABELS = [
+    "虚拟训练官名字",
+    "模型",
+    "声音",
+    "形象",
+    "阶段描述",
+    "背景图",
+    "互动轮次",
+    "flowCondition",
+    "transitionPrompt",
+    "开场白",
+    "提示词",
+] as const;
+
+function escapeRegex(source: string): string {
+    return source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getFieldLineValue(line: string, label: string): string | null {
+    const match = line.match(new RegExp(`^(?:\\*{2})?${escapeRegex(label)}(?:\\*{2})?\\s*[：:]\\s*(.*)$`, "i"));
+    return match ? match[1] : null;
+}
+
+function isScriptFieldLine(line: string): boolean {
+    return SCRIPT_FIELD_LABELS.some((label) => getFieldLineValue(line, label) !== null);
+}
+
+function normalizeScriptMarkdownForParsing(markdown: string): string {
+    const lines = markdown.split("\n");
+    const normalizedLines: string[] = [];
+    const fieldPattern = new RegExp(
+        `(?:^|\\s)(?:\\*{2})?(?:${SCRIPT_FIELD_LABELS.map((label) => escapeRegex(label)).join("|")})(?:\\*{2})?\\s*[：:]`,
+        "gi"
+    );
+    let inCodeBlock = false;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("```")) {
+            inCodeBlock = !inCodeBlock;
+            normalizedLines.push(line);
+            continue;
+        }
+
+        if (inCodeBlock) {
+            normalizedLines.push(line);
+            continue;
+        }
+
+        const matches = Array.from(line.matchAll(fieldPattern));
+        if (matches.length <= 1) {
+            normalizedLines.push(line);
+            continue;
+        }
+
+        for (let index = 0; index < matches.length; index++) {
+            const start = matches[index].index ?? 0;
+            const end = matches[index + 1]?.index ?? line.length;
+            const segment = line.slice(start, end).trim();
+            if (segment) {
+                normalizedLines.push(segment);
+            }
+        }
+    }
+
+    return normalizedLines.join("\n");
+}
+
 /**
  * 从训练剧本 Markdown 中提取基础配置（任务名称、任务描述）
  * 匹配 ## 📋 基础配置 区块中的字段
@@ -78,7 +146,7 @@ export function normalizeValue(raw: string): string {
  * 对应 Python: parse_markdown()
  */
 export function parseTrainingScript(markdown: string): ParsedStep[] {
-    const lines = markdown.split("\n");
+    const lines = normalizeScriptMarkdownForParsing(markdown).split("\n");
     const steps: ParsedStep[] = [];
 
     let currentStep: Partial<ParsedStep> | null = null;
@@ -88,6 +156,31 @@ export function parseTrainingScript(markdown: string): ParsedStep[] {
 
     for (const line of lines) {
         const stripped = line.trim();
+
+        if (stripped.startsWith("```")) {
+            if (inCodeBlock) {
+                const content = currentCodeBlock.join("\n").trim();
+                if (codeBlockType === "prologue") {
+                    currentStep && (currentStep.prologue = content);
+                } else if (codeBlockType === "llmPrompt") {
+                    currentStep && (currentStep.llmPrompt = content);
+                } else if (codeBlockType === "transitionPrompt") {
+                    currentStep && (currentStep.transitionPrompt = content);
+                }
+                inCodeBlock = false;
+                currentCodeBlock = [];
+                codeBlockType = null;
+            } else {
+                inCodeBlock = true;
+                currentCodeBlock = [];
+            }
+            continue;
+        }
+
+        if (inCodeBlock) {
+            currentCodeBlock.push(line);
+            continue;
+        }
 
         // 新阶段开始：### 阶段N: 名称
         if (stripped.startsWith("### 阶段")) {
@@ -99,53 +192,62 @@ export function parseTrainingScript(markdown: string): ParsedStep[] {
                 const sep = stripped.includes(":") ? ":" : "：";
                 currentStep.stepName = stripped.split(sep).slice(1).join(sep).trim();
             }
+            codeBlockType = null;
             continue;
         }
 
         if (!currentStep) continue;
 
         // 字段提取
-        if (stripped.startsWith("**虚拟训练官名字**:") || stripped.startsWith("**虚拟训练官名字**：")) {
-            currentStep.trainerName = normalizeValue(splitField(stripped));
+        const trainerName = getFieldLineValue(stripped, "虚拟训练官名字");
+        if (trainerName !== null) {
+            currentStep.trainerName = normalizeValue(trainerName);
             continue;
         }
-        if (stripped.startsWith("**模型**:") || stripped.startsWith("**模型**：")) {
-            currentStep.modelId = normalizeValue(splitField(stripped));
+        const modelId = getFieldLineValue(stripped, "模型");
+        if (modelId !== null) {
+            currentStep.modelId = normalizeValue(modelId);
             continue;
         }
-        if (stripped.startsWith("**声音**:") || stripped.startsWith("**声音**：")) {
-            currentStep.agentId = normalizeValue(splitField(stripped));
+        const agentId = getFieldLineValue(stripped, "声音");
+        if (agentId !== null) {
+            currentStep.agentId = normalizeValue(agentId);
             continue;
         }
-        if (stripped.startsWith("**形象**:") || stripped.startsWith("**形象**：")) {
-            currentStep.avatarNid = normalizeValue(splitField(stripped));
+        const avatarNid = getFieldLineValue(stripped, "形象");
+        if (avatarNid !== null) {
+            currentStep.avatarNid = normalizeValue(avatarNid);
             continue;
         }
-        if (stripped.startsWith("**阶段描述**:") || stripped.startsWith("**阶段描述**：")) {
-            currentStep.description = normalizeValue(splitField(stripped));
+        const description = getFieldLineValue(stripped, "阶段描述");
+        if (description !== null) {
+            currentStep.description = normalizeValue(description);
             continue;
         }
-        if (stripped.startsWith("**背景图**:") || stripped.startsWith("**背景图**：")) {
-            currentStep.backgroundImage = normalizeValue(splitField(stripped));
+        const backgroundImage = getFieldLineValue(stripped, "背景图");
+        if (backgroundImage !== null) {
+            currentStep.backgroundImage = normalizeValue(backgroundImage);
             continue;
         }
-        if (stripped.startsWith("**互动轮次**:") || stripped.startsWith("**互动轮次**：")) {
-            const roundsStr = splitField(stripped);
+        const roundsValue = getFieldLineValue(stripped, "互动轮次");
+        if (roundsValue !== null) {
+            const roundsStr = roundsValue;
             const match = roundsStr.match(/\d+/);
             if (match) {
                 currentStep.interactiveRounds = parseInt(match[0], 10);
             }
             continue;
         }
-        if (stripped.startsWith("**flowCondition**:") || stripped.startsWith("**flowCondition**：")) {
-            currentStep.flowCondition = normalizeValue(splitField(stripped));
+        const flowCondition = getFieldLineValue(stripped, "flowCondition");
+        if (flowCondition !== null) {
+            currentStep.flowCondition = normalizeValue(flowCondition);
             continue;
         }
 
         // 代码块开始标记 或 开场白 blockquote
-        if (stripped.startsWith("**开场白**:") || stripped.startsWith("**开场白**：")) {
-            // 检查是否有行内内容（某些格式直接写在同一行）
-            const inline = normalizeValue(splitField(stripped));
+        const prologueValue = getFieldLineValue(stripped, "开场白");
+        if (prologueValue !== null) {
+            const inline = normalizeValue(prologueValue);
             if (inline) {
                 currentStep.prologue = inline;
                 codeBlockType = null;
@@ -154,12 +256,14 @@ export function parseTrainingScript(markdown: string): ParsedStep[] {
             }
             continue;
         }
-        if (stripped.startsWith("**提示词**:") || stripped.startsWith("**提示词**：")) {
+        const llmPromptValue = getFieldLineValue(stripped, "提示词");
+        if (llmPromptValue !== null) {
             codeBlockType = "llmPrompt";
             continue;
         }
-        if (stripped.startsWith("**transitionPrompt**:") || stripped.startsWith("**transitionPrompt**：")) {
-            const inline = normalizeValue(splitField(stripped));
+        const transitionPromptValue = getFieldLineValue(stripped, "transitionPrompt");
+        if (transitionPromptValue !== null) {
+            const inline = normalizeValue(transitionPromptValue);
             if (inline) {
                 currentStep.transitionPrompt = inline;
                 codeBlockType = null;
@@ -169,39 +273,23 @@ export function parseTrainingScript(markdown: string): ParsedStep[] {
             continue;
         }
 
-        // 代码块处理
-        if (stripped.startsWith("```")) {
-            if (inCodeBlock) {
-                // 代码块结束
-                const content = currentCodeBlock.join("\n").trim();
-                if (codeBlockType === "prologue") {
-                    currentStep.prologue = content;
-                } else if (codeBlockType === "llmPrompt") {
-                    currentStep.llmPrompt = content;
-                } else if (codeBlockType === "transitionPrompt") {
-                    currentStep.transitionPrompt = content;
-                }
-                inCodeBlock = false;
-                currentCodeBlock = [];
-                codeBlockType = null;
-            } else {
-                // 代码块开始
-                inCodeBlock = true;
-                currentCodeBlock = [];
-            }
-            continue;
-        }
-
-        if (inCodeBlock) {
-            currentCodeBlock.push(line);
-        } else if (codeBlockType === "prologue" && stripped.startsWith(">")) {
+        if (codeBlockType === "prologue" && stripped.startsWith(">")) {
             // 开场白 blockquote 格式：> 内容
             const prologueLine = line.replace(/^\s*>\s?/, "");
             if (!currentStep.prologue) currentStep.prologue = "";
             if (currentStep.prologue) currentStep.prologue += "\n";
             currentStep.prologue += prologueLine;
-        } else if (codeBlockType === "prologue" && !stripped.startsWith(">") && currentStep.prologue !== undefined && stripped !== "") {
-            // blockquote 结束（遇到非 > 非空行），清除 codeBlockType
+            continue;
+        }
+
+        if (codeBlockType === "prologue" && stripped && !isScriptFieldLine(stripped) && !stripped.startsWith("### ")) {
+            currentStep.prologue = currentStep.prologue
+                ? `${currentStep.prologue}\n${stripped}`
+                : stripped;
+            continue;
+        }
+
+        if (codeBlockType === "prologue" && stripped !== "") {
             codeBlockType = null;
         }
     }

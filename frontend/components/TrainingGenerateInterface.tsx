@@ -57,6 +57,11 @@ const RESULT_CACHE_KEY = "training-generate-result";
 const MODULE_PLAN_CACHE_KEY = "training-generate-module-plan";
 const MODULE_PLAN_CACHE_VERSION = 1;
 const MODULE_PLAN_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const TEACHER_DOC_CACHE_DB = "training-generate-teacher-doc";
+const TEACHER_DOC_CACHE_STORE = "teacher-doc-state";
+const TEACHER_DOC_CACHE_KEY = "latest";
+const TEACHER_DOC_CACHE_VERSION = 1;
+const TEACHER_DOC_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface CachedModulePlanState {
     _v: number;
@@ -69,6 +74,17 @@ interface CachedModulePlanState {
     updatedAt: number;
 }
 
+interface CachedTeacherDocState {
+    _v: number;
+    inputMode: "file" | "text";
+    textContent: string;
+    updatedAt: number;
+    fileBlob: Blob | null;
+    fileName: string;
+    fileType: string;
+    fileLastModified: number;
+}
+
 const EMPTY_MODULE_PLAN_CACHE: CachedModulePlanState = {
     _v: MODULE_PLAN_CACHE_VERSION,
     modulePlan: null,
@@ -79,6 +95,111 @@ const EMPTY_MODULE_PLAN_CACHE: CachedModulePlanState = {
     planAutofillModuleFields: {},
     updatedAt: 0,
 };
+
+function openTeacherDocCacheDb(): Promise<IDBDatabase | null> {
+    if (typeof window === "undefined" || typeof indexedDB === "undefined") {
+        return Promise.resolve(null);
+    }
+
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(TEACHER_DOC_CACHE_DB, 1);
+
+        request.onerror = () => reject(request.error || new Error("无法打开教师文档缓存"));
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(TEACHER_DOC_CACHE_STORE)) {
+                db.createObjectStore(TEACHER_DOC_CACHE_STORE);
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+    });
+}
+
+function loadCachedTeacherDocState(): Promise<CachedTeacherDocState | null> {
+    return openTeacherDocCacheDb().then((db) => {
+        if (!db) return null;
+
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(TEACHER_DOC_CACHE_STORE, "readonly");
+            const store = tx.objectStore(TEACHER_DOC_CACHE_STORE);
+            const request = store.get(TEACHER_DOC_CACHE_KEY);
+
+            request.onerror = () => {
+                db.close();
+                reject(request.error || new Error("读取教师文档缓存失败"));
+            };
+
+            request.onsuccess = () => {
+                const result = request.result as CachedTeacherDocState | undefined;
+                if (!result || result._v !== TEACHER_DOC_CACHE_VERSION) {
+                    db.close();
+                    resolve(null);
+                    return;
+                }
+
+                if (!result.updatedAt || Date.now() - result.updatedAt > TEACHER_DOC_CACHE_TTL_MS) {
+                    db.close();
+                    void clearCachedTeacherDocState();
+                    resolve(null);
+                    return;
+                }
+
+                db.close();
+                resolve(result);
+            };
+        });
+    });
+}
+
+function saveCachedTeacherDocState(state: CachedTeacherDocState): Promise<void> {
+    return openTeacherDocCacheDb().then((db) => {
+        if (!db) return;
+
+        return new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(TEACHER_DOC_CACHE_STORE, "readwrite");
+            const store = tx.objectStore(TEACHER_DOC_CACHE_STORE);
+            const request = store.put(state, TEACHER_DOC_CACHE_KEY);
+
+            request.onerror = () => {
+                db.close();
+                reject(request.error || new Error("保存教师文档缓存失败"));
+            };
+            tx.oncomplete = () => {
+                db.close();
+                resolve();
+            };
+            tx.onerror = () => {
+                db.close();
+                reject(tx.error || new Error("保存教师文档缓存失败"));
+            };
+        });
+    });
+}
+
+function clearCachedTeacherDocState(): Promise<void> {
+    return openTeacherDocCacheDb().then((db) => {
+        if (!db) return;
+
+        return new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(TEACHER_DOC_CACHE_STORE, "readwrite");
+            const store = tx.objectStore(TEACHER_DOC_CACHE_STORE);
+            const request = store.delete(TEACHER_DOC_CACHE_KEY);
+
+            request.onerror = () => {
+                db.close();
+                reject(request.error || new Error("清空教师文档缓存失败"));
+            };
+            tx.oncomplete = () => {
+                db.close();
+                resolve();
+            };
+            tx.onerror = () => {
+                db.close();
+                reject(tx.error || new Error("清空教师文档缓存失败"));
+            };
+        });
+    });
+}
 
 function loadCachedModulePlanState(): CachedModulePlanState {
     if (typeof window === "undefined") return EMPTY_MODULE_PLAN_CACHE;
@@ -229,6 +350,8 @@ export function TrainingGenerateInterface() {
     const [file, setFile] = useState<File | null>(null);
     const [textContent, setTextContent] = useState("");
     const [isDragging, setIsDragging] = useState(false);
+    const [teacherDocCacheHydrated, setTeacherDocCacheHydrated] = useState(false);
+    const [teacherDocCacheRestored, setTeacherDocCacheRestored] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // --- 生成选项 ---
@@ -274,6 +397,46 @@ export function TrainingGenerateInterface() {
             localStorage.setItem(RESULT_CACHE_KEY, JSON.stringify({ script: scriptContent, rubric: rubricContent, name: taskName }));
         }
     }, [phase, scriptContent, rubricContent, taskName]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const restoreTeacherDoc = async () => {
+            try {
+                const cachedDoc = await loadCachedTeacherDocState();
+                if (cancelled || !cachedDoc) return;
+
+                setInputMode(cachedDoc.inputMode);
+                setTextContent(cachedDoc.textContent || "");
+
+                if (cachedDoc.fileBlob && cachedDoc.fileName) {
+                    const restoredFile = new File(
+                        [cachedDoc.fileBlob],
+                        cachedDoc.fileName,
+                        {
+                            type: cachedDoc.fileType || cachedDoc.fileBlob.type || "",
+                            lastModified: cachedDoc.fileLastModified || Date.now(),
+                        },
+                    );
+                    setFile(restoredFile);
+                }
+
+                if (cachedDoc.textContent.trim() || cachedDoc.fileBlob) {
+                    setTeacherDocCacheRestored(true);
+                }
+            } catch {
+                // ignore cache restore failures
+            } finally {
+                if (!cancelled) setTeacherDocCacheHydrated(true);
+            }
+        };
+
+        void restoreTeacherDoc();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     // 有缓存内容时显示 completed 状态
     useEffect(() => {
@@ -410,6 +573,39 @@ export function TrainingGenerateInterface() {
         planAutofillTaskFields,
         planAutofillModuleFields,
     ]);
+
+    useEffect(() => {
+        if (!teacherDocCacheHydrated) return;
+
+        const persistTeacherDoc = async () => {
+            const hasText = textContent.trim().length > 0;
+            if (!file && !hasText) {
+                try {
+                    await clearCachedTeacherDocState();
+                } catch {
+                    // ignore cache clear failures
+                }
+                return;
+            }
+
+            try {
+                await saveCachedTeacherDocState({
+                    _v: TEACHER_DOC_CACHE_VERSION,
+                    inputMode,
+                    textContent,
+                    updatedAt: Date.now(),
+                    fileBlob: file,
+                    fileName: file?.name || "",
+                    fileType: file?.type || "",
+                    fileLastModified: file?.lastModified || 0,
+                });
+            } catch {
+                // ignore cache save failures
+            }
+        };
+
+        void persistTeacherDoc();
+    }, [teacherDocCacheHydrated, inputMode, textContent, file]);
 
     useEffect(() => {
         if (!focusedModuleId) return;
@@ -972,11 +1168,13 @@ export function TrainingGenerateInterface() {
         }
         setFile(f);
         setErrorMessage("");
+        setTeacherDocCacheRestored(false);
     };
 
     const clearFile = () => {
         setFile(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
+        setTeacherDocCacheRestored(false);
     };
 
     // --- 复制 & 下载 ---
@@ -1100,10 +1298,15 @@ export function TrainingGenerateInterface() {
                 <div className="space-y-5">
                     {/* 文档输入 */}
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <FileText className="w-4 h-4 text-indigo-500" />
-                                <span className="font-semibold text-slate-700 text-sm">教师任务文档</span>
+                        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <FileText className="w-4 h-4 text-indigo-500" />
+                                    <span className="font-semibold text-slate-700 text-sm">教师任务文档</span>
+                                </div>
+                                {teacherDocCacheRestored && (
+                                    <p className="mt-1 text-xs text-emerald-600">已从本地恢复上一次教师任务文档</p>
+                                )}
                             </div>
                             {/* 模式切换 */}
                             <div className="flex bg-slate-100 rounded-lg p-0.5">
@@ -1183,7 +1386,10 @@ export function TrainingGenerateInterface() {
                                 /* 文本粘贴区 */
                                 <textarea
                                     value={textContent}
-                                    onChange={(e) => setTextContent(e.target.value)}
+                                    onChange={(e) => {
+                                        setTextContent(e.target.value);
+                                        setTeacherDocCacheRestored(false);
+                                    }}
                                     placeholder="将教师任务文档内容粘贴到此处..."
                                     className="w-full h-48 p-4 border border-slate-200 rounded-xl text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 resize-none transition-all"
                                 />
@@ -1193,7 +1399,13 @@ export function TrainingGenerateInterface() {
 
                     {/* 生成选项 */}
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-                        <p className="text-sm font-semibold text-slate-700 mb-3">生成内容</p>
+                        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-sm font-semibold text-slate-700">生成内容</p>
+                            <div className="flex items-center gap-1.5 text-xs text-slate-500 sm:justify-end">
+                                <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                                <span>建议选择 Claude Sonnet 4.5 生成训练基本配置，不容易出现截断</span>
+                            </div>
+                        </div>
                         <div className="flex flex-col sm:flex-row gap-3">
                             <label
                                 className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all flex-1 ${generateScript

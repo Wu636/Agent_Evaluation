@@ -25,8 +25,8 @@ const POLYMAS_IMAGE_FALLBACK_API_KEY =
 type ImageProvider = "cloudapi" | "openai";
 const DEFAULT_IMAGE_PROVIDER_PRIORITY: ImageProvider[] = ["cloudapi", "openai"];
 
-const DEFAULT_BG_IMAGE_REQUIREMENT = "专业写实教学场景背景图，严格16:9横版宽屏构图，单一完整场景，画面干净稳定，适合作为课程阶段背景；禁止拼贴、多宫格、海报排版、极端透视、鱼眼、抽象艺术、卡通漫画；无任何文字、英文单词、logo、字幕、水印，中国视觉风格优先";
-const DEFAULT_COVER_STYLE_REQUIREMENT = "专业、简洁、写实的课程封面图，严格16:9横版宽屏构图，主体明确、构图完整、画面克制；禁止拼贴、多宫格、海报排版、卡通漫画、抽象风格；无任何文字、英文单词、logo、水印，中国风格优先";
+const DEFAULT_BG_IMAGE_REQUIREMENT = "专业写实教学场景背景图，严格16:9横版宽屏构图，单一完整场景，画面干净稳定，适合作为课程阶段背景；禁止拼贴、多宫格、海报排版、极端透视、鱼眼、抽象艺术、卡通漫画；无任何文字、英文单词、logo、字幕、水印，尽量不要出现西方面孔和元素";
+const DEFAULT_COVER_STYLE_REQUIREMENT = "专业、简洁、写实的课程封面图，严格16:9横版宽屏构图，主体明确、构图完整、画面克制；禁止拼贴、多宫格、海报排版、卡通漫画、抽象风格；无任何文字、英文单词、logo、水印，尽量不要出现西方面孔和元素";
 const DEFAULT_SEEDREAM_4_IMAGE_SIZE = "1792x1024";
 const CLOUDAPI_PROBE_PAYLOAD = {
     trainName: "生图连通性测试",

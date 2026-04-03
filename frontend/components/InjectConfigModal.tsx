@@ -122,8 +122,8 @@ export function InjectConfigModal({
     const [summary, setSummary] = useState<InjectSummary | null>(null);
     const [extractionMode, setExtractionMode] = useState<"hybrid" | "llm" | "regex">("regex");
     const [llmModel, setLlmModel] = useState("");
-    const [coverStylePrompt, setCoverStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染， 电影级光影 高清细节，16:9宽屏构图，中国风格优先");
-    const [backgroundStylePrompt, setBackgroundStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染，电影级光影，16:9宽屏构图，单一完整场景，适合作为教学阶段背景，中国风格优先");
+    const [coverStylePrompt, setCoverStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染， 电影级光影 高清细节，16:9宽屏构图，尽量不要出现西方面孔");
+    const [backgroundStylePrompt, setBackgroundStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染，电影级光影，16:9宽屏构图，单一完整场景，适合作为教学阶段背景，尽量不要出现西方面孔");
     const [imageProviderMode, setImageProviderMode] = useState<"cloudapi" | "openai">("cloudapi");
     const [imageModel, setImageModel] = useState("doubao-seedream-4-0-250828");
     const [taskContextHint, setTaskContextHint] = useState("");

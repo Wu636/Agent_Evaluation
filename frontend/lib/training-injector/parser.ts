@@ -31,8 +31,12 @@ function escapeRegex(source: string): string {
     return source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function buildScriptFieldStartPattern(label: string): string {
+    return `(?:\\*{1,2}\\s*)?${escapeRegex(label)}(?:\\s*\\*{1,2}\\s*[：:]|\\s*[：:]\\s*\\*{1,2}|\\s*[：:])`;
+}
+
 function getFieldLineValue(line: string, label: string): string | null {
-    const match = line.match(new RegExp(`^(?:\\*{2})?${escapeRegex(label)}(?:\\*{2})?\\s*[：:]\\s*(.*)$`, "i"));
+    const match = line.match(new RegExp(`^(?:[-*+]\\s*)?${buildScriptFieldStartPattern(label)}\\s*(.*)$`, "i"));
     return match ? match[1] : null;
 }
 
@@ -44,7 +48,7 @@ function normalizeScriptMarkdownForParsing(markdown: string): string {
     const lines = markdown.split("\n");
     const normalizedLines: string[] = [];
     const fieldPattern = new RegExp(
-        `(?:^|\\s)(?:\\*{2})?(?:${SCRIPT_FIELD_LABELS.map((label) => escapeRegex(label)).join("|")})(?:\\*{2})?\\s*[：:]`,
+        `(?:^|\\s)(?:${SCRIPT_FIELD_LABELS.map((label) => buildScriptFieldStartPattern(label)).join("|")})`,
         "gi"
     );
     let inCodeBlock = false;

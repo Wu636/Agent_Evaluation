@@ -23,11 +23,6 @@ try:
 except ImportError:
     fitz = None
 
-try:
-    import fitz  # PyMuPDF
-except ImportError:
-    fitz = None
-
 import requests
 
 # Import Cloud API functions
@@ -43,6 +38,136 @@ MODEL_NAME_MAPPING = {
     "gemini-2.5-flash": "gemini-2.5-flash",
     "grok-4": "grok-4",
 }
+
+TITLE_KEYWORDS = (
+    "试卷", "题卷", "作业", "考试", "测试", "测验", "练习", "报告", "实验",
+    "论文", "案例", "任务", "课程设计", "设计", "项目", "调研", "调查", "实践",
+    "实训", "训练", "研究", "方案"
+)
+TITLE_BAD_PHRASES = (
+    "具体要求如下", "要求如下", "完成一份", "请完成", "请结合", "请根据",
+    "通过考察", "通过实验", "收集、获取", "答题要求", "作答要求"
+)
+TITLE_BAD_PREFIXES = ("请", "根据", "围绕", "阅读", "结合", "完成", "撰写", "说明", "分析", "以“", "以\"", "以'", "以‘")
+DEFAULT_EXAM_TITLE = "作业"
+GENERIC_TITLES = {"粘贴题卷", "题卷文本", "未命名题卷", "题卷内容", "题卷", DEFAULT_EXAM_TITLE}
+MAX_FALLBACK_SOURCE_NAME_BYTES = 90
+MAX_FALLBACK_SOURCE_NAME_CHARS = 40
+MAX_OUTPUT_FILENAME_BYTES = 180
+
+
+def _normalize_text(text: str) -> str:
+    text = (text or "").replace("\u3000", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text.strip("-_:：·• ")
+
+
+def _extract_non_empty_lines(text: str, limit: int = 8) -> List[str]:
+    lines = []
+    for line in text.splitlines():
+        cleaned = _normalize_text(line)
+        if cleaned:
+            lines.append(cleaned)
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def _is_generic_title(title: str) -> bool:
+    normalized = _normalize_text(title)
+    return normalized in GENERIC_TITLES
+
+
+def _is_likely_title(candidate: str) -> bool:
+    text = _normalize_text(candidate)
+    if not text or len(text) < 2:
+        return False
+    if len(text) > 60:
+        return False
+    if text.endswith(("。", "！", "？", "；")):
+        return False
+    if any(phrase in text for phrase in TITLE_BAD_PHRASES):
+        return False
+    if re.match(r"^(第?[0-9一二三四五六七八九十]+[、.．])", text):
+        return False
+    if re.match(r"^[（(]?[0-9一二三四五六七八九十]+[）)]", text):
+        return False
+    if any(text.startswith(prefix) for prefix in TITLE_BAD_PREFIXES) and len(text) > 10:
+        return False
+
+    sentence_punctuation = sum(text.count(ch) for ch in "，。！？；")
+    has_keyword = any(keyword in text for keyword in TITLE_KEYWORDS)
+
+    if sentence_punctuation >= 2:
+        return False
+    if "，" in text and not has_keyword:
+        return False
+
+    return has_keyword or sentence_punctuation == 0 and len(text) <= 25
+
+
+def _pick_exam_title(full_text: str, fallback_title: str = "", preferred_title: str = "") -> str:
+    candidates = []
+    preferred = _normalize_text(preferred_title)
+    if preferred and not _is_generic_title(preferred):
+        candidates.append(preferred)
+    candidates.extend(_extract_non_empty_lines(full_text, limit=8))
+
+    for candidate in candidates:
+        if _is_likely_title(candidate):
+            return candidate
+
+    fallback = _normalize_text(fallback_title or preferred_title or DEFAULT_EXAM_TITLE)
+    return fallback or DEFAULT_EXAM_TITLE
+
+
+def _fallback_title_from_filename(file_stem: str) -> str:
+    normalized = _normalize_text(file_stem)
+    if not normalized:
+        return DEFAULT_EXAM_TITLE
+    if _is_generic_title(normalized):
+        return DEFAULT_EXAM_TITLE
+    if (
+        len(normalized) > MAX_FALLBACK_SOURCE_NAME_CHARS
+        or len(normalized.encode("utf-8")) > MAX_FALLBACK_SOURCE_NAME_BYTES
+    ):
+        return DEFAULT_EXAM_TITLE
+    return normalized
+
+
+def _truncate_utf8(text: str, max_bytes: int) -> str:
+    if len(text.encode("utf-8")) <= max_bytes:
+        return text
+
+    current_bytes = 0
+    result = []
+    for ch in text:
+        ch_bytes = len(ch.encode("utf-8"))
+        if current_bytes + ch_bytes > max_bytes:
+            break
+        result.append(ch)
+        current_bytes += ch_bytes
+    return "".join(result).rstrip("._- ")
+
+
+def _sanitize_filename_component(text: str, fallback: str = DEFAULT_EXAM_TITLE) -> str:
+    normalized = _normalize_text(text)
+    sanitized = re.sub(r'[\\/:*?"<>|]', "_", normalized)
+    sanitized = re.sub(r"\s+", "_", sanitized).strip("._- ")
+    return sanitized or fallback
+
+
+def build_output_filename(title: str, file_suffix: str, fallback_title: str = DEFAULT_EXAM_TITLE) -> str:
+    safe_title = _sanitize_filename_component(title, fallback=fallback_title)
+    suffix = _sanitize_filename_component(file_suffix, fallback="学生答案")
+    title_budget = max(
+        24,
+        MAX_OUTPUT_FILENAME_BYTES - len(suffix.encode("utf-8")) - len(".docx".encode("utf-8")) - 1,
+    )
+    safe_title = _truncate_utf8(safe_title, title_budget)
+    if not safe_title:
+        safe_title = fallback_title
+    return f"{safe_title}_{suffix}.docx"
 
 
 def load_llm_config_from_args(context: dict) -> Tuple[str, str, str]:
@@ -89,15 +214,13 @@ def extract_questions_from_cloud(docx_path: Path, context: dict) -> Tuple[str, s
 
         print(f"✅ 题卷结构解析完成")
 
-        # text_input 是 JSON 字符串，解析为结构化内容给 LLM
-        title = docx_path.stem  # 默认标题用文件名
-
         parsed = text_input
         if isinstance(text_input, str):
             try:
                 parsed = json.loads(text_input)
             except json.JSONDecodeError:
                 # 纯文本直接用
+                title = _pick_exam_title(text_input, fallback_title=_fallback_title_from_filename(docx_path.stem))
                 return title, text_input
 
         # 如果是列表结构 [{ itemName, stuAnswerContent }, ...]
@@ -112,12 +235,18 @@ def extract_questions_from_cloud(docx_path: Path, context: dict) -> Tuple[str, s
                     if content:
                         full_text_lines.append(content)
                     full_text_lines.append("")
-            return title, "\n".join(full_text_lines)
+            full_text = "\n".join(full_text_lines)
+            title = _pick_exam_title(full_text, fallback_title=_fallback_title_from_filename(docx_path.stem))
+            return title, full_text
 
         if isinstance(parsed, dict):
-            return title, json.dumps(parsed, ensure_ascii=False, indent=2)
+            serialized = json.dumps(parsed, ensure_ascii=False, indent=2)
+            title = _pick_exam_title(serialized, fallback_title=_fallback_title_from_filename(docx_path.stem))
+            return title, serialized
 
-        return title, str(parsed)
+        raw_text = str(parsed)
+        title = _pick_exam_title(raw_text, fallback_title=_fallback_title_from_filename(docx_path.stem))
+        return title, raw_text
 
     except Exception as e:
         print(f"⚠️ 云端解析失败 ({e})，尝试本地解析...")
@@ -138,25 +267,31 @@ def extract_questions_from_local(file_path: Path) -> Tuple[str, str]:
         raise ValueError(f"本地解析不支持 {ext} 格式，仅支持 .docx / .doc / .pdf。请配置智慧树认证信息以使用云端解析。")
 
 
+def extract_questions_from_text(source_text: str, preferred_title: str = "") -> Tuple[str, str]:
+    """解析用户粘贴的题卷文本"""
+    exam_content = source_text.strip()
+    if not exam_content:
+        raise ValueError("题卷文字内容为空")
+    fallback_title = DEFAULT_EXAM_TITLE
+    title = _pick_exam_title(exam_content, fallback_title=fallback_title, preferred_title=preferred_title)
+    return title, exam_content
+
+
 def _extract_from_docx(docx_path: Path) -> Tuple[str, str]:
     """解析 .docx 文件"""
     if Document is None:
         raise ImportError("请安装 python-docx: pip install python-docx")
     
     doc = Document(docx_path)
-    
-    title = ""
-    for p in doc.paragraphs[:5]:
-        if p.text.strip():
-            title = p.text.strip()
-            break
-            
+
     full_text = []
     for p in doc.paragraphs:
         if p.text.strip():
             full_text.append(p.text.strip())
-            
-    return title, "\n".join(full_text)
+
+    full_text_str = "\n".join(full_text)
+    title = _pick_exam_title(full_text_str, fallback_title=_fallback_title_from_filename(docx_path.stem))
+    return title, full_text_str
 
 
 def _extract_from_pdf(pdf_path: Path) -> Tuple[str, str]:
@@ -176,15 +311,7 @@ def _extract_from_pdf(pdf_path: Path) -> Tuple[str, str]:
     
     all_text = "\n".join(full_text)
     
-    # 提取标题：取第一个非空行
-    title = ""
-    for line in all_text.split("\n"):
-        if line.strip():
-            title = line.strip()[:100]
-            break
-    
-    if not title:
-        title = pdf_path.stem
+    title = _pick_exam_title(all_text, fallback_title=_fallback_title_from_filename(pdf_path.stem))
     
     print(f"✅ PDF 解析完成，共 {page_count} 页，提取 {len(all_text)} 字符")
     return title, all_text
@@ -380,19 +507,27 @@ LEVEL_FILENAMES = {
 
 
 async def generate_level_answers(
-    exam_docx_path: Path,
+    exam_docx_path: Optional[Path],
     output_dir: Path,
     levels: List[str],  # e.g., ["优秀的回答", "较差的回答"]
     context: dict,
     custom_prompt: str = "",
     custom_levels_json: str = "",
+    source_text: str = "",
+    source_title: str = "",
 ) -> List[Path]:
     """
     生成指定等级的答案文件
     """
-    print(f"📄 正在解析题卷: {exam_docx_path.name}")
     try:
-        title, exam_content = extract_questions_from_cloud(exam_docx_path, context)
+        if source_text.strip():
+            print("📝 正在解析粘贴题卷文字...")
+            title, exam_content = extract_questions_from_text(source_text, preferred_title=source_title)
+        elif exam_docx_path is not None:
+            print(f"📄 正在解析题卷: {exam_docx_path.name}")
+            title, exam_content = extract_questions_from_cloud(exam_docx_path, context)
+        else:
+            raise ValueError("缺少题卷输入内容")
     except Exception as e:
         print(f"❌ 解析题卷失败: {e}")
         return []
@@ -422,9 +557,12 @@ async def generate_level_answers(
         
         desc = effective_level_defs.get(full_key, LEVEL_DEFINITIONS.get(full_key, "无描述"))
         file_suffix = LEVEL_FILENAMES.get(full_key, f"{level_key}_学生答案")
-        
-        clean_title = re.sub(r'[\\/:*?"<>|]', '_', title)
-        filename = f"{clean_title}_{file_suffix}.docx"
+
+        filename = build_output_filename(
+            title=title,
+            file_suffix=file_suffix,
+            fallback_title=_fallback_title_from_filename(exam_docx_path.stem) if exam_docx_path is not None else DEFAULT_EXAM_TITLE,
+        )
         output_path = output_dir / filename
         
         tasks.append((full_key, desc, output_path))

@@ -136,7 +136,7 @@ async function requestCloudapiImageGeneration(
         trainName: string;
         trainDescription: string;
         stageName: string;
-        stageDescription: string;
+        stageDescription: string; 
     },
     credentials: PolymasCredentials,
     timeoutMs: number

@@ -4,7 +4,7 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import {
   Upload, X, CheckCircle2, Loader2, FileDown, AlertCircle,
   Key, ChevronDown, ChevronUp, Settings2, Info, Terminal,
-  Table2, FolderOpen, Clock, Trash2, Eye, EyeOff, RefreshCw
+  Table2, FolderOpen, Clock, Trash2, Eye, EyeOff, RefreshCw, Type
 } from "lucide-react";
 import clsx from "clsx";
 import { MODEL_NAME_MAPPING, normalizeModelId } from "@/lib/config";
@@ -38,6 +38,10 @@ interface SessionState {
   reviewResult: ReviewResult | null;
   genAndReviewResult: ReviewResult | null;
   selectedLevels: string[];
+  generateInputMode: "file" | "text";
+  genAndReviewInputMode: "file" | "text";
+  generateTextContent: string;
+  genAndReviewTextContent: string;
 }
 
 function saveSessionState(state: Partial<SessionState>) {
@@ -392,6 +396,10 @@ export function HomeworkReviewInterface() {
   const [generateFiles, setGenerateFiles] = useState<File[]>([]);         // 生成答案 Tab 的题卷
   const [reviewFiles, setReviewFiles] = useState<File[]>([]);             // 批阅评测 Tab 的作业文件
   const [genAndReviewFiles, setGenAndReviewFiles] = useState<File[]>([]); // 生成并评测 Tab 的题卷
+  const [generateInputMode, setGenerateInputMode] = useState<"file" | "text">(saved.current?.generateInputMode || "file");
+  const [genAndReviewInputMode, setGenAndReviewInputMode] = useState<"file" | "text">(saved.current?.genAndReviewInputMode || "file");
+  const [generateTextContent, setGenerateTextContent] = useState(saved.current?.generateTextContent || "");
+  const [genAndReviewTextContent, setGenAndReviewTextContent] = useState(saved.current?.genAndReviewTextContent || "");
 
   // 每文件 LLM 校验跳过标记（按 file.name+file.size 作为 key，默认不跳过）
   const [skipLLMFiles, setSkipLLMFiles] = useState<Set<string>>(new Set());
@@ -447,6 +455,10 @@ export function HomeworkReviewInterface() {
   const setResult = mode === "review" ? setReviewResult : setGenAndReviewResult;
   const error = mode === "generate" ? generateError : mode === "review" ? reviewError : genAndReviewError;
   const setError = mode === "generate" ? setGenerateError : mode === "review" ? setReviewError : setGenAndReviewError;
+  const inputMode = mode === "generate" ? generateInputMode : mode === "generate-and-review" ? genAndReviewInputMode : "file";
+  const setInputMode = mode === "generate" ? setGenerateInputMode : mode === "generate-and-review" ? setGenAndReviewInputMode : null;
+  const pastedText = mode === "generate" ? generateTextContent : mode === "generate-and-review" ? genAndReviewTextContent : "";
+  const setPastedText = mode === "generate" ? setGenerateTextContent : mode === "generate-and-review" ? setGenAndReviewTextContent : null;
 
   const [attempts, setAttempts] = useState(5);
   const [outputFormat, setOutputFormat] = useState<"json" | "pdf">("json");
@@ -531,10 +543,15 @@ export function HomeworkReviewInterface() {
       reviewResult,
       genAndReviewResult,
       selectedLevels,
+      generateInputMode,
+      genAndReviewInputMode,
+      generateTextContent,
+      genAndReviewTextContent,
     });
   }, [mode, generatedFiles, generatedJobId, generatedOutputRoot, genPhase,
     generateLogs, reviewLogs, genAndReviewLogs, reviewResult, genAndReviewResult,
-    selectedLevels, loading]);
+    selectedLevels, generateInputMode, genAndReviewInputMode,
+    generateTextContent, genAndReviewTextContent, loading]);
 
   const appendLog = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
@@ -609,6 +626,9 @@ export function HomeworkReviewInterface() {
       setGeneratedJobId("");
       setGeneratedOutputRoot("");
       setGenPhase("idle");
+      setGenerateTextContent("");
+    } else if (mode === "generate-and-review") {
+      setGenAndReviewTextContent("");
     }
 
     // 更新sessionStorage
@@ -619,26 +639,39 @@ export function HomeworkReviewInterface() {
       saved.generatedJobId = "";
       saved.generatedOutputRoot = "";
       saved.genPhase = "idle";
+      saved.generateTextContent = "";
     } else if (mode === "review") {
       saved.reviewLogs = [];
       saved.reviewResult = null;
     } else {
       saved.genAndReviewLogs = [];
       saved.genAndReviewResult = null;
+      saved.genAndReviewTextContent = "";
     }
     saveSessionState(saved);
   };
 
   const startReview = async () => {
+    const isGenerateMode = mode === "generate" || mode === "generate-and-review";
+    const usingTextInput = isGenerateMode && inputMode === "text";
+    const hasPastedText = pastedText.trim().length > 0;
     // 批阅模式：支持从 generatedFiles（服务器路径）或 files（上传文件）开始
     const hasUploadedFiles = files.length > 0;
     const hasGeneratedFiles = mode === "review" && generatedFiles.length > 0;
 
-    if (!hasUploadedFiles && !hasGeneratedFiles) {
-      setError(mode === "review" ? "请先选择作业文件（或从「生成答案」Tab 生成后切换过来）" : "请上传题卷文档");
+    if (mode === "review" && !hasUploadedFiles && !hasGeneratedFiles) {
+      setError("请先选择作业文件（或从「生成答案」Tab 生成后切换过来）");
       return;
     }
-    if ((mode === "generate" || mode === "generate-and-review") && selectedLevels.length === 0) {
+    if (isGenerateMode && !usingTextInput && !hasUploadedFiles) {
+      setError("请上传题卷文档");
+      return;
+    }
+    if (isGenerateMode && usingTextInput && !hasPastedText) {
+      setError("请先粘贴题卷文字内容");
+      return;
+    }
+    if (isGenerateMode && selectedLevels.length === 0) {
       setError("请至少选择一个生成等级");
       return;
     }
@@ -651,7 +684,7 @@ export function HomeworkReviewInterface() {
     }
 
     // 生成答案模式需要 LLM Key
-    const needsLLM = mode === "generate" || mode === "generate-and-review";
+    const needsLLM = isGenerateMode;
     const llm = loadLLMSettings();
     if (needsLLM && !llm.apiKey) {
       setError("请先在右上角 ⚙️ 设置中配置 LLM API Key");
@@ -712,7 +745,12 @@ export function HomeworkReviewInterface() {
         apiUrl = RAILWAY_API
           ? `${RAILWAY_API}/api/generate`
           : "/api/homework-review/generate";
-        formData.append("file", files[0]);
+        if (usingTextInput) {
+          formData.append("exam_text", pastedText.trim());
+          appendLog("📝 使用粘贴文字作为题卷输入");
+        } else {
+          formData.append("file", files[0]);
+        }
         formData.append("levels", JSON.stringify(selectedLevels));
         // 传递自定义 Prompt 模板
         if (generatePromptTemplate !== DEFAULT_GENERATE_PROMPT) {
@@ -1251,10 +1289,10 @@ export function HomeworkReviewInterface() {
               </h2>
               <p className="text-xs text-slate-500">
                 {mode === "generate"
-                  ? "上传空白题卷，使用 LLM 生成多等级学生答案（无需智慧树认证）"
+                  ? "上传空白题卷或直接粘贴文字，使用 LLM 生成多等级学生答案（无需智慧树认证）"
                   : mode === "review"
                     ? "上传学生作业文档，自动解析并批阅"
-                    : "上传空白题卷，自动生成多等级答案并评测"}
+                    : "上传空白题卷或直接粘贴文字，自动生成多等级答案并评测"}
               </p>
             </div>
           </div>
@@ -1293,10 +1331,41 @@ export function HomeworkReviewInterface() {
         <div className="grid gap-6 md:grid-cols-2">
           {/* 左侧：文件上传 */}
           <div>
+            {mode !== "review" && (
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm font-medium text-slate-700">题卷输入方式</div>
+                <div className="bg-slate-100 p-1 rounded-lg flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => setInputMode?.("file")}
+                    className={clsx(
+                      "px-3 py-1.5 text-sm font-medium rounded-md transition flex items-center gap-1.5",
+                      inputMode === "file" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    <Upload className="w-4 h-4" />
+                    文件
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInputMode?.("text")}
+                    className={clsx(
+                      "px-3 py-1.5 text-sm font-medium rounded-md transition flex items-center gap-1.5",
+                      inputMode === "text" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    <Type className="w-4 h-4" />
+                    粘贴文字
+                  </button>
+                </div>
+              </div>
+            )}
             <div
               className={clsx(
-                "border-2 border-dashed rounded-2xl p-6 text-center transition",
-                files.length > 0 ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"
+                "border-2 border-dashed rounded-2xl p-6 transition",
+                mode !== "review" && inputMode === "text"
+                  ? (pastedText.trim() ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white")
+                  : (files.length > 0 ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white")
               )}
             >
               <input
@@ -1318,34 +1387,60 @@ export function HomeworkReviewInterface() {
                 className="hidden"
                 onChange={(e) => handleFilesSelected(e.target.files)}
               />
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center">
-                  <Upload className="w-6 h-6 text-indigo-600" />
+              {mode !== "review" && inputMode === "text" ? (
+                <div className="space-y-4">
+                  <div className="flex flex-col items-center gap-3 text-center">
+                    <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center">
+                      <Type className="w-6 h-6 text-indigo-600" />
+                    </div>
+                    <div className="text-sm text-slate-600">
+                      直接复制题卷文字到下方，系统会自动生成学生答案
+                    </div>
+                  </div>
+                  <textarea
+                    value={pastedText}
+                    onChange={(e) => setPastedText?.(e.target.value)}
+                    rows={12}
+                    placeholder="将题卷全文粘贴到这里，建议保留题号、题型、作答要求等完整内容..."
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 resize-y"
+                  />
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>支持直接从 Word / PDF 中复制文本后粘贴使用</span>
+                    <span>{pastedText.trim() ? `${pastedText.trim().length} 字` : "未粘贴内容"}</span>
+                  </div>
                 </div>
-                <div className="text-sm text-slate-600">
-                  {mode === "review"
-                    ? "支持 doc/docx/pdf/ppt/pptx/png/jpg，支持多文件或文件夹"
-                    : "支持 doc/docx/pdf 格式的题卷文件"
-                  }
+              ) : (
+                <div className="flex flex-col items-center gap-3 text-center">
+                  <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center">
+                    <Upload className="w-6 h-6 text-indigo-600" />
+                  </div>
+                  <div className="text-sm text-slate-600">
+                    {mode === "review"
+                      ? "支持 doc/docx/pdf/ppt/pptx/png/jpg，支持多文件或文件夹"
+                      : "支持 doc/docx/pdf 格式的题卷文件，也支持切换到“粘贴文字”直接生成"
+                    }
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="px-3 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                      onClick={() => inputRef.current?.click()}
+                    >
+                      选择文件
+                    </button>
+                    <button
+                      type="button"
+                      className="px-3 py-2 text-sm font-semibold bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200"
+                      onClick={() => folderRef.current?.click()}
+                    >
+                      选择文件夹
+                    </button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    className="px-3 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-                    onClick={() => inputRef.current?.click()}
-                  >
-                    选择文件
-                  </button>
-                  <button
-                    className="px-3 py-2 text-sm font-semibold bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200"
-                    onClick={() => folderRef.current?.click()}
-                  >
-                    选择文件夹
-                  </button>
-                </div>
-              </div>
+              )}
             </div>
 
-            {files.length > 0 && (() => {
+            {(mode === "review" || inputMode === "file") && files.length > 0 && (() => {
               // 构建分组视图数据
               const groupedKeys = new Set<string>();
               fileGroups.forEach(g => g.fileKeys.forEach(k => groupedKeys.add(k)));

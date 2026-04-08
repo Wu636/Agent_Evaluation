@@ -20,7 +20,9 @@ from homework_reviewer_v2 import ensure_instance_context
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Answer Generation Service (generate-only)")
-    parser.add_argument("--input", required=True, help="Path to blank exam docx")
+    parser.add_argument("--input", default="", help="Path to blank exam docx")
+    parser.add_argument("--input-text-file", default="", help="Path to pasted exam text file")
+    parser.add_argument("--input-title", default="", help="Optional title for pasted exam text")
     parser.add_argument("--output-root", required=True, help="Root for outputs")
     parser.add_argument("--levels", nargs="+",
                         default=["优秀的回答", "良好的回答", "中等的回答", "合格的回答", "较差的回答"],
@@ -55,12 +57,20 @@ async def main():
     args = parse_args()
     printer = StreamPrinter()
 
-    input_path = Path(args.input)
+    input_path = Path(args.input) if args.input else None
+    input_text_file = Path(args.input_text_file) if args.input_text_file else None
     output_root = Path(args.output_root)
 
-    if not input_path.exists():
+    if input_path is None and input_text_file is None:
+        printer.error("必须提供题卷文件或题卷文字内容")
+        return
+    if input_path is not None and not input_path.exists():
         printer.error(f"输入文件不存在: {input_path}")
         return
+    if input_text_file is not None and not input_text_file.exists():
+        printer.error(f"题卷文字文件不存在: {input_text_file}")
+        return
+    is_text_mode = input_path is None and input_text_file is not None
 
     # ── 构建 context（认证信息可选）──
     # 环境变量由 API route 的 childEnv 注入
@@ -70,7 +80,9 @@ async def main():
 
     context = {}
 
-    if authorization and cookie_val and instance_nid:
+    if is_text_mode:
+        printer.log("📝 使用粘贴文字模式，跳过题卷文件解析")
+    elif authorization and cookie_val and instance_nid:
         # 有认证信息 → 获取实例详情（支持云端解析）
         printer.log("🔑 正在获取实例信息...")
         context = ensure_instance_context() or {}
@@ -109,6 +121,7 @@ async def main():
     gen_output_dir = output_root / "generated_answers"
 
     try:
+        source_text = input_text_file.read_text(encoding="utf-8") if is_text_mode and input_text_file is not None else ""
         generated_files = await generate_level_answers(
             exam_docx_path=input_path,
             output_dir=gen_output_dir,
@@ -116,6 +129,8 @@ async def main():
             context=context,
             custom_prompt=context.get("custom_prompt", ""),
             custom_levels_json=context.get("custom_levels", ""),
+            source_text=source_text,
+            source_title=args.input_title.strip(),
         )
     except Exception as e:
         printer.error(f"生成阶段发生错误: {e}")

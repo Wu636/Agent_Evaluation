@@ -137,7 +137,9 @@ async def test():
 
 @app.post("/api/generate")
 async def generate_answers(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    exam_text: Optional[str] = Form(None),
+    exam_title: Optional[str] = Form(None),
     authorization: Optional[str] = Form(None),
     cookie: Optional[str] = Form(None),
     instance_nid: Optional[str] = Form(None),
@@ -153,13 +155,24 @@ async def generate_answers(
     
     # 创建临时目录
     temp_dir = Path(tempfile.mkdtemp(prefix="homework_"))
-    exam_file = temp_dir / file.filename
     output_root = temp_dir / "output"
     output_root.mkdir(exist_ok=True)
-    
-    # 保存上传的文件
-    content = await file.read()
-    exam_file.write_bytes(content)
+    exam_file: Optional[Path] = None
+    text_input_file: Optional[Path] = None
+
+    raw_exam_text = exam_text or ""
+    if not file and not raw_exam_text.strip():
+        raise HTTPException(status_code=400, detail="请上传题卷文件或粘贴题卷文字")
+
+    if file and file.filename:
+        exam_file = temp_dir / file.filename
+        content = await file.read()
+        exam_file.write_bytes(content)
+    elif raw_exam_text.strip():
+        safe_title = (exam_title or "作业").strip() or "作业"
+        safe_title = "".join(ch if ch.isalnum() or ch in "-_." or "\u4e00" <= ch <= "\u9fff" else "_" for ch in safe_title)[:40]
+        text_input_file = temp_dir / f"{safe_title or '作业'}.txt"
+        text_input_file.write_text(raw_exam_text, encoding="utf-8")
     
     # 解析等级 - 前端发送的是字符串数组 ["优秀的回答", "良好的回答", ...]
     levels_list = ["优秀的回答", "良好的回答", "中等的回答", "合格的回答", "较差的回答"]
@@ -189,13 +202,18 @@ async def generate_answers(
     cmd = [
         "python3", "-u",
         str(GENERATE_SCRIPT),
-        "--input", str(exam_file),
         "--output-root", str(output_root),
         "--levels", *levels_list,
         "--llm-api-key", llm_api_key or os.getenv("LLM_API_KEY", ""),
         "--llm-api-url", llm_api_url or os.getenv("LLM_API_URL", ""),
         "--llm-model", llm_model or os.getenv("LLM_MODEL", ""),
     ]
+    if exam_file is not None:
+        cmd[3:3] = ["--input", str(exam_file)]
+    elif text_input_file is not None:
+        cmd[3:3] = ["--input-text-file", str(text_input_file)]
+        if exam_title and exam_title.strip():
+            cmd[5:5] = ["--input-title", exam_title.strip()]
     
     async def event_stream():
         """SSE流式响应 - 读取子进程的JSON行协议输出"""

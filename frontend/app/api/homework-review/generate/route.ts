@@ -60,14 +60,18 @@ export async function POST(request: NextRequest) {
           
           // 重新构建FormData，只包含Railway API需要的字段
           const railwayFormData = new FormData();
-          const file = formData.get("file") as File;
-          if (!file) {
-            sseEvent(controller, "error", { message: "请上传题卷文件" });
+          const file = formData.get("file") as File | null;
+          const examText = ((formData.get("exam_text") as string) || "").trim();
+          const examTitle = ((formData.get("exam_title") as string) || "").trim();
+          if (!file && !examText) {
+            sseEvent(controller, "error", { message: "请上传题卷文件或粘贴题卷文字" });
             controller.close();
             return;
           }
           
-          railwayFormData.append("file", file);
+          if (file) railwayFormData.append("file", file);
+          if (examText) railwayFormData.append("exam_text", examText);
+          if (examTitle) railwayFormData.append("exam_title", examTitle);
           
           // 认证参数（仅存在时才发送）
           const auth = formData.get("authorization") as string;
@@ -129,9 +133,12 @@ export async function POST(request: NextRequest) {
         const formData = await request.formData();
 
         // ── 读取文件 ──
-        const file = formData.get("file") as File;
-        if (!file) {
-          sseEvent(controller, "error", { message: "请上传题卷文件" });
+        const file = formData.get("file") as File | null;
+        const rawExamText = (formData.get("exam_text") as string) || "";
+        const examText = rawExamText.trim();
+        const examTitle = ((formData.get("exam_title") as string) || "").trim();
+        if (!file && !examText) {
+          sseEvent(controller, "error", { message: "请上传题卷文件或粘贴题卷文字" });
           controller.close();
           return;
         }
@@ -179,22 +186,36 @@ export async function POST(request: NextRequest) {
           message: `🆔 Job ID: ${jobId}`,
         });
 
-        // ── 保存上传的题卷文件 ──
         const jobUploadDir = path.join(UPLOADS_DIR, jobId);
         await fs.mkdir(jobUploadDir, { recursive: true });
 
-        const bytes = await file.arrayBuffer();
-        const buffer = Buffer.from(bytes);
-        const safeName = file.name.replace(
-          /[^a-zA-Z0-9._\-\u4e00-\u9fa5]/g,
-          "_"
-        );
-        const inputPath = path.join(jobUploadDir, safeName);
-        await fs.writeFile(inputPath, buffer);
+        let inputPath: string | null = null;
+        let inputTextPath: string | null = null;
 
-        sseEvent(controller, "log", {
-          message: `📄 已保存题卷: ${safeName}`,
-        });
+        if (file) {
+          const bytes = await file.arrayBuffer();
+          const buffer = Buffer.from(bytes);
+          const safeName = file.name.replace(
+            /[^a-zA-Z0-9._\-\u4e00-\u9fa5]/g,
+            "_"
+          );
+          inputPath = path.join(jobUploadDir, safeName);
+          await fs.writeFile(inputPath, buffer);
+
+          sseEvent(controller, "log", {
+            message: `📄 已保存题卷: ${safeName}`,
+          });
+        } else if (examText) {
+          const safeTitle = (examTitle || "作业")
+            .replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, "_")
+            .slice(0, 40) || "作业";
+          inputTextPath = path.join(jobUploadDir, `${safeTitle}.txt`);
+          await fs.writeFile(inputTextPath, rawExamText, "utf8");
+
+          sseEvent(controller, "log", {
+            message: `📝 已接收题卷文字内容（${examText.length} 字）`,
+          });
+        }
 
         // ── 输出目录 ──
         const outputRoot = path.join(OUTPUTS_DIR, jobId);
@@ -226,8 +247,6 @@ export async function POST(request: NextRequest) {
         const scriptArgs = [
           "-u",
           scriptPath,
-          "--input",
-          inputPath,
           "--output-root",
           outputRoot,
           "--levels",
@@ -239,6 +258,15 @@ export async function POST(request: NextRequest) {
           "--llm-model",
           llmModel || "",
         ];
+
+        if (inputPath) {
+          scriptArgs.splice(2, 0, "--input", inputPath);
+        } else if (inputTextPath) {
+          scriptArgs.splice(2, 0, "--input-text-file", inputTextPath);
+          if (examTitle) {
+            scriptArgs.splice(4, 0, "--input-title", examTitle);
+          }
+        }
 
         sseEvent(controller, "log", {
           message: `🚀 启动答案生成流程...`,

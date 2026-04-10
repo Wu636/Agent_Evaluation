@@ -1002,7 +1002,17 @@ export function TrainingGenerateInterface() {
             abortRef.current = null;
             setCurrentGeneratingPhase(null);
         }
-    }, [activeDefaultScriptTemplate, canGenerate, getDocContent, generateScript, generateRubric, modulePlan, scriptMode]);
+    }, [
+        activeDefaultScriptTemplate,
+        canGenerate,
+        getDocContent,
+        generateScript,
+        generateRubric,
+        modulePlan,
+        rubricTemplate,
+        scriptMode,
+        scriptTemplate,
+    ]);
 
     const handleCancel = useCallback(() => {
         abortRef.current?.abort();
@@ -1212,9 +1222,17 @@ export function TrainingGenerateInterface() {
         ...builtInScriptTemplateOptions.filter((option) => option.id === recommendedBuiltInTemplateId),
         ...builtInScriptTemplateOptions.filter((option) => option.id !== recommendedBuiltInTemplateId),
     ];
+    const activeScriptTemplateOption = builtInScriptTemplateOptions.find((option) => option.id === selectedScriptTemplateId);
+    const activeScriptDbTemplate = dbTemplates.find((template) => template.type === "script" && template.id === selectedScriptTemplateId);
     const scriptTemplateModeHint = modulePlan
         ? `已完成智能规划：默认推荐使用「${SCRIPT_MODE_LABELS[modulePlan.recommendedMode]}内置模板」，你仍可在下拉框切回原始模板。`
-        : "未进行智能规划：当前默认使用原始内置模板。";
+        : activeScriptTemplateOption
+            ? `未进行智能规划：当前将使用「${activeScriptTemplateOption.label}」。`
+            : selectedScriptTemplateId === "custom"
+                ? "未进行智能规划：当前将使用你编辑后的自定义模板。"
+                : activeScriptDbTemplate
+                    ? `未进行智能规划：当前将使用模板「${activeScriptDbTemplate.name}」。`
+                    : "未进行智能规划：当前将使用你选中的模板。";
     const scriptDiagnostics = scriptContent ? diagnoseTrainingScript(scriptContent, modulePlan) : null;
     const scriptStructure = scriptContent ? extractScriptStructure(scriptContent) : { prefix: "", stages: [], suffix: "" };
 

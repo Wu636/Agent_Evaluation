@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
                 const maxContinuationAttempts = 12;
 
                 const extractStageNumber = (heading: string): number | null => {
-                    const match = heading.match(/^###\s*阶段\s*(\d+)(?:\b|[：:])/i);
+                    const match = heading.match(/^#{3,}\s*阶段\s*(\d+)(?:\b|[：:])/i);
                     if (!match) return null;
                     const value = Number.parseInt(match[1], 10);
                     return Number.isFinite(value) ? value : null;
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
                     const parsedSteps = parseTrainingScript(content);
                     const structure = extractScriptStructure(content);
                     const stageCount = structure.stages.length || parsedSteps.length;
-                    const stageOneMatches = structure.stages.filter((stage) => /^###\s*阶段\s*1(?:\b|[：:])/i.test(stage.heading));
+                    const stageOneMatches = structure.stages.filter((stage) => /^#{3,}\s*阶段\s*1(?:\b|[：:])/i.test(stage.heading));
 
                     if (!parsedTask?.trainTaskName) {
                         return { ok: false, reason: "缺少任务名称" };
@@ -274,7 +274,7 @@ export async function POST(request: NextRequest) {
                     const cleaned = cleanupMarkdownFence(content);
                     const parsedSteps = parseTrainingScript(cleaned);
                     const structure = extractScriptStructure(cleaned);
-                    const stageOneMatches = cleaned.match(/^###\s*阶段\s*1(?:\b|[：:])/gim) || [];
+                    const stageOneMatches = cleaned.match(/^#{3,}\s*阶段\s*1(?:\b|[：:])/gim) || [];
                     const validation = validateScriptStructure(cleaned);
 
                     let score = scoreScriptCompleteness(cleaned);
@@ -309,7 +309,7 @@ export async function POST(request: NextRequest) {
 
                 const normalizeRepeatedStageOneRestart = (content: string): string => {
                     const clean = cleanupMarkdownFence(content);
-                    const stageOneMatches = Array.from(clean.matchAll(/^###\s*阶段\s*1(?:\b|[：:]).*$/gim));
+                    const stageOneMatches = Array.from(clean.matchAll(/^#{3,}\s*阶段\s*1(?:\b|[：:]).*$/gim));
                     if (stageOneMatches.length <= 1) {
                         return clean;
                     }

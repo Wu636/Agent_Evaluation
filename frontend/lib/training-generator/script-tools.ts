@@ -31,6 +31,13 @@ function joinLines(lines: string[]): string {
     return lines.join("\n").trim();
 }
 
+export function extractStageNumberFromHeading(heading: string): number | null {
+    const match = heading.trim().match(/^#{3,}\s*阶段\s*(\d+)(?:\b|[：:])/i);
+    if (!match) return null;
+    const value = Number.parseInt(match[1], 10);
+    return Number.isFinite(value) ? value : null;
+}
+
 export function extractScriptStructure(markdown: string): ScriptStructure {
     const lines = markdown.split("\n");
     const stageStarts: number[] = [];
@@ -44,9 +51,9 @@ export function extractScriptStructure(markdown: string): ScriptStructure {
             return;
         }
         if (inCodeBlock) return;
-        if (/^###\s*阶段/.test(trimmed)) {
+        if (/^#{3,}\s*阶段/.test(trimmed)) {
             stageStarts.push(index);
-        } else if (/^##\s+/.test(trimmed)) {
+        } else if (/^##+\s+/.test(trimmed)) {
             topLevelHeadings.push(index);
         }
     });
@@ -104,6 +111,7 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
     const issues: ScriptDiagnosticIssue[] = [];
     const taskConfig = parseTaskConfig(markdown);
     const parsedSteps = parseTrainingScript(markdown);
+    const structure = extractScriptStructure(markdown);
 
     if (!taskConfig?.trainTaskName) {
         issues.push({ level: "warning", message: "基础配置中未解析到任务名称。", field: "taskName" });
@@ -115,6 +123,29 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
         issues.push({ level: "error", message: "未解析到任何训练阶段，当前剧本无法注入。" });
         return { stageCount: 0, issues, canInject: false };
     }
+
+    let previousStageNumber: number | null = null;
+    structure.stages.forEach((stage, index) => {
+        const stageNumber = extractStageNumberFromHeading(stage.heading);
+        if (stageNumber === null) {
+            issues.push({
+                level: "error",
+                message: `阶段 ${index + 1} 的标题不是标准格式，需使用“### 阶段N: 名称”。`,
+                stageIndex: index,
+                field: "stepName",
+            });
+            return;
+        }
+        if (previousStageNumber !== null && stageNumber <= previousStageNumber) {
+            issues.push({
+                level: "error",
+                message: `阶段编号出现重复或回卷：阶段${previousStageNumber} 后出现阶段${stageNumber}。`,
+                stageIndex: index,
+                field: "stepName",
+            });
+        }
+        previousStageNumber = stageNumber;
+    });
 
     parsedSteps.forEach((step, index) => {
         if (!step.stepName.trim()) {
@@ -135,8 +166,8 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
         if (!step.transitionPrompt.trim() && index < parsedSteps.length - 1) {
             issues.push({ level: "warning", message: `阶段 ${index + 1} 缺少 transitionPrompt。`, stageIndex: index, field: "transitionPrompt" });
         }
-        if (!step.interactiveRounds || step.interactiveRounds < 1) {
-            issues.push({ level: "warning", message: `阶段 ${index + 1} 的互动轮次不合理。`, stageIndex: index, field: "interactiveRounds" });
+        if (!step.interactiveRounds || step.interactiveRounds < 1 || step.interactiveRounds > 10) {
+            issues.push({ level: "warning", message: `阶段 ${index + 1} 的互动轮次不合理（建议 1-10 轮）。`, stageIndex: index, field: "interactiveRounds" });
         }
         if (index < parsedSteps.length - 1 && !/^NEXT_TO_STAGE\d+$/i.test(step.flowCondition.trim())) {
             issues.push({ level: "warning", message: `阶段 ${index + 1} 的 flowCondition 不是标准阶段跳转格式。`, stageIndex: index, field: "flowCondition" });

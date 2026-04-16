@@ -1,3 +1,5 @@
+import { buildWorkflowContext } from "../workflow-helper";
+
 /**
  * LLM 评测提示词模板 (新版本 - 分数段限定版)
  * 自动生成于评分标准文档
@@ -43,7 +45,7 @@ export function buildSubDimensionPrompt(
   subDimensionKey: string,
   context: PromptContext
 ): string {
-  const { teacherDoc, dialogueText } = context;
+  const { teacherDoc, dialogueText, workflowConfig } = context;
 
   const prompts: Record<string, Record<string, string>> = {
     "目标达成度": {
@@ -1722,6 +1724,13 @@ export function buildSubDimensionPrompt(
   // 模板中的 \${...} 在运行时变成 ${...}，所以要匹配不带反斜杠的版本
   prompt = prompt.split("${teacherDoc}").join(teacherDoc);
   prompt = prompt.split("${dialogueText}").join(dialogueText);
+
+  if (workflowConfig?.trim()) {
+    const workflowContext = buildWorkflowContext(workflowConfig);
+    if (workflowContext) {
+      prompt += workflowContext;
+    }
+  }
 
   return prompt;
 }

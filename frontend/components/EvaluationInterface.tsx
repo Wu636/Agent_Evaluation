@@ -10,9 +10,9 @@ import { useAuth } from '@/components/AuthProvider';
 import { evaluateFilesStream, EvaluationReport, StreamProgress } from '@/lib/api';
 import { saveToHistory } from '@/lib/client-history';
 import { saveFile, loadFile, clearAllFiles, TEACHER_DOC_ID, DIALOGUE_RECORD_ID } from '@/lib/file-storage';
-import { DIMENSIONS, normalizeModelId } from '@/lib/config';
+import { normalizeModelId } from '@/lib/config';
 import { supabase } from '@/lib/supabase';
-import { EvaluationTemplate, DEFAULT_DIMENSIONS, getEnabledSubDimensions, calculateTotalScore } from '@/lib/templates';
+import { EvaluationTemplate, DEFAULT_DIMENSIONS, getEnabledSubDimensions, normalizeTemplateDimensions } from '@/lib/templates';
 
 // 添加工作流配置文件 ID
 const WORKFLOW_CONFIG_ID = 'workflow_config';
@@ -149,12 +149,23 @@ export function EvaluationInterface() {
             const { teacherDoc: tDoc, dialogueRecord: dRec, workflowConfig: wCfg } = await parseRes.json();
 
             // 2. 准备评测任务
-            const tasks: Array<{ dimKey: string, subKey: string, dimName: string, subName: string, fullScore: number }> = [];
+            const tasks: Array<{
+                dimId: string;
+                subId: string;
+                dimKey?: string;
+                subKey?: string;
+                dimName: string;
+                dimDescription: string;
+                subName: string;
+                subDescription: string;
+                scoringGuidance: string;
+                fullScore: number;
+            }> = [];
             let totalSubDimensions = 0;
 
             // 获取选中的模板或使用默认配置
             // 注意: 如果没有选中模板，使用 DEFAULT_DIMENSIONS 构造一个临时的模板对象结构
-            let currentTemplateDimensions = DEFAULT_DIMENSIONS;
+            let currentTemplateDimensions: EvaluationTemplate["dimensions"] = DEFAULT_DIMENSIONS;
             if (selectedTemplateId) {
                 const selected = templates.find(t => t.id === selectedTemplateId);
                 if (selected) {
@@ -166,20 +177,19 @@ export function EvaluationInterface() {
             const enabledSubs = getEnabledSubDimensions(currentTemplateDimensions);
 
             enabledSubs.forEach(sub => {
-                // 从静态配置中获取显示名称 (因为 Template JSON 中不存储名称)
-                const dimConfig = DIMENSIONS[sub.dimension];
-                const subDimConfig = dimConfig?.subDimensions.find(s => s.key === sub.subDimension);
-
-                if (dimConfig && subDimConfig) {
-                    tasks.push({
-                        dimKey: sub.dimension,
-                        subKey: sub.subDimension,
-                        dimName: dimConfig.name,
-                        subName: subDimConfig.name,
-                        fullScore: sub.fullScore
-                    });
-                    totalSubDimensions++;
-                }
+                tasks.push({
+                    dimId: sub.dimensionId,
+                    subId: sub.subDimensionId,
+                    dimKey: sub.dimensionKey,
+                    subKey: sub.subDimensionKey,
+                    dimName: sub.dimensionName,
+                    dimDescription: sub.dimensionDescription,
+                    subName: sub.subDimensionName,
+                    subDescription: sub.subDimensionDescription,
+                    scoringGuidance: sub.scoringGuidance,
+                    fullScore: sub.fullScore,
+                });
+                totalSubDimensions++;
             });
 
             // 3. 并发评测 - 使用动态并发池优化性能
@@ -208,6 +218,20 @@ export function EvaluationInterface() {
                             body: JSON.stringify({
                                 dimensionKey: task.dimKey,
                                 subDimensionKey: task.subKey,
+                                templateDimension: {
+                                    id: task.dimId,
+                                    key: task.dimKey,
+                                    name: task.dimName,
+                                    description: task.dimDescription,
+                                },
+                                templateSubDimension: {
+                                    id: task.subId,
+                                    key: task.subKey,
+                                    name: task.subName,
+                                    description: task.subDescription,
+                                    scoringGuidance: task.scoringGuidance,
+                                    fullScore: task.fullScore,
+                                },
                                 fullScore: task.fullScore, // 传递自定义满分
                                 teacherDocContent: tDoc.content,
                                 dialogueData: dRec.data,
@@ -245,7 +269,7 @@ export function EvaluationInterface() {
                                             const data = JSON.parse(line.slice(6));
                                             if (data.done && data.result) {
                                                 // 流结束，获取最终结果
-                                                results.set(`${task.dimKey}-${task.subKey}`, data.result);
+                                                results.set(`${task.dimId}-${task.subId}`, data.result);
                                                 success = true;
                                             } else if (data.error) {
                                                 console.error(`流式评测错误: ${task.subName}`, data.error);
@@ -264,7 +288,7 @@ export function EvaluationInterface() {
                             if (data.error) {
                                 console.error(`评测错误: ${task.subName}`, data.error);
                             } else {
-                                results.set(`${task.dimKey}-${task.subKey}`, data);
+                                results.set(`${task.dimId}-${task.subId}`, data);
                                 success = true;
                             }
                         } else if ([500, 502, 503, 504].includes(res.status)) {
@@ -332,52 +356,42 @@ export function EvaluationInterface() {
             setCurrentDimension("正在生成最终报告...");
 
             // 4. 聚合结果
-            const dimensionScores = Object.entries(DIMENSIONS).map(([dKey, dConfig]) => {
-                // 检查该维度在当前模板中是否启用
-                const templateDim = currentTemplateDimensions[dKey];
-                if (!templateDim || !templateDim.enabled) return null;
+            const normalizedTemplate = normalizeTemplateDimensions(currentTemplateDimensions);
+            const dimensionScores = normalizedTemplate.dimensions
+                .filter((dimension) => dimension.enabled)
+                .map((dimension) => {
+                    const subScores = dimension.subDimensions
+                        .filter((subDimension) => subDimension.enabled)
+                        .map((subDimension) => results.get(`${dimension.id}-${subDimension.id}`))
+                        .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
-                const subScores: any[] = [];
-                dConfig.subDimensions.forEach(sub => {
-                    // 检查子维度是否启用
-                    const templateSub = templateDim.subDimensions[sub.key];
-                    if (!templateSub || !templateSub.enabled) return;
+                    const totalScore = subScores.reduce((sum, score) => sum + score.score, 0);
+                    const currentFullScore = dimension.subDimensions
+                        .filter((subDimension) => subDimension.enabled)
+                        .reduce((sum, subDimension) => sum + subDimension.fullScore, 0);
 
-                    const res = results.get(`${dKey}-${sub.key}`);
-                    if (res) subScores.push(res);
+                    const analysis = subScores.map((score) =>
+                        `【${score.sub_dimension}】(${score.score}/${score.full_score}): ${score.judgment_basis}`
+                    ).join("\n\n");
+
+                    const ratio = currentFullScore > 0 ? totalScore / currentFullScore : 0;
+                    let level = "合格";
+                    if (ratio >= 0.9) level = "优秀";
+                    else if (ratio >= 0.75) level = "良好";
+                    else if (ratio < 0.6) level = "不合格";
+
+                    return {
+                        dimension: dimension.name,
+                        score: totalScore,
+                        full_score: currentFullScore,
+                        weight: dimension.weight,
+                        level,
+                        analysis,
+                        sub_scores: subScores,
+                        isVeto: false,
+                        weighted_score: totalScore,
+                    };
                 });
-
-                const totalScore = subScores.reduce((sum, s) => sum + s.score, 0);
-
-                // 聚合分析文本
-                const analysis = subScores.map(s =>
-                    `【${s.sub_dimension}】(${s.score}/${s.full_score}): ${s.judgment_basis}`
-                ).join("\n\n");
-
-                let level = "合格";
-                if (totalScore >= dConfig.fullScore * 0.9) level = "优秀";
-                else if (totalScore >= dConfig.fullScore * 0.75) level = "良好";
-                else if (totalScore < dConfig.fullScore * 0.6) level = "不合格";
-
-                // 根据模板中的满分计算 (其实 subScores 里的 score 已经是根据自定义满分打的了)
-                // 这里我们要使用模板里定义的该维度的总权重(如果有)或者直接求和
-                // 目前模板结构里: dimension 有 weight 和 fullScore (但 fullScore 需要从 subDimensions 累加)
-
-                // templateDim.subDimensions has the scores configuration
-                const currentFullScore = calculateTotalScore({ [dKey]: templateDim });
-
-                return {
-                    dimension: dConfig.name,
-                    score: totalScore,
-                    full_score: currentFullScore,
-                    weight: dConfig.weight, // 暂时沿用静态配置的权重，如果模板支持自定义权重则需修改
-                    level,
-                    analysis,
-                    sub_scores: subScores,
-                    isVeto: dConfig.isVeto && dConfig.vetoThreshold !== undefined && totalScore < dConfig.vetoThreshold,
-                    weighted_score: totalScore
-                };
-            }).filter((d): d is NonNullable<typeof d> => d !== null);
 
             // 计算总分
             const finalTotalScore = dimensionScores.reduce((sum, d) => sum + d.weighted_score, 0);

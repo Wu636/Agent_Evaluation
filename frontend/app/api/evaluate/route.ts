@@ -115,6 +115,10 @@ export async function POST(request: NextRequest) {
       pass_criteria_met: boolean;
       veto_reasons: string[];
       history_id: string;
+      teacher_doc_name: string;
+      teacher_doc_content: string;
+      dialogue_doc_name: string;
+      dialogue_doc_content: string;
     } = {
       total_score: report.total_score,
       dimensions: report.dimensions.reduce(
@@ -138,6 +142,10 @@ export async function POST(request: NextRequest) {
       pass_criteria_met: report.pass_criteria_met,
       veto_reasons: report.veto_reasons,
       history_id: "",
+      teacher_doc_name: teacherDoc.name,
+      teacher_doc_content: teacherDocInfo.content as string,
+      dialogue_doc_name: dialogueRecord.name,
+      dialogue_doc_content: JSON.stringify(dialogueData, null, 2),
     };
 
     // 保存到历史记录（失败不影响结果返回）

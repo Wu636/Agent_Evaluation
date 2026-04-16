@@ -365,6 +365,10 @@ export async function POST(request: NextRequest) {
                     pass_criteria_met: passCriteriaMet,
                     veto_reasons: vetoReasons,
                     history_id: "",
+                    teacher_doc_name: teacherDocInfo.name,
+                    teacher_doc_content: teacherDocInfo.content as string,
+                    dialogue_doc_name: dialogueRecord.name,
+                    dialogue_doc_content: JSON.stringify(dialogueData, null, 2),
                 };
 
                 // 保存到历史记录

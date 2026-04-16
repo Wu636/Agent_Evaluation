@@ -48,6 +48,8 @@ import { DEFAULT_RUBRIC_TEMPLATE, DEFAULT_SCRIPT_TEMPLATE, TEMPLATE_VERSION, get
 import { diagnoseTrainingScript, extractScriptStructure, replaceStageInScript } from "@/lib/training-generator/script-tools";
 import { SettingsModal } from "./SettingsModal";
 import { InjectConfigModal } from "./InjectConfigModal";
+import { TrainingOptimizationModal } from "./TrainingOptimizationModal";
+import { OptimizationLoopResult } from "@/lib/training-optimizer/types";
 
 type GeneratePhase = "idle" | "generating" | "completed" | "error";
 type ResultTab = "script" | "rubric";
@@ -57,6 +59,8 @@ const RESULT_CACHE_KEY = "training-generate-result";
 const MODULE_PLAN_CACHE_KEY = "training-generate-module-plan";
 const MODULE_PLAN_CACHE_VERSION = 1;
 const MODULE_PLAN_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const OPTIMIZATION_SNAPSHOT_KEY = "training-generate-optimization-snapshots";
+const OPTIMIZATION_SNAPSHOT_LIMIT = 8;
 const TEACHER_DOC_CACHE_DB = "training-generate-teacher-doc";
 const TEACHER_DOC_CACHE_STORE = "teacher-doc-state";
 const TEACHER_DOC_CACHE_KEY = "latest";
@@ -85,6 +89,18 @@ interface CachedTeacherDocState {
     fileLastModified: number;
 }
 
+interface OptimizationSnapshot {
+    id: string;
+    createdAt: number;
+    taskName: string;
+    summary: string;
+    appliedActionCount: number;
+    actionTitles: string[];
+    scriptContent: string;
+    rubricContent: string;
+    modulePlan: TrainingScriptPlan | null;
+}
+
 const EMPTY_MODULE_PLAN_CACHE: CachedModulePlanState = {
     _v: MODULE_PLAN_CACHE_VERSION,
     modulePlan: null,
@@ -95,6 +111,20 @@ const EMPTY_MODULE_PLAN_CACHE: CachedModulePlanState = {
     planAutofillModuleFields: {},
     updatedAt: 0,
 };
+
+function loadOptimizationSnapshots(): OptimizationSnapshot[] {
+    if (typeof window === "undefined") return [];
+
+    try {
+        const raw = localStorage.getItem(OPTIMIZATION_SNAPSHOT_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        localStorage.removeItem(OPTIMIZATION_SNAPSHOT_KEY);
+        return [];
+    }
+}
 
 function openTeacherDocCacheDb(): Promise<IDBDatabase | null> {
     if (typeof window === "undefined" || typeof indexedDB === "undefined") {
@@ -313,6 +343,8 @@ function validatePlanLocally(plan: TrainingScriptPlan | null): ScriptPlanValidat
         if (!module.objective.trim()) issues.push({ level: "error", message: `模块 ${index + 1} 缺少训练目的。`, moduleId: module.id, field: "objective" });
         if (!module.description.trim()) issues.push({ level: "error", message: `模块 ${index + 1} 缺少模块说明。`, moduleId: module.id, field: "description" });
         if (module.keyPoints.length < 2) issues.push({ level: "error", message: `模块 ${index + 1} 的关键要点不足 2 条。`, moduleId: module.id, field: "keyPoints" });
+        if (module.suggestedRounds < 1) issues.push({ level: "error", message: `模块 ${index + 1} 的建议轮次不能小于 1。`, moduleId: module.id, field: "suggestedRounds" });
+        if (module.suggestedRounds > 10) issues.push({ level: "error", message: `模块 ${index + 1} 的建议轮次超过 10，需拆分为多个模块。`, moduleId: module.id, field: "suggestedRounds" });
     });
     return issues;
 }
@@ -390,6 +422,8 @@ export function TrainingGenerateInterface() {
     const [activeTab, setActiveTab] = useState<ResultTab>("script");
     const [taskName, setTaskName] = useState(cached.name);
     const [errorMessage, setErrorMessage] = useState("");
+    const [optimizationSnapshots, setOptimizationSnapshots] = useState<OptimizationSnapshot[]>(() => loadOptimizationSnapshots());
+    const [lastOptimizationResult, setLastOptimizationResult] = useState<OptimizationLoopResult | null>(null);
 
     // 生成完成后自动持久化
     useEffect(() => {
@@ -397,6 +431,11 @@ export function TrainingGenerateInterface() {
             localStorage.setItem(RESULT_CACHE_KEY, JSON.stringify({ script: scriptContent, rubric: rubricContent, name: taskName }));
         }
     }, [phase, scriptContent, rubricContent, taskName]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        localStorage.setItem(OPTIMIZATION_SNAPSHOT_KEY, JSON.stringify(optimizationSnapshots));
+    }, [optimizationSnapshots]);
 
     useEffect(() => {
         let cancelled = false;
@@ -450,6 +489,7 @@ export function TrainingGenerateInterface() {
     const [copySuccess, setCopySuccess] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [showInjectModal, setShowInjectModal] = useState(false);
+    const [showOptimizationModal, setShowOptimizationModal] = useState(false);
     const [showPromptEditor, setShowPromptEditor] = useState(false);
     const [activePromptTab, setActivePromptTab] = useState<"script" | "rubric">("script");
     const [modulePlan, setModulePlan] = useState<TrainingScriptPlan | null>(initialModulePlanCache.modulePlan);
@@ -1154,6 +1194,7 @@ export function TrainingGenerateInterface() {
         setErrorMessage("");
         setTaskName("");
         setStatusMessage("");
+        setLastOptimizationResult(null);
         localStorage.removeItem(RESULT_CACHE_KEY);
     }, []);
 
@@ -1280,6 +1321,61 @@ export function TrainingGenerateInterface() {
         setModuleRegenUsePrevious(true);
         setShowModuleRegenModal(true);
     }, []);
+
+    const handleOptimizationApplied = useCallback((result: OptimizationLoopResult) => {
+        const optimizedDiagnostics = diagnoseTrainingScript(result.optimized_script_markdown, result.module_plan_used);
+        if (optimizedDiagnostics.stageCount === 0 || !optimizedDiagnostics.canInject) {
+            const firstError = optimizedDiagnostics.issues.find((issue) => issue.level === "error")?.message;
+            setErrorMessage(
+                firstError
+                    ? `闭环优化返回的训练剧本结构异常（${firstError}），已阻止自动覆盖当前内容。你可以稍后重试，或改用单模块重生成。`
+                    : "闭环优化返回的训练剧本结构异常，已阻止自动覆盖当前内容。你可以稍后重试，或改用单模块重生成。"
+            );
+            return;
+        }
+
+        const snapshot: OptimizationSnapshot = {
+            id: `optimization_snapshot_${Date.now()}`,
+            createdAt: Date.now(),
+            taskName,
+            summary: result.optimization_plan.summary,
+            appliedActionCount: result.applied_actions.length,
+            actionTitles: result.applied_actions.map((action) => action.title),
+            scriptContent,
+            rubricContent,
+            modulePlan,
+        };
+
+        setOptimizationSnapshots((prev) => [snapshot, ...prev].slice(0, OPTIMIZATION_SNAPSHOT_LIMIT));
+        setScriptContent(result.optimized_script_markdown);
+        if (result.optimized_rubric_markdown) {
+            setRubricContent(result.optimized_rubric_markdown);
+        }
+        setModulePlan(result.module_plan_used);
+        if (!lastSystemPlan) {
+            setLastSystemPlan(result.module_plan_used);
+        }
+        setActiveTab("script");
+        setPhase("completed");
+        setErrorMessage("");
+        setLastOptimizationResult(result);
+        setStatusMessage(`闭环优化完成：已自动应用 ${result.applied_actions.length} 条修订动作`);
+    }, [lastSystemPlan, modulePlan, rubricContent, scriptContent, taskName]);
+
+    const handleRestoreOptimizationSnapshot = useCallback((snapshotId: string) => {
+        const snapshot = optimizationSnapshots.find((item) => item.id === snapshotId);
+        if (!snapshot) return;
+
+        setScriptContent(snapshot.scriptContent);
+        setRubricContent(snapshot.rubricContent);
+        setModulePlan(snapshot.modulePlan);
+        setLastSystemPlan(snapshot.modulePlan);
+        setTaskName(snapshot.taskName);
+        setActiveTab("script");
+        setPhase("completed");
+        setLastOptimizationResult(null);
+        setStatusMessage(`已回退到 ${new Date(snapshot.createdAt).toLocaleString()} 的优化前版本`);
+    }, [optimizationSnapshots]);
 
     const focusModuleFromDiagnostic = useCallback((stageIndex?: number) => {
         if (stageIndex === undefined) return;
@@ -1735,7 +1831,7 @@ export function TrainingGenerateInterface() {
                                                             <input
                                                                 type="number"
                                                                 min={1}
-                                                                max={6}
+                                                                max={10}
                                                                 value={module.suggestedRounds}
                                                                 onChange={(e) => updateModule(module.id, (prev) => ({ ...prev, suggestedRounds: Number(e.target.value) || 1 }))}
                                                                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
@@ -2118,6 +2214,16 @@ export function TrainingGenerateInterface() {
                         {/* 操作按钮 */}
                         {activeContent && phase === "completed" && (
                             <div className="flex items-center gap-1.5 shrink-0">
+                                {scriptContent && (
+                                    <button
+                                        onClick={() => setShowOptimizationModal(true)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
+                                        title="基于对话记录自动分析并修订当前训练剧本"
+                                    >
+                                        <Sparkles className="w-3.5 h-3.5" />
+                                        闭环优化
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => setShowInjectModal(true)}
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 rounded-lg shadow-sm shadow-indigo-200 transition-all hover:-translate-y-0.5"
@@ -2173,6 +2279,74 @@ export function TrainingGenerateInterface() {
                                                     )}
                                                 </div>
                                             ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {phase === "completed" && activeTab === "script" && (lastOptimizationResult || optimizationSnapshots.length > 0) && (
+                        <div className="px-5 py-3 border-b border-slate-100 bg-indigo-50/40 space-y-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <div className="text-xs text-slate-500">闭环优化快照</div>
+                                    <div className="text-sm font-semibold text-slate-800">最近的优化结果与回退版本</div>
+                                </div>
+                                {optimizationSnapshots.length > 0 && (
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full bg-white border border-indigo-100 text-xs text-indigo-700">
+                                        可回退 {optimizationSnapshots.length} 个版本
+                                    </span>
+                                )}
+                            </div>
+
+                            {lastOptimizationResult && (
+                                <div className="rounded-xl border border-indigo-200 bg-white px-4 py-3 space-y-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="inline-flex items-center px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
+                                            已应用 {lastOptimizationResult.applied_actions.length} 条修订
+                                        </span>
+                                        {lastOptimizationResult.evaluation_template_name && (
+                                            <span className="inline-flex items-center px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
+                                                评测模板：{lastOptimizationResult.evaluation_template_name}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                                        {lastOptimizationResult.optimization_plan.summary}
+                                    </p>
+                                    {lastOptimizationResult.applied_actions.length > 0 && (
+                                        <div className="flex flex-wrap gap-2">
+                                            {lastOptimizationResult.applied_actions.map((action) => (
+                                                <span key={action.id} className="inline-flex items-center px-2 py-1 rounded-full bg-slate-100 text-slate-700 text-xs">
+                                                    {action.module_title || action.target_module_id || `阶段 ${action.target_stage_number || "-"}`}：{action.title}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {optimizationSnapshots.length > 0 && (
+                                <div className="space-y-2">
+                                    {optimizationSnapshots.slice(0, 3).map((snapshot) => (
+                                        <div key={snapshot.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                            <div className="min-w-0">
+                                                <div className="text-xs text-slate-500">
+                                                    优化前快照 · {new Date(snapshot.createdAt).toLocaleString()}
+                                                </div>
+                                                <div className="text-sm text-slate-800 line-clamp-2">
+                                                    {snapshot.summary}
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRestoreOptimizationSnapshot(snapshot.id)}
+                                                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors shrink-0"
+                                            >
+                                                <RotateCcw className="w-3.5 h-3.5" />
+                                                回退到此版本
+                                            </button>
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                         </div>
@@ -2521,6 +2695,16 @@ export function TrainingGenerateInterface() {
 
             {/* 设置弹窗 */}
             <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+
+            <TrainingOptimizationModal
+                isOpen={showOptimizationModal}
+                onClose={() => setShowOptimizationModal(false)}
+                getDocContent={getDocContent}
+                scriptMarkdown={scriptContent}
+                rubricMarkdown={rubricContent}
+                modulePlan={modulePlan}
+                onOptimizationApplied={handleOptimizationApplied}
+            />
 
             {/* 一键注入配置弹窗 */}
             <InjectConfigModal

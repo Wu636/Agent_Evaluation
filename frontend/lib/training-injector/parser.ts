@@ -13,6 +13,11 @@ export interface ParsedTaskConfig {
     description: string;
 }
 
+const TASK_CONFIG_FIELD_LABELS = [
+    "任务名称",
+    "任务描述",
+] as const;
+
 const SCRIPT_FIELD_LABELS = [
     "虚拟训练官名字",
     "模型",
@@ -36,8 +41,45 @@ function buildScriptFieldStartPattern(label: string): string {
 }
 
 function getFieldLineValue(line: string, label: string): string | null {
-    const match = line.match(new RegExp(`^(?:[-*+]\\s*)?${buildScriptFieldStartPattern(label)}\\s*(.*)$`, "i"));
+    const match = line.match(new RegExp(`^(?:[-*+•]\\s*)?${buildScriptFieldStartPattern(label)}\\s*(.*)$`, "i"));
     return match ? match[1] : null;
+}
+
+function getTaskConfigFieldLineValue(line: string, label: string): string | null {
+    return getFieldLineValue(line, label);
+}
+
+function looksLikeBasicConfigFieldLine(line: string): boolean {
+    return /^(?:[-*+•]\s*)?(?:\*{1,2}\s*)?[\u4e00-\u9fa5A-Za-z0-9（）()\/\s_-]{1,30}(?:\s*\*{1,2})?\s*[：:]/.test(line);
+}
+
+function findBasicConfigBlock(markdown: string): string {
+    const lines = markdown.split("\n");
+    const basicConfigHeadingPattern = /^(?:#+\s*)?(?:📋\s*)?基础配置\b/i;
+    const nextSectionPattern = /^(?:#+\s*)?(?:📝\s*)?训练阶段\b/i;
+    const stageHeadingPattern = /^#{3,}\s*阶段\b/i;
+    const genericHeadingPattern = /^##+\s+\S/;
+
+    let startIndex = lines.findIndex((line) => basicConfigHeadingPattern.test(line.trim()));
+    if (startIndex < 0) {
+        startIndex = 0;
+    }
+
+    let endIndex = lines.length;
+    for (let index = startIndex + 1; index < lines.length; index++) {
+        const trimmed = lines[index].trim();
+        if (!trimmed) continue;
+        if (nextSectionPattern.test(trimmed) || stageHeadingPattern.test(trimmed)) {
+            endIndex = index;
+            break;
+        }
+        if (startIndex > 0 && genericHeadingPattern.test(trimmed) && !basicConfigHeadingPattern.test(trimmed)) {
+            endIndex = index;
+            break;
+        }
+    }
+
+    return lines.slice(startIndex, endIndex).join("\n").trim();
 }
 
 function isScriptFieldLine(line: string): boolean {
@@ -90,23 +132,56 @@ function normalizeScriptMarkdownForParsing(markdown: string): string {
  * 匹配 ## 📋 基础配置 区块中的字段
  */
 export function parseTaskConfig(markdown: string): ParsedTaskConfig | null {
-    // 匹配基础配置区块：从 ## 📋 基础配置 / ## 基础配置 开始，到下一个 ## 结束
-    const configMatch = markdown.match(
-        /^##\s*(?:📋\s*)?基础配置[\s\S]*?(?=^##\s|$(?!\n))/m
-    );
-    if (!configMatch) return null;
-
-    const block = configMatch[0];
+    const block = findBasicConfigBlock(markdown);
+    if (!block) return null;
+    const blockLines = block.split("\n");
+    const startsWithHeading = /^(?:#+\s*)?(?:📋\s*)?基础配置\b/i.test(blockLines[0]?.trim() || "");
+    const lines = startsWithHeading ? blockLines.slice(1) : blockLines;
     let trainTaskName = "";
     let description = "";
+    let activeField: "trainTaskName" | "description" | null = null;
 
-    // 提取 **任务名称**: xxx
-    const nameMatch = block.match(/\*{2}任务名称\*{2}\s*[：:]\s*(.+)/)
-    if (nameMatch) trainTaskName = nameMatch[1].trim();
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
 
-    // 提取 **任务描述**: xxx（可能跨行）
-    const descMatch = block.match(/\*{2}任务描述\*{2}\s*[：:]\s*(.+)/);
-    if (descMatch) description = descMatch[1].trim();
+        const nameValue = getTaskConfigFieldLineValue(trimmed, "任务名称");
+        if (nameValue !== null) {
+            trainTaskName = normalizeValue(nameValue);
+            activeField = "trainTaskName";
+            continue;
+        }
+
+        const descriptionValue = getTaskConfigFieldLineValue(trimmed, "任务描述");
+        if (descriptionValue !== null) {
+            description = normalizeValue(descriptionValue);
+            activeField = "description";
+            continue;
+        }
+
+        if (activeField === "description" && !looksLikeBasicConfigFieldLine(trimmed)) {
+            const continuation = normalizeValue(trimmed.replace(/^(?:[-*+•]\s*)/, ""));
+            if (continuation) {
+                description = description
+                    ? `${description}\n${continuation}`
+                    : continuation;
+            }
+            continue;
+        }
+
+        if (TASK_CONFIG_FIELD_LABELS.some((label) => getTaskConfigFieldLineValue(trimmed, label) !== null)) {
+            continue;
+        }
+
+        activeField = null;
+    }
+
+    if (!trainTaskName) {
+        const titleMatch = markdown.match(/^#\s+(.+?)(?:\s*-\s*训练剧本配置)?\s*$/m);
+        if (titleMatch?.[1]) {
+            trainTaskName = normalizeValue(titleMatch[1]);
+        }
+    }
 
     if (!trainTaskName && !description) return null;
     return { trainTaskName, description };
@@ -187,7 +262,7 @@ export function parseTrainingScript(markdown: string): ParsedStep[] {
         }
 
         // 新阶段开始：### 阶段N: 名称
-        if (stripped.startsWith("### 阶段")) {
+        if (/^#{3,}\s*阶段/i.test(stripped)) {
             if (currentStep) {
                 steps.push(makeStep(currentStep));
             }

@@ -3,6 +3,8 @@ import { DIMENSIONS, MODEL_NAME_MAPPING } from "@/lib/config";
 import { buildSubDimensionPrompt } from "@/lib/llm/prompts";
 import { formatDialogueForLLM, parseLLMResponse, callLLMStream } from "@/lib/llm/utils";
 import { ApiConfig } from "@/lib/llm/types";
+import { TemplateDimensionDefinition, TemplateSubDimensionDefinition } from "@/lib/templates";
+import { evaluateTemplateSubDimension } from "@/lib/llm/template-evaluator";
 
 export const maxDuration = 300; // 提高到最大值，因为流式响应不会真正超时
 
@@ -12,24 +14,16 @@ export async function POST(request: NextRequest) {
         const {
             dimensionKey,
             subDimensionKey,
+            templateDimension,
+            templateSubDimension,
             teacherDocContent,
             dialogueData,
             workflowConfigContent,
             apiConfig: clientApiConfig
         } = body;
 
-        if (!dimensionKey || !subDimensionKey || !teacherDocContent || !dialogueData) {
+        if (!teacherDocContent || !dialogueData) {
             return new Response(JSON.stringify({ error: "缺少必要的参数" }), {
-                status: 400,
-                headers: { "Content-Type": "application/json" }
-            });
-        }
-
-        const dimConfig = DIMENSIONS[dimensionKey];
-        const subDim = dimConfig?.subDimensions.find(sub => sub.key === subDimensionKey);
-
-        if (!dimConfig || !subDim) {
-            return new Response(JSON.stringify({ error: "无效的维度Key" }), {
                 status: 400,
                 headers: { "Content-Type": "application/json" }
             });
@@ -50,6 +44,61 @@ export async function POST(request: NextRequest) {
         }
 
         const dialogueText = formatDialogueForLLM(dialogueData);
+
+        const parsedTemplateDimension = templateDimension
+            ? {
+                id: String(templateDimension.id || templateDimension.key || "template_dimension"),
+                key: templateDimension.key ? String(templateDimension.key) : undefined,
+                name: String(templateDimension.name || "未命名主维度"),
+                description: String(templateDimension.description || ""),
+                weight: Number(templateDimension.weight || 1) || 1,
+                enabled: templateDimension.enabled !== false,
+                subDimensions: [],
+            } satisfies TemplateDimensionDefinition
+            : null;
+        const parsedTemplateSubDimension = templateSubDimension
+            ? {
+                id: String(templateSubDimension.id || templateSubDimension.key || "template_sub_dimension"),
+                key: templateSubDimension.key ? String(templateSubDimension.key) : undefined,
+                name: String(templateSubDimension.name || "未命名子维度"),
+                description: String(templateSubDimension.description || ""),
+                fullScore: Math.max(0, Number(templateSubDimension.fullScore || body.fullScore || 0) || 0),
+                enabled: templateSubDimension.enabled !== false,
+                scoringGuidance: String(templateSubDimension.scoringGuidance || ""),
+            } satisfies TemplateSubDimensionDefinition
+            : null;
+
+        if (parsedTemplateDimension && parsedTemplateSubDimension) {
+            const result = await evaluateTemplateSubDimension({
+                dimension: parsedTemplateDimension,
+                subDimension: parsedTemplateSubDimension,
+                teacherDoc: teacherDocContent,
+                dialogueText,
+                workflowConfig: workflowConfigContent,
+                apiConfig,
+            });
+
+            return new Response(JSON.stringify(result), {
+                headers: { "Content-Type": "application/json" }
+            });
+        }
+
+        if (!dimensionKey || !subDimensionKey) {
+            return new Response(JSON.stringify({ error: "缺少维度信息" }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" }
+            });
+        }
+
+        const dimConfig = DIMENSIONS[dimensionKey];
+        const subDim = dimConfig?.subDimensions.find(sub => sub.key === subDimensionKey);
+
+        if (!dimConfig || !subDim) {
+            return new Response(JSON.stringify({ error: "无效的维度Key" }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" }
+            });
+        }
 
         // 构造 Prompt
         console.log(`[流式评测] 维度: ${dimConfig.name} - ${subDim.name}`);

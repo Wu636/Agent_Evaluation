@@ -434,6 +434,10 @@ export function TrainingGenerateInterface() {
 
     useEffect(() => {
         if (typeof window === "undefined") return;
+        if (optimizationSnapshots.length === 0) {
+            localStorage.removeItem(OPTIMIZATION_SNAPSHOT_KEY);
+            return;
+        }
         localStorage.setItem(OPTIMIZATION_SNAPSHOT_KEY, JSON.stringify(optimizationSnapshots));
     }, [optimizationSnapshots]);
 
@@ -945,6 +949,14 @@ export function TrainingGenerateInterface() {
     const hasPlanErrors = planValidation.some((item) => item.level === "error");
     const canGenerate = hasInput && hasSelection && phase !== "generating" && !hasPlanErrors;
 
+    const clearOptimizationHistory = useCallback(() => {
+        setOptimizationSnapshots([]);
+        setLastOptimizationResult(null);
+        if (typeof window !== "undefined") {
+            localStorage.removeItem(OPTIMIZATION_SNAPSHOT_KEY);
+        }
+    }, []);
+
     // --- 开始生成 ---
     const handleGenerate = useCallback(async () => {
         if (!canGenerate) return;
@@ -962,6 +974,7 @@ export function TrainingGenerateInterface() {
         if (generateRubric) setRubricContent("");
         setErrorMessage("");
         if (generateScript) setTaskName(""); // 仅生成剧本时才重置任务名
+        if (generateScript) clearOptimizationHistory();
         setStatusMessage("准备中...");
         setCurrentGeneratingPhase(null);
 
@@ -1052,6 +1065,7 @@ export function TrainingGenerateInterface() {
         rubricTemplate,
         scriptMode,
         scriptTemplate,
+        clearOptimizationHistory,
     ]);
 
     const handleCancel = useCallback(() => {
@@ -1108,6 +1122,7 @@ export function TrainingGenerateInterface() {
         if (shouldRegenScript) setScriptContent("");
         if (shouldRegenRubric) setRubricContent("");
         setErrorMessage("");
+        if (shouldRegenScript) clearOptimizationHistory();
         setStatusMessage("准备重新生成...");
         setCurrentGeneratingPhase(null);
         setIsRegenerating(true);
@@ -1194,9 +1209,9 @@ export function TrainingGenerateInterface() {
         setErrorMessage("");
         setTaskName("");
         setStatusMessage("");
-        setLastOptimizationResult(null);
+        clearOptimizationHistory();
         localStorage.removeItem(RESULT_CACHE_KEY);
-    }, []);
+    }, [clearOptimizationHistory]);
 
     // --- 文件操作 ---
     const handleFileDrop = (e: React.DragEvent) => {

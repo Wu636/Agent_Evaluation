@@ -1,5 +1,6 @@
 import { parseTaskConfig, parseTrainingScript } from "@/lib/training-injector/parser";
 import { TrainingScriptPlan } from "./types";
+import { detectMultiRoleTextSignal } from "./plan-validation";
 
 export interface ScriptStageSection {
     index: number;
@@ -159,6 +160,15 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
         }
         if (!step.llmPrompt.trim()) {
             issues.push({ level: "error", message: `阶段 ${index + 1} 缺少提示词。`, stageIndex: index, field: "llmPrompt" });
+        }
+        const multiRoleSignal = detectMultiRoleTextSignal([step.stepName, step.description, step.llmPrompt].join("\n"));
+        if (multiRoleSignal) {
+            issues.push({
+                level: "warning",
+                message: `阶段 ${index + 1} 看起来包含多角色信号（${multiRoleSignal.label}）。同一阶段只允许一个智能体角色，如需不同角色建议拆成不同阶段。`,
+                stageIndex: index,
+                field: "llmPrompt",
+            });
         }
         if (!step.flowCondition.trim()) {
             issues.push({ level: "error", message: `阶段 ${index + 1} 缺少 flowCondition。`, stageIndex: index, field: "flowCondition" });

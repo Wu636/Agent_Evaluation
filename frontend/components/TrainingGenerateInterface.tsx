@@ -45,6 +45,7 @@ import {
     copyToClipboard,
 } from "@/lib/training-generator/client";
 import { DEFAULT_RUBRIC_TEMPLATE, DEFAULT_SCRIPT_TEMPLATE, TEMPLATE_VERSION, getBuiltInScriptTemplate } from "@/lib/training-generator/prompts";
+import { findMultiRoleModuleIssue } from "@/lib/training-generator/plan-validation";
 import { diagnoseTrainingScript, extractScriptStructure, replaceStageInScript } from "@/lib/training-generator/script-tools";
 import { SettingsModal } from "./SettingsModal";
 import { InjectConfigModal } from "./InjectConfigModal";
@@ -345,6 +346,8 @@ function validatePlanLocally(plan: TrainingScriptPlan | null): ScriptPlanValidat
         if (module.keyPoints.length < 2) issues.push({ level: "error", message: `模块 ${index + 1} 的关键要点不足 2 条。`, moduleId: module.id, field: "keyPoints" });
         if (module.suggestedRounds < 1) issues.push({ level: "error", message: `模块 ${index + 1} 的建议轮次不能小于 1。`, moduleId: module.id, field: "suggestedRounds" });
         if (module.suggestedRounds > 10) issues.push({ level: "error", message: `模块 ${index + 1} 的建议轮次超过 10，需拆分为多个模块。`, moduleId: module.id, field: "suggestedRounds" });
+        const multiRoleIssue = findMultiRoleModuleIssue(module, index);
+        if (multiRoleIssue) issues.push(multiRoleIssue);
     });
     return issues;
 }

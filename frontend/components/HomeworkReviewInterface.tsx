@@ -28,7 +28,7 @@ const DEFAULT_LEVEL_DEFINITIONS: Record<string, string> = {
 // ─── Session 持久化（刷新不丢失） ───
 interface SessionState {
   mode: "generate" | "review" | "generate-and-review";
-  generatedFiles: { name: string; path: string; relative: string }[];
+  generatedFiles: GeneratedAnswerFile[];
   generatedJobId: string;
   generatedOutputRoot: string;
   genPhase: "idle" | "generating" | "preview" | "reviewing";
@@ -136,6 +136,15 @@ interface Credentials {
   cookie: string;
   instanceNid: string;
 }
+
+interface GeneratedAnswerFile {
+  name: string;
+  path: string;
+  relative: string;
+}
+
+const getUploadedFileKey = (file: File) => file.name + file.size;
+const getGeneratedFileKey = (file: GeneratedAnswerFile) => file.path || file.relative || file.name;
 
 function loadCredentials(): Credentials {
   try {
@@ -377,7 +386,7 @@ export function HomeworkReviewInterface() {
   const [selectedLevels, setSelectedLevels] = useState<string[]>(saved.current?.selectedLevels || LEVEL_OPTIONS);
 
   // 生成模式两步状态（跨 Tab 保留）
-  const [generatedFiles, setGeneratedFiles] = useState<{ name: string; path: string; relative: string }[]>(saved.current?.generatedFiles || []);
+  const [generatedFiles, setGeneratedFiles] = useState<GeneratedAnswerFile[]>(saved.current?.generatedFiles || []);
   const [generatedJobId, setGeneratedJobId] = useState<string>(saved.current?.generatedJobId || "");
   const [generatedOutputRoot, setGeneratedOutputRoot] = useState<string>(saved.current?.generatedOutputRoot || "");
   const [genPhase, setGenPhase] = useState<"idle" | "generating" | "preview" | "reviewing">(
@@ -401,7 +410,7 @@ export function HomeworkReviewInterface() {
   const [generateTextContent, setGenerateTextContent] = useState(saved.current?.generateTextContent || "");
   const [genAndReviewTextContent, setGenAndReviewTextContent] = useState(saved.current?.genAndReviewTextContent || "");
 
-  // 每文件 LLM 校验跳过标记（按 file.name+file.size 作为 key，默认不跳过）
+  // 每文件 LLM 校验跳过标记（上传文件用 name+size，生成文件用 server path）
   const [skipLLMFiles, setSkipLLMFiles] = useState<Set<string>>(new Set());
 
   // 文件分组：groupId → { name, fileKeys[] }，用于多文件合并为一份作业
@@ -574,8 +583,8 @@ export function HomeworkReviewInterface() {
       }
     } else {
       setFiles((prev) => {
-        const existing = new Map(prev.map((f) => [f.name + f.size, f]));
-        newFiles.forEach((f) => existing.set(f.name + f.size, f));
+        const existing = new Map(prev.map((f) => [getUploadedFileKey(f), f]));
+        newFiles.forEach((f) => existing.set(getUploadedFileKey(f), f));
         return Array.from(existing.values());
       });
     }
@@ -586,8 +595,13 @@ export function HomeworkReviewInterface() {
   };
 
   const handleRemove = (file: File) => {
-    const fileKey = file.name + file.size;
+    const fileKey = getUploadedFileKey(file);
     setFiles((prev) => prev.filter((f) => f !== file));
+    setSkipLLMFiles(prev => {
+      const next = new Set(prev);
+      next.delete(fileKey);
+      return next;
+    });
     // 从所有分组中移除
     setFileGroups(prev => {
       const next = new Map(prev);
@@ -773,6 +787,12 @@ export function HomeworkReviewInterface() {
         formData.append("output_format", outputFormat);
         formData.append("local_parse", String(localParse));
         formData.append("max_concurrency", String(maxConcurrency));
+        const skipNames = generatedFiles
+          .filter(f => skipLLMFiles.has(getGeneratedFileKey(f)))
+          .map(f => f.name);
+        if (skipNames.length > 0) {
+          formData.append("skip_llm_files", JSON.stringify(skipNames));
+        }
         appendLog(`📂 使用已生成的 ${generatedFiles.length} 份答案进行批阅`);
       } else {
         // 批阅模式 + 用户上传的文件
@@ -784,7 +804,7 @@ export function HomeworkReviewInterface() {
         formData.append("local_parse", String(localParse));
         formData.append("max_concurrency", String(maxConcurrency));
         // 传递每文件跳过LLM校验标记
-        const skipNames = files.filter(f => skipLLMFiles.has(f.name + f.size)).map(f => f.name);
+        const skipNames = files.filter(f => skipLLMFiles.has(getUploadedFileKey(f))).map(f => f.name);
         if (skipNames.length > 0) {
           formData.append("skip_llm_files", JSON.stringify(skipNames));
         }
@@ -794,7 +814,7 @@ export function HomeworkReviewInterface() {
           fileGroups.forEach((group) => {
             // 把 fileKey 转回文件名
             const fileNames = group.fileKeys.map(key => {
-              const f = files.find(f => f.name + f.size === key);
+              const f = files.find(f => getUploadedFileKey(f) === key);
               return f?.name || key;
             }).filter(Boolean);
             if (fileNames.length > 1) {
@@ -945,7 +965,7 @@ export function HomeworkReviewInterface() {
   /** 从生成预览阶段 → 继续批阅（复用标准批阅 API）
    *  可以传入 filesToReview 参数（生成并评测自动化场景），避免依赖 state 延迟更新
    */
-  const startReviewFromGenerated = async (filesToReview?: { name: string; path: string; relative: string }[]) => {
+  const startReviewFromGenerated = async (filesToReview?: GeneratedAnswerFile[]) => {
     const reviewTargets = filesToReview || generatedFiles;
     if (reviewTargets.length === 0) return;
     if (!authorization.trim() || !cookie.trim() || !instanceNid.trim()) {
@@ -994,6 +1014,12 @@ export function HomeworkReviewInterface() {
 
       // 将生成的文件路径作为 server_paths 传递（避免重新上传）
       formData.append("server_paths", JSON.stringify(reviewTargets.map((f) => f.path)));
+      const skipNames = reviewTargets
+        .filter(f => skipLLMFiles.has(getGeneratedFileKey(f)))
+        .map(f => f.name);
+      if (skipNames.length > 0) {
+        formData.append("skip_llm_files", JSON.stringify(skipNames));
+      }
 
       // 直接调用Railway API绕过Vercel 300秒超时
       const reviewUrl = RAILWAY_API
@@ -1444,10 +1470,10 @@ export function HomeworkReviewInterface() {
               // 构建分组视图数据
               const groupedKeys = new Set<string>();
               fileGroups.forEach(g => g.fileKeys.forEach(k => groupedKeys.add(k)));
-              const ungroupedFiles = files.filter(f => !groupedKeys.has(f.name + f.size));
+              const ungroupedFiles = files.filter(f => !groupedKeys.has(getUploadedFileKey(f)));
 
               const renderFileRow = (file: File, inGroup = false) => {
-                const fileKey = file.name + file.size;
+                const fileKey = getUploadedFileKey(file);
                 const isSkipped = skipLLMFiles.has(fileKey);
                 const isSelected = selectedForGroup.has(fileKey);
                 return (
@@ -1513,7 +1539,7 @@ export function HomeworkReviewInterface() {
                   {/* 已分组的文件 */}
                   {Array.from(fileGroups.entries()).map(([gid, group]) => {
                     const groupFiles = group.fileKeys
-                      .map(k => files.find(f => f.name + f.size === k))
+                      .map(k => files.find(f => getUploadedFileKey(f) === k))
                       .filter(Boolean) as File[];
                     if (groupFiles.length === 0) return null;
                     return (
@@ -1585,23 +1611,50 @@ export function HomeworkReviewInterface() {
                   </span>
                 </div>
                 <div className="space-y-1.5 mb-3 max-h-40 overflow-auto">
-                  {generatedFiles.map((f, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2 text-xs text-emerald-700 bg-white rounded px-3 py-1.5">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                        <span className="truncate">{f.name}</span>
+                  {generatedFiles.map((f, i) => {
+                    const fileKey = getGeneratedFileKey(f);
+                    const isSkipped = skipLLMFiles.has(fileKey);
+                    return (
+                      <div key={fileKey} className="flex items-center justify-between gap-2 text-xs text-emerald-700 bg-white rounded px-3 py-1.5">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                          <span className="truncate">{f.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <label className="flex items-center gap-1 cursor-pointer select-none" title="跳过 LLM 校验">
+                            <input
+                              type="checkbox"
+                              checked={isSkipped}
+                              onChange={(e) => {
+                                setSkipLLMFiles(prev => {
+                                  const next = new Set(prev);
+                                  if (e.target.checked) next.add(fileKey);
+                                  else next.delete(fileKey);
+                                  return next;
+                                });
+                              }}
+                              className="w-3.5 h-3.5 rounded text-amber-600 focus:ring-amber-500 border-slate-300"
+                            />
+                            <span className={clsx("text-[10px] font-medium", isSkipped ? "text-amber-700" : "text-slate-400")}>跳过校验</span>
+                          </label>
+                          <button
+                            onClick={() => {
+                              setGeneratedFiles(prev => prev.filter((_, idx) => idx !== i));
+                              setSkipLLMFiles(prev => {
+                                const next = new Set(prev);
+                                next.delete(fileKey);
+                                return next;
+                              });
+                            }}
+                            className="text-slate-400 hover:text-red-500"
+                            title="删除此答案"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => {
-                          setGeneratedFiles(prev => prev.filter((_, idx) => idx !== i));
-                        }}
-                        className="text-slate-400 hover:text-red-500 flex-shrink-0"
-                        title="删除此答案"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <p className="text-xs text-emerald-600">
                   这些文件来自「生成答案」Tab，点击下方"开始批阅"即可直接批阅

@@ -507,6 +507,7 @@ export function TrainingGenerateInterface() {
     const [planAutofillTaskFields, setPlanAutofillTaskFields] = useState<string[]>(initialModulePlanCache.planAutofillTaskFields);
     const [planAutofillModuleFields, setPlanAutofillModuleFields] = useState<Record<string, string[]>>(initialModulePlanCache.planAutofillModuleFields);
     const [planning, setPlanning] = useState(false);
+    const [planErrorMessage, setPlanErrorMessage] = useState("");
     const [showPlanEditor, setShowPlanEditor] = useState(Boolean(initialModulePlanCache.modulePlan));
     const [planCacheRestored, setPlanCacheRestored] = useState(Boolean(initialModulePlanCache.modulePlan));
     const [draggingModuleId, setDraggingModuleId] = useState<string | null>(null);
@@ -813,11 +814,13 @@ export function TrainingGenerateInterface() {
         const doc = await getDocContent();
         if (!doc) {
             setErrorMessage("请先提供教师任务文档，再进行模块规划");
+            setPlanErrorMessage("请先提供教师任务文档，再进行模块规划");
             return false;
         }
 
         setPlanning(true);
         setErrorMessage("");
+        setPlanErrorMessage("");
         try {
             const result = await createTrainingScriptPlan({
                 teacherDocContent: doc.content || "",
@@ -840,7 +843,9 @@ export function TrainingGenerateInterface() {
             setShowPlanEditor(true);
             return true;
         } catch (err) {
-            setErrorMessage(err instanceof Error ? err.message : "模块规划失败");
+            const message = err instanceof Error ? err.message : "模块规划失败";
+            setErrorMessage(message);
+            setPlanErrorMessage(message);
             return false;
         } finally {
             setPlanning(false);
@@ -850,6 +855,7 @@ export function TrainingGenerateInterface() {
     const openPlanRegenerateModal = useCallback(() => {
         setPlanRegenerateFeedback("");
         setPlanRegenerateSource("current_edited");
+        setPlanErrorMessage("");
         setShowPlanRegenerateModal(true);
     }, []);
 
@@ -867,6 +873,7 @@ export function TrainingGenerateInterface() {
         setPlanAutofillFields([]);
         setPlanAutofillTaskFields([]);
         setPlanAutofillModuleFields({});
+        setPlanErrorMessage("");
         setPlanCacheRestored(false);
         setShowPlanEditor(false);
         setCollapsedModuleIds([]);
@@ -1638,6 +1645,13 @@ export function TrainingGenerateInterface() {
                         </div>
 
                         <div className="p-5 space-y-4">
+                            {planErrorMessage && (
+                                <div className="flex items-start gap-2 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                                    <span className="whitespace-pre-wrap break-words">{planErrorMessage}</span>
+                                </div>
+                            )}
+
                             {!modulePlan ? (
                                 <p className="text-xs text-slate-500">
                                     先根据教师文档生成模块规划。规划完成后，你可以直接修改模块标题、类型、目标和关键要点，再进入正式生成。
@@ -2613,6 +2627,12 @@ export function TrainingGenerateInterface() {
                                         ? "当前模式：始终会带上原始教师文档和你的修改建议，并参考上一次系统规划结果，但不直接继承当前页面的手动编辑内容。"
                                         : "当前模式：始终会带上原始教师文档和你的修改建议，但不参考旧规划，直接重新规划。"}
                             </p>
+                            {planErrorMessage && (
+                                <div className="flex items-start gap-2 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                                    <span className="whitespace-pre-wrap break-words">{planErrorMessage}</span>
+                                </div>
+                            )}
                         </div>
                         <div className="flex gap-3 p-5 pt-0">
                             <button

@@ -216,6 +216,24 @@ export interface ModuleRegenerateParams {
     currentStageMarkdown?: string;
 }
 
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+    const raw = await response.text().catch(() => "");
+    const trimmed = raw.trim();
+
+    if (trimmed) {
+        try {
+            const data = JSON.parse(trimmed) as { error?: unknown; message?: unknown; detail?: unknown };
+            if (typeof data.error === "string" && data.error.trim()) return data.error;
+            if (typeof data.message === "string" && data.message.trim()) return data.message;
+            if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
+        } catch {
+            return trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed;
+        }
+    }
+
+    return fallback;
+}
+
 export async function createTrainingScriptPlan(params: TrainingPlanParams): Promise<TrainingScriptPlanResponse> {
     const settings = getStoredSettings();
     let response: Response;
@@ -261,8 +279,8 @@ export async function createTrainingScriptPlan(params: TrainingPlanParams): Prom
     }
 
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: `请求失败: ${response.status}` }));
-        throw new Error(error.error || "模块规划失败");
+        const message = await readErrorMessage(response, `请求失败: ${response.status}`);
+        throw new Error(message || "模块规划失败");
     }
 
     const data = await response.json();

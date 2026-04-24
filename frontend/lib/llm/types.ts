@@ -142,10 +142,46 @@ export interface ApiConfig {
   model?: string;
 }
 
+export type ModelCategory =
+  | "text"
+  | "reasoning"
+  | "multimodal"
+  | "image"
+  | "embedding"
+  | "audio"
+  | "video"
+  | "tooling"
+  | "other";
+
 export interface ModelInfo {
   id: string;
   name: string;
   description: string;
+  category?: ModelCategory;
+  categoryLabel?: string;
+  provider?: string;
+  family?: string;
+  aliases?: string[];
+  recommended?: boolean;
+  source?: "live" | "fallback";
+}
+
+export interface ModelGroup {
+  key: ModelCategory;
+  label: string;
+  description: string;
+  models: ModelInfo[];
+}
+
+export interface ModelCatalogResponse {
+  models: ModelInfo[];
+  groups: ModelGroup[];
+  source: "live" | "fallback";
+  fetchedAt: string;
+  modelEndpoint: string;
+  totalRawModels: number;
+  totalModels: number;
+  error?: string;
 }
 
 export interface DialogueData {

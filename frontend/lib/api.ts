@@ -1,6 +1,7 @@
 // API 客户端 - 使用相对路径指向 Next.js API Routes
 
-import { EvaluationReport, ModelInfo, ApiConfig } from '@/lib/llm/types';
+import { EvaluationReport, ModelInfo, ApiConfig, ModelCatalogResponse } from '@/lib/llm/types';
+import { loadLLMSettingsFromStorage } from '@/lib/llm/settings';
 
 // Re-export common types
 export type { EvaluationReport, ModelInfo, ApiConfig };
@@ -135,8 +136,17 @@ export async function evaluateFilesStream(
     return finalReport;
 }
 
-export async function getModels(): Promise<{ models: ModelInfo[] }> {
-    const response = await fetch('/api/models');
+export async function getModels(apiConfig: ApiConfig = {}): Promise<ModelCatalogResponse> {
+    const storedConfig =
+        typeof window !== 'undefined' ? loadLLMSettingsFromStorage('default') : null;
+    const apiUrl = apiConfig.baseUrl || storedConfig?.apiUrl || '';
+    const apiKey = apiConfig.apiKey || storedConfig?.apiKey || '';
+    const headers: HeadersInit = {};
+
+    if (apiUrl) headers['x-llm-api-url'] = apiUrl;
+    if (apiKey) headers['x-llm-api-key'] = apiKey;
+
+    const response = await fetch('/api/models', { headers });
     if (!response.ok) throw new Error('Failed to fetch models');
     return response.json();
 }

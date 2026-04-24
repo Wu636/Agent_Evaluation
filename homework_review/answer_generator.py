@@ -32,8 +32,10 @@ from homework_reviewer_v2 import upload_file, homework_file_analysis
 # 某些模型在 API 中需要特定格式的名称（如带空格的大写名）
 MODEL_NAME_MAPPING = {
     "claude-sonnet-4.5": "Claude Sonnet 4.5",
+    "claude-sonnet-4-6": "claude-sonnet-4-6",
     "claude-haiku-4.5": "Claude Haiku 4.5",
     "claude-opus-4": "Claude Opus 4",
+    "claude-opus-4-6": "claude-opus-4-6",
     "gemini-2.5-pro": "gemini-2.5-pro",
     "gemini-2.5-flash": "gemini-2.5-flash",
     "grok-4": "grok-4",
@@ -174,7 +176,7 @@ def load_llm_config_from_args(context: dict) -> Tuple[str, str, str]:
     """从上下文加载 LLM 配置"""
     api_key = context.get("llm_api_key") or os.getenv("LLM_API_KEY", "")
     api_url = context.get("llm_api_url") or os.getenv("LLM_API_URL", "http://llm-service.polymas.com/api/openai/v1/chat/completions")
-    raw_model = context.get("llm_model") or os.getenv("LLM_MODEL", "gpt-4o")
+    raw_model = context.get("llm_model") or os.getenv("LLM_MODEL", "claude-sonnet-4-6")
     # 应用模型名映射（前端可能传了 id 如 "claude-sonnet-4.5"，API 需要 "Claude Sonnet 4.5"）
     model = MODEL_NAME_MAPPING.get(raw_model, raw_model)
     return api_key, api_url, model

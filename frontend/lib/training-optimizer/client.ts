@@ -1,34 +1,8 @@
-import { normalizeModelId } from "@/lib/config";
 import { TrainingScriptPlan } from "@/lib/training-generator/types";
 import { TemplateDimensionsConfig } from "@/lib/templates";
+import { loadLLMSettingsFromStorage } from "@/lib/llm/settings";
 
 import { OptimizationLoopResult, OptimizationProgressEvent } from "./types";
-
-const SETTINGS_KEY = "llm-eval-settings";
-const DEFAULT_API_URL = "https://llm-service.polymas.com/api/openai/v1/chat/completions";
-
-interface StoredSettings {
-    apiKey?: string;
-    apiUrl?: string;
-    model?: string;
-}
-
-function getStoredSettings(): StoredSettings {
-    if (typeof window === "undefined") return {};
-
-    try {
-        const raw = localStorage.getItem(SETTINGS_KEY);
-        if (!raw) return {};
-        const parsed = JSON.parse(raw) as StoredSettings;
-        return {
-            ...parsed,
-            apiUrl: parsed.apiUrl || DEFAULT_API_URL,
-            model: normalizeModelId(parsed.model),
-        };
-    } catch {
-        return {};
-    }
-}
 
 export interface TrainingOptimizationParams {
     teacherDocFile?: File;
@@ -49,7 +23,7 @@ export interface TrainingOptimizationParams {
 }
 
 export async function runTrainingOptimizationLoop(params: TrainingOptimizationParams): Promise<OptimizationLoopResult> {
-    const settings = getStoredSettings();
+    const settings = loadLLMSettingsFromStorage("trainingOptimize");
     let response: Response;
 
     if (params.teacherDocFile || params.dialogueFile) {

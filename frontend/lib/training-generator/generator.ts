@@ -5,6 +5,7 @@
 import { ApiConfig } from "../llm/types";
 import { jsonrepair } from "jsonrepair";
 import { callLLM, callLLMStream } from "../llm/utils";
+import { summarizeLlmHttpError } from "../llm/error-utils";
 import { buildScriptGeneratorPrompt, buildRubricGeneratorPrompt } from "./prompts";
 import {
     ConcreteScriptMode,
@@ -281,7 +282,7 @@ export async function classifyTrainingScriptMode(
 
     if (!response.ok) {
         const errorText = await response.text().catch(() => "");
-        throw new Error(`剧本模式识别失败 (HTTP ${response.status}): ${errorText.substring(0, 200)}`);
+        throw new Error(`剧本模式识别失败：${summarizeLlmHttpError(response.status, errorText)}`);
     }
 
     const data = await response.json();
@@ -1079,7 +1080,7 @@ async function repairTrainingPlanContent(
 
     if (!response.ok) {
         const errorText = await response.text().catch(() => "");
-        throw new Error(`规划结果修复失败 (HTTP ${response.status}): ${errorText.substring(0, 160)}`);
+        throw new Error(`规划结果修复失败：${summarizeLlmHttpError(response.status, errorText)}`);
     }
 
     const data = await response.json();
@@ -1136,7 +1137,7 @@ async function autofillIncompleteTrainingPlan(
 
     if (!response.ok) {
         const errorText = await response.text().catch(() => "");
-        throw new Error(`规划缺失字段补全失败 (HTTP ${response.status}): ${errorText.substring(0, 160)}`);
+        throw new Error(`规划缺失字段补全失败：${summarizeLlmHttpError(response.status, errorText)}`);
     }
 
     const data = await response.json();
@@ -1215,7 +1216,7 @@ async function targetedFillIncompleteModules(
 
     if (!response.ok) {
         const errorText = await response.text().catch(() => "");
-        throw new Error(`定向补全模块字段失败 (HTTP ${response.status}): ${errorText.substring(0, 160)}`);
+        throw new Error(`定向补全模块字段失败：${summarizeLlmHttpError(response.status, errorText)}`);
     }
 
     const data = await response.json();
@@ -1407,7 +1408,7 @@ export async function planTrainingScriptModules(
         if (response.status === 504) {
             throw new Error("剧本规划超时（HTTP 504）。系统已自动按文档长度降级为压缩规划，但仍然超时。建议删去逐字稿、长篇示例和参考答案后再规划。");
         }
-        throw new Error(`剧本规划失败 (HTTP ${response.status}): ${errorText.substring(0, 200)}`);
+        throw new Error(`剧本规划失败：${summarizeLlmHttpError(response.status, errorText)}`);
     }
 
     const data = await response.json();
@@ -1846,7 +1847,7 @@ export async function repairTrainingScriptStructure(
 
     if (!response.ok) {
         const errorText = await response.text().catch(() => "");
-        throw new Error(`剧本结构修复失败 (HTTP ${response.status}): ${errorText.substring(0, 200)}`);
+        throw new Error(`剧本结构修复失败：${summarizeLlmHttpError(response.status, errorText)}`);
     }
 
     const data = await response.json();

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MODEL_NAME_MAPPING } from "@/lib/config";
+import { summarizeLlmHttpError } from "@/lib/llm/error-utils";
 
 export const runtime = "nodejs";
 
@@ -92,8 +93,9 @@ export async function POST(request: NextRequest) {
                     endpoint,
                     latencyMs,
                     status: response.status,
-                    error: `HTTP ${response.status}${errorText ? `: ${errorText.substring(0, 160)}` : ""}`,
-                });
+                    model,
+                    error: summarizeLlmHttpError(response.status, errorText),
+                }, { status: response.status });
             }
 
             await response.json().catch(() => null);

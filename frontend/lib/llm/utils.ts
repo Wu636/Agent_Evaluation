@@ -5,6 +5,7 @@
 import type { LLMResponse, ApiConfig, DialogueData, IssueItem, HighlightItem } from "./types";
 
 import { jsonrepair } from 'jsonrepair';
+import { summarizeLlmHttpError } from "./error-utils";
 
 function formatLlmNetworkError(baseUrl: string, error: unknown): Error {
     const anyError = error as {
@@ -289,7 +290,7 @@ export async function callLLM(
         if (!response.ok) {
             const errorText = await response.text();
             console.error(`[LLM错误] HTTP ${response.status}:`, errorText.substring(0, 500));
-            throw new Error(`API请求失败 (HTTP ${response.status}): ${errorText.substring(0, 200)}`);
+            throw new Error(summarizeLlmHttpError(response.status, errorText));
         }
 
         const result = await response.json();
@@ -384,7 +385,7 @@ export async function* callLLMStream(
     if (!response.ok) {
         const errorText = await response.text();
         console.error(`[LLM流式错误] HTTP ${response.status}:`, errorText.substring(0, 500));
-        throw new Error(`API请求失败 (HTTP ${response.status}): ${errorText.substring(0, 200)}`);
+        throw new Error(summarizeLlmHttpError(response.status, errorText));
     }
 
     if (!response.body) {

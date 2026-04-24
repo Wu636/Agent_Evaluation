@@ -7,7 +7,12 @@ import {
   Table2, FolderOpen, Clock, Trash2, Eye, EyeOff, RefreshCw, Type
 } from "lucide-react";
 import clsx from "clsx";
-import { MODEL_NAME_MAPPING, normalizeModelId } from "@/lib/config";
+import { MODEL_NAME_MAPPING } from "@/lib/config";
+import {
+  LLM_SETTINGS_STORAGE_KEY,
+  LLM_SETTINGS_UPDATED_EVENT,
+  loadLLMSettingsFromStorage,
+} from "@/lib/llm/settings";
 
 const STORAGE_KEY = "homework-review-credentials";
 const HISTORY_KEY = "homework-review-history";
@@ -159,18 +164,12 @@ function saveCredentials(creds: Credentials) {
 }
 
 function loadLLMSettings(): { apiKey: string; apiUrl: string; model: string } {
-  try {
-    const saved = localStorage.getItem("llm-eval-settings");
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return {
-        apiKey: parsed.apiKey || "",
-        apiUrl: parsed.apiUrl || "",
-        model: normalizeModelId(parsed.model),
-      };
-    }
-  } catch { /* ignore */ }
-  return { apiKey: "", apiUrl: "", model: "" };
+  const settings = loadLLMSettingsFromStorage("homeworkReview");
+  return {
+    apiKey: settings.apiKey,
+    apiUrl: settings.apiUrl,
+    model: settings.model,
+  };
 }
 
 /* ─── Fallback：从 summary.results 构建评分表（兼容旧版 Python 输出）─── */
@@ -513,7 +512,7 @@ export function HomeworkReviewInterface() {
 
     // 监听localStorage变化（设置更新）
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "llm-eval-settings") {
+      if (e.key === LLM_SETTINGS_STORAGE_KEY) {
         setLlmInfo(loadLLMSettings());
       }
     };
@@ -523,11 +522,11 @@ export function HomeworkReviewInterface() {
     const handleSettingsUpdate = () => {
       setLlmInfo(loadLLMSettings());
     };
-    window.addEventListener("llm-settings-updated", handleSettingsUpdate);
+    window.addEventListener(LLM_SETTINGS_UPDATED_EVENT, handleSettingsUpdate);
 
     return () => {
       window.removeEventListener("storage", handleStorageChange);
-      window.removeEventListener("llm-settings-updated", handleSettingsUpdate);
+      window.removeEventListener(LLM_SETTINGS_UPDATED_EVENT, handleSettingsUpdate);
     };
   }, [refreshHistory]);
 

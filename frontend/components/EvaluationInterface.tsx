@@ -10,7 +10,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { evaluateFilesStream, EvaluationReport, StreamProgress } from '@/lib/api';
 import { saveToHistory } from '@/lib/client-history';
 import { saveFile, loadFile, clearAllFiles, TEACHER_DOC_ID, DIALOGUE_RECORD_ID } from '@/lib/file-storage';
-import { normalizeModelId } from '@/lib/config';
+import { loadLLMSettingsFromStorage } from '@/lib/llm/settings';
 import { supabase } from '@/lib/supabase';
 import { EvaluationTemplate, DEFAULT_DIMENSIONS, getEnabledSubDimensions, normalizeTemplateDimensions } from '@/lib/templates';
 
@@ -110,10 +110,8 @@ export function EvaluationInterface() {
         setCurrentDimension('正在准备...');
 
         try {
-            // Load API config from localStorage
-            const savedSettings = localStorage.getItem('llm-eval-settings');
-            const apiConfig = savedSettings ? JSON.parse(savedSettings) : {};
-            const selectedModel = normalizeModelId(apiConfig.model) || 'claude-sonnet-4.5';
+            const llmSettings = loadLLMSettingsFromStorage("evaluation");
+            const selectedModel = llmSettings.model;
 
             // 1. 调用解析 API
             setCurrentDimension("正在解析文档...");
@@ -237,8 +235,8 @@ export function EvaluationInterface() {
                                 dialogueData: dRec.data,
                                 workflowConfigContent: wCfg?.content,
                                 apiConfig: {
-                                    apiKey: apiConfig.apiKey,
-                                    baseUrl: apiConfig.baseUrl,
+                                    apiKey: llmSettings.apiKey,
+                                    baseUrl: llmSettings.baseUrl,
                                     model: selectedModel
                                 }
                             })

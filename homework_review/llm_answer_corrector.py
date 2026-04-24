@@ -17,13 +17,26 @@ try:
 except ImportError:
     Document = None
 
+MODEL_NAME_MAPPING = {
+    "claude-sonnet-4.5": "Claude Sonnet 4.5",
+    "claude-sonnet-4-6": "claude-sonnet-4-6",
+    "claude-haiku-4.5": "Claude Haiku 4.5",
+    "claude-opus-4": "Claude Opus 4",
+    "claude-opus-4-6": "claude-opus-4-6",
+    "gemini-2.5-pro": "gemini-2.5-pro",
+    "gemini-2.5-flash": "gemini-2.5-flash",
+    "grok-4": "grok-4",
+}
 
-def load_llm_config() -> Tuple[str, str]:
+
+def load_llm_config() -> Tuple[str, str, str]:
     """加载 LLM API 配置"""
     load_dotenv()
     api_key = os.getenv("LLM_API_KEY", "")
     api_url = os.getenv("LLM_API_URL", "http://llm-service.polymas.com/api/openai/v1/chat/completions")
-    return api_key, api_url
+    raw_model = os.getenv("LLM_MODEL", "claude-sonnet-4-6")
+    model = MODEL_NAME_MAPPING.get(raw_model, raw_model)
+    return api_key, api_url, model
 
 
 def extract_text_from_docx(docx_path: Path) -> str:
@@ -125,7 +138,7 @@ def build_correction_prompt(doc_text: str, items: List[Dict], issues: List[Dict]
     return prompt
 
 
-def call_llm_api(prompt: str, api_key: str, api_url: str) -> Optional[str]:
+def call_llm_api(prompt: str, api_key: str, api_url: str, model: str) -> Optional[str]:
     """调用 LLM API"""
     headers = {
         "api-key": api_key,
@@ -144,7 +157,7 @@ def call_llm_api(prompt: str, api_key: str, api_url: str) -> Optional[str]:
                 "content": prompt
             }
         ],
-        "model": "claude-sonnet-4-20250514",  # Claude Sonnet 4.5
+        "model": model,
         "temperature": 0.1,  # 低温度确保输出稳定
         "n": 1
     }
@@ -215,7 +228,7 @@ def correct_answers_with_llm(docx_path: Path, text_input: str) -> str:
         修正后的 textInput JSON 字符串
     """
     # 加载配置
-    api_key, api_url = load_llm_config()
+    api_key, api_url, model = load_llm_config()
     if not api_key:
         print("⚠️ 未配置 LLM_API_KEY，跳过 LLM 校验")
         return text_input
@@ -250,7 +263,7 @@ def correct_answers_with_llm(docx_path: Path, text_input: str) -> str:
     prompt = build_correction_prompt(doc_text, items, issues)
     print("🤖 调用 LLM 校验中...")
     
-    llm_response = call_llm_api(prompt, api_key, api_url)
+    llm_response = call_llm_api(prompt, api_key, api_url, model)
     if not llm_response:
         print("⚠️ LLM 未返回结果，跳过校验")
         return text_input

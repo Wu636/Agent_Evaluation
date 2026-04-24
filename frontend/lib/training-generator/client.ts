@@ -3,33 +3,7 @@
  */
 
 import { ScriptMode, TrainingPlanRequestOptions, TrainingSSEEvent, TrainingScriptPlan, TrainingScriptPlanResponse } from "./types";
-import { normalizeModelId } from "@/lib/config";
-
-const SETTINGS_KEY = "llm-eval-settings";
-const DEFAULT_API_URL = "https://llm-service.polymas.com/api/openai/v1/chat/completions";
-
-interface StoredSettings {
-    apiKey?: string;
-    apiUrl?: string;
-    model?: string;
-}
-
-function getStoredSettings(): StoredSettings {
-    if (typeof window === "undefined") return {};
-    try {
-        const raw = localStorage.getItem(SETTINGS_KEY);
-        if (!raw) return {};
-        const parsed = JSON.parse(raw) as StoredSettings;
-        const apiUrl = parsed.apiUrl || DEFAULT_API_URL;
-        return {
-            ...parsed,
-            apiUrl,
-            model: normalizeModelId(parsed.model),
-        };
-    } catch {
-        return {};
-    }
-}
+import { loadLLMSettingsFromStorage } from "@/lib/llm/settings";
 
 export interface TrainingGenerateParams {
     /** 文件模式：传入 File 对象（服务端解析内容） */
@@ -57,7 +31,7 @@ export interface TrainingGenerateParams {
 export async function streamTrainingGenerate(params: TrainingGenerateParams): Promise<void> {
     const { file, teacherDocContent, teacherDocName, generateScript, generateRubric, scriptMode = "general", modulePlan,
             scriptPromptTemplate, rubricPromptTemplate, onEvent, signal } = params;
-    const settings = getStoredSettings();
+    const settings = loadLLMSettingsFromStorage("trainingGenerate");
 
     const shouldRetry = (error: unknown): boolean => {
         const msg = String((error as any)?.message || error || "").toLowerCase();
@@ -235,7 +209,7 @@ async function readErrorMessage(response: Response, fallback: string): Promise<s
 }
 
 export async function createTrainingScriptPlan(params: TrainingPlanParams): Promise<TrainingScriptPlanResponse> {
-    const settings = getStoredSettings();
+    const settings = loadLLMSettingsFromStorage("trainingGenerate");
     let response: Response;
     const options: TrainingPlanRequestOptions = {
         planningFeedback: params.planningFeedback,
@@ -295,7 +269,7 @@ export async function createTrainingScriptPlan(params: TrainingPlanParams): Prom
 }
 
 export async function regenerateTrainingScriptModule(params: ModuleRegenerateParams): Promise<{ stageMarkdown: string; stageIndex: number; moduleId: string }> {
-    const settings = getStoredSettings();
+    const settings = loadLLMSettingsFromStorage("trainingGenerate");
     let response: Response;
 
     if (params.file) {
@@ -350,7 +324,7 @@ export async function regenerateTrainingScriptModule(params: ModuleRegeneratePar
  * 检查 API 设置是否已配置
  */
 export function isApiConfigured(): boolean {
-    const settings = getStoredSettings();
+    const settings = loadLLMSettingsFromStorage("trainingGenerate");
     return Boolean(settings.apiUrl);
 }
 

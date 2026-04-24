@@ -17,7 +17,7 @@ const POLYMAS_DALLE_IMAGE_ENDPOINT =
     process.env.POLYMAS_DALLE_IMAGE_ENDPOINT ||
     "https://llm-service.polymas.com/api/openai/v1/images/generations";
 const ARK_IMAGE_ENDPOINT = process.env.ARK_IMAGE_ENDPOINT || "https://ark.cn-beijing.volces.com/api/v3/images/generations";
-const ARK_IMAGE_MODEL = process.env.ARK_IMAGE_MODEL || "doubao-seedream-4-0-250828";
+const ARK_IMAGE_MODEL = process.env.ARK_IMAGE_MODEL || "doubao-seedream-5-0-260128";
 const POLYMAS_IMAGE_FALLBACK_API_KEY =
     process.env.POLYMAS_IMAGE_FALLBACK_API_KEY ||
     "sk-jqzsYB7vjZ6NEdfsP7oZ17Gti45cSMrHSCxQJzq7hz8Coq7h";
@@ -27,7 +27,7 @@ const DEFAULT_IMAGE_PROVIDER_PRIORITY: ImageProvider[] = ["cloudapi", "openai"];
 
 const DEFAULT_BG_IMAGE_REQUIREMENT = "专业写实教学场景背景图，严格16:9横版宽屏构图，单一完整场景，画面干净稳定，适合作为课程阶段背景；禁止拼贴、多宫格、海报排版、极端透视、鱼眼、抽象艺术、卡通漫画；无任何文字、英文单词、logo、字幕、水印，尽量不要出现西方面孔和元素";
 const DEFAULT_COVER_STYLE_REQUIREMENT = "专业、简洁、写实的课程封面图，严格16:9横版宽屏构图，主体明确、构图完整、画面克制；禁止拼贴、多宫格、海报排版、卡通漫画、抽象风格；无任何文字、英文单词、logo、水印，尽量不要出现西方面孔和元素";
-const DEFAULT_SEEDREAM_4_IMAGE_SIZE = "1792x1024";
+const DEFAULT_SEEDREAM_IMAGE_SIZE = "1792x1024";
 const CLOUDAPI_PROBE_PAYLOAD = {
     trainName: "生图连通性测试",
     trainDescription: "用于检测当前平台凭证下 cloudapi 生图接口是否可用",
@@ -229,8 +229,8 @@ function isDalleImageModel(model?: string): boolean {
     return /^dall-e/i.test(String(model || "").trim());
 }
 
-function isSeedream4ImageModel(model?: string): boolean {
-    return /^doubao-seedream-4/i.test(String(model || "").trim());
+function isSeedreamImageModel(model?: string): boolean {
+    return /^doubao-seedream-/i.test(String(model || "").trim());
 }
 
 function buildImageEndpointCandidates(selectedModel: string, preferredEndpoint?: string): string[] {
@@ -336,7 +336,7 @@ async function generateImageViaArk(
             ];
 
             const isDalleModel = isDalleImageModel(selectedModel);
-            const isSeedream4Model = isSeedream4ImageModel(selectedModel);
+            const isSeedreamModel = isSeedreamImageModel(selectedModel);
             const requestBody = isDalleModel
                 ? {
                     model: selectedModel,
@@ -345,11 +345,11 @@ async function generateImageViaArk(
                     size: "1792x1024",
                     quality: "standard",
                 }
-                : isSeedream4Model
+                : isSeedreamModel
                     ? {
                         model: selectedModel,
                         prompt,
-                        size: DEFAULT_SEEDREAM_4_IMAGE_SIZE,
+                        size: DEFAULT_SEEDREAM_IMAGE_SIZE,
                         response_format: "url",
                         sequential_image_generation: "disabled",
                         watermark: true,

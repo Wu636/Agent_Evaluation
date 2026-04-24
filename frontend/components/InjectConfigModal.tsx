@@ -2,9 +2,15 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { X, Shield, Key, FilePlus, Loader2, CheckCircle2, AlertCircle, Play, Cpu, Upload, ChevronDown, ChevronRight, FileText, RefreshCw } from "lucide-react";
+import { getModels, ModelInfo } from "@/lib/api";
 import { PolymasCredentials, InjectProgressEvent, InjectSummary } from "@/lib/training-injector/types";
 import { parsePolymasUrl } from "@/lib/training-injector/api";
-import { AVAILABLE_MODELS, normalizeModelId } from "@/lib/config";
+import { AVAILABLE_MODELS } from "@/lib/config";
+import {
+    DEFAULT_IMAGE_MODEL,
+    LLM_SETTINGS_STORAGE_KEY,
+    loadLLMSettingsFromStorage,
+} from "@/lib/llm/settings";
 import { parseTaskConfig, parseTrainingScript } from "@/lib/training-injector/parser";
 
 interface InjectConfigModalProps {
@@ -21,8 +27,10 @@ const IMAGE_PROVIDER_OPTIONS = [
     { id: "openai", name: "OpenAI 兼容接口（优先）" },
 ];
 const IMAGE_MODEL_OPTIONS = [
-    { id: "doubao-seedream-4-0-250828", name: "豆包 Seedream 4.0" },
-    { id: "dall-e-3", name: "DALL-E 3" },
+    { id: "doubao-seedream-5-0-260128", name: "豆包 Seedream 5.0", description: "推荐默认生图模型" },
+    { id: "doubao-seedream-4-0-250828", name: "豆包 Seedream 4.0", description: "兼容的 Seedream 生图模型" },
+    { id: "dall-e-3", name: "DALL-E 3", description: "OpenAI 图像生成模型" },
+    { id: "gpt-image-1.5", name: "GPT Image 1.5", description: "OpenAI 图像生成模型" },
 ];
 const BACKGROUND_IMAGE_CONCURRENCY = 2;
 
@@ -122,10 +130,12 @@ export function InjectConfigModal({
     const [summary, setSummary] = useState<InjectSummary | null>(null);
     const [extractionMode, setExtractionMode] = useState<"hybrid" | "llm" | "regex">("regex");
     const [llmModel, setLlmModel] = useState("");
+    const [availableLlmModels, setAvailableLlmModels] = useState<ModelInfo[]>(AVAILABLE_MODELS);
+    const [availableImageModels, setAvailableImageModels] = useState<ModelInfo[]>(IMAGE_MODEL_OPTIONS);
     const [coverStylePrompt, setCoverStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染， 电影级光影 高清细节，16:9宽屏构图，尽量不要出现西方面孔");
     const [backgroundStylePrompt, setBackgroundStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染，电影级光影，16:9宽屏构图，单一完整场景，适合作为教学阶段背景，尽量不要出现西方面孔");
     const [imageProviderMode, setImageProviderMode] = useState<"cloudapi" | "openai">("cloudapi");
-    const [imageModel, setImageModel] = useState("doubao-seedream-4-0-250828");
+    const [imageModel, setImageModel] = useState(DEFAULT_IMAGE_MODEL);
     const [taskContextHint, setTaskContextHint] = useState("");
     const [cloudapiProbeStatus, setCloudapiProbeStatus] = useState<"idle" | "testing" | "success" | "failed">("idle");
     const [cloudapiProbeMessage, setCloudapiProbeMessage] = useState("");
@@ -168,6 +178,45 @@ export function InjectConfigModal({
     const effectiveRubricMd = hasCustomDoc
         ? (customDocMode === "combined" ? customCombinedText : customRubricText) || undefined
         : rubricMarkdown;
+    const llmModelOptions = availableLlmModels.some((item) => item.id === llmModel) || !llmModel
+        ? availableLlmModels
+        : [
+            {
+                id: llmModel,
+                name: llmModel,
+                description: "当前已保存模型",
+            },
+            ...availableLlmModels,
+        ];
+    const imageModelOptions = availableImageModels.some((item) => item.id === imageModel) || !imageModel
+        ? availableImageModels
+        : [
+            {
+                id: imageModel,
+                name: imageModel,
+                description: "当前已保存图片模型",
+            },
+            ...availableImageModels,
+        ];
+
+    const refreshAvailableModels = async (nextApiUrl?: string, nextApiKey?: string) => {
+        return getModels({
+            baseUrl: nextApiUrl || "",
+            apiKey: nextApiKey || "",
+        })
+            .then((data) => {
+                if (data.models?.length) {
+                    setAvailableLlmModels(data.models);
+                }
+                const imageGroup = data.groups?.find((group) => group.key === "image");
+                if (imageGroup?.models?.length) {
+                    setAvailableImageModels(imageGroup.models);
+                }
+            })
+            .catch((err) => {
+                console.error("Failed to fetch inject models:", err);
+            });
+    };
 
     // 回填可用的数据开关
     useEffect(() => {
@@ -188,7 +237,6 @@ export function InjectConfigModal({
         }
     }, [hasCustomDoc, customDocMode, customCombinedText, customScriptText, customRubricText]);
 
-    // 加载凭证和 LLM 配置
     useEffect(() => {
         if (isOpen && typeof window !== "undefined") {
             try {
@@ -201,16 +249,10 @@ export function InjectConfigModal({
             } catch {
                 // ignore
             }
-            // 同步读取当前 LLM 模型设置
-            try {
-                const llmStored = localStorage.getItem("llm-eval-settings");
-                if (llmStored) {
-                    const llmParsed = JSON.parse(llmStored);
-                    setLlmModel(normalizeModelId(llmParsed.model) || "");
-                }
-            } catch {
-                // ignore
-            }
+            const llmSettings = loadLLMSettingsFromStorage("trainingInject");
+            setLlmModel(llmSettings.model || "");
+            setImageModel(llmSettings.imageModel || DEFAULT_IMAGE_MODEL);
+            void refreshAvailableModels(llmSettings.apiUrl, llmSettings.apiKey);
         } else {
             // 关闭时重置状态
             if (!injecting) {
@@ -513,16 +555,14 @@ export function InjectConfigModal({
         const effectiveImageProviderPriority = imageExecutionPlan.effectiveImageProviderPriority;
         const effectiveSwitchedImageProviderPriority = imageExecutionPlan.effectiveSwitchedImageProviderPriority;
 
-        let llmSettings: any = undefined;
-        try {
-            const storedConfig = localStorage.getItem("llm-eval-settings");
-            if (storedConfig) {
-                llmSettings = JSON.parse(storedConfig);
-                if (llmModel) llmSettings.model = llmModel;
+        const storedLlmSettings = loadLLMSettingsFromStorage("trainingInject");
+        const llmSettings = storedLlmSettings.apiKey || storedLlmSettings.apiUrl || llmModel
+            ? {
+                apiKey: storedLlmSettings.apiKey,
+                apiUrl: storedLlmSettings.apiUrl,
+                model: llmModel || storedLlmSettings.model,
             }
-        } catch {
-            // ignore
-        }
+            : undefined;
 
         let trainTaskName = "训练任务";
         let trainDescription = "";
@@ -795,25 +835,22 @@ export function InjectConfigModal({
         const shouldInjectBgInMain = injectBackgroundImage && !shouldRunPostImageBatch;
 
         // 获取 LLM 配置用于智能提取，使用用户在注入弹窗中选择的模型覆盖
-        let llmSettings = undefined;
-        try {
-            const storedConfig = localStorage.getItem("llm-eval-settings");
-            if (storedConfig) {
-                llmSettings = JSON.parse(storedConfig);
-                // 用弹窗中用户选择的模型覆盖
-                if (llmModel) {
-                    llmSettings.model = llmModel;
-                }
-                console.log("[InjectModal] LLM settings loaded:", {
-                    hasApiKey: !!llmSettings?.apiKey,
-                    apiUrl: llmSettings?.apiUrl,
-                    model: llmSettings?.model,
-                });
-            } else {
-                console.warn("[InjectModal] No LLM settings found in localStorage (key: llm-eval-settings)");
+        const storedLlmSettings = loadLLMSettingsFromStorage("trainingInject");
+        const llmSettings = storedLlmSettings.apiKey || storedLlmSettings.apiUrl || llmModel
+            ? {
+                apiKey: storedLlmSettings.apiKey,
+                apiUrl: storedLlmSettings.apiUrl,
+                model: llmModel || storedLlmSettings.model,
             }
-        } catch {
-            // ignore
+            : undefined;
+        if (llmSettings) {
+            console.log("[InjectModal] LLM settings loaded:", {
+                hasApiKey: !!llmSettings.apiKey,
+                apiUrl: llmSettings.apiUrl,
+                model: llmSettings.model,
+            });
+        } else {
+            console.warn(`[InjectModal] No LLM settings found in localStorage (key: ${LLM_SETTINGS_STORAGE_KEY})`);
         }
 
         try {
@@ -1400,11 +1437,11 @@ export function InjectConfigModal({
                                             onChange={(e) => setImageModel(e.target.value)}
                                             className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white"
                                         >
-                                            {IMAGE_MODEL_OPTIONS.map((item) => (
+                                            {imageModelOptions.map((item) => (
                                                 <option key={item.id} value={item.id}>{item.name}</option>
                                             ))}
                                         </select>
-                                        <p className="text-xs text-slate-400">仅在 OpenAI 兼容接口生图时生效。当前支持 `doubao-seedream-4-0-250828` 和 `dall-e-3`。</p>
+                                        <p className="text-xs text-slate-400">仅在 OpenAI 兼容接口生图时生效。当前默认推荐 `doubao-seedream-5-0-260128`。</p>
                                     </div>
                                 )}
 
@@ -1574,7 +1611,7 @@ export function InjectConfigModal({
                                             className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white"
                                         >
                                             <option value="" disabled>请选择模型...</option>
-                                            {AVAILABLE_MODELS.map((m) => (
+                                            {llmModelOptions.map((m) => (
                                                 <option key={m.id} value={m.id}>{m.name} — {m.description}</option>
                                             ))}
                                         </select>

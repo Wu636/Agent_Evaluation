@@ -180,7 +180,13 @@ export const MODEL_NAME_MAPPING: Record<string, string> = {
   "gpt-4.1-nano": "gpt-4.1-nano",
   "gemini-2.5-pro": "gemini-2.5-pro",
   "gemini-2.5-flash": "gemini-2.5-flash",
+  "deepseek-v4-pro": "deepseek-v4-pro",
+  "deepseek-v4": "deepseek-v4",
+  "deepseek-v3.1": "deepseek-v3.1",
+  "qwen3.6-plus": "qwen3.6-plus",
   "claude-sonnet-4.5": "Claude Sonnet 4.5",
+  "claude-sonnet-4-6": "claude-sonnet-4-6",
+  "Claude Sonnet 4.6": "claude-sonnet-4-6",
   "claude-haiku-4.5": "Claude Haiku 4.5",
   "claude-opus-4": "Claude Opus 4",
   "claude-opus-4-6": "claude-opus-4-6",
@@ -200,7 +206,12 @@ export const AVAILABLE_MODELS = [
   { id: "gpt-4.1-nano", name: "GPT-4.1 Nano", description: "Ultra-compact" },
   { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", description: "Google's flagship" },
   { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", description: "Fast Gemini" },
+  { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", description: "Newest DeepSeek flagship" },
+  { id: "deepseek-v4", name: "DeepSeek V4", description: "Latest DeepSeek" },
+  { id: "deepseek-v3.1", name: "DeepSeek V3.1", description: "Strong Chinese model" },
+  { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", description: "High-quality Chinese model" },
   { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", description: "Newest Sonnet" },
+  { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", description: "Recommended Sonnet" },
   { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", description: "Latest Haiku" },
   { id: "claude-opus-4", name: "Claude Opus 4", description: "Most capable Claude" },
   { id: "claude-opus-4-6", name: "Claude Opus 4.6", description: "Latest Opus" },
@@ -216,6 +227,7 @@ export function normalizeModelId(model: string | undefined | null): string {
   if (!raw) return "";
 
   // 兼容历史/别名写法，统一存储为 canonical id
+  if (raw === "Claude Sonnet 4.6") return "claude-sonnet-4-6";
   if (raw === "Claude Opus 4.6") return "claude-opus-4-6";
   return raw;
 }

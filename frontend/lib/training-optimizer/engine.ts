@@ -2,6 +2,7 @@ import { jsonrepair } from "jsonrepair";
 
 import { MODEL_NAME_MAPPING } from "@/lib/config";
 import { formatDialogueForLLM } from "@/lib/llm/evaluator";
+import { summarizeLlmHttpError } from "@/lib/llm/error-utils";
 import { ApiConfig, DialogueData, EvaluationReport, IssueItem } from "@/lib/llm/types";
 import { evaluateWithTemplate } from "@/lib/llm/template-evaluator";
 import { parseTxtDialogue } from "@/lib/txt-converter";
@@ -335,7 +336,7 @@ async function callPlannerJson(
 
     if (!response.ok) {
         const errorText = await response.text().catch(() => "");
-        throw new Error(`训练优化分析失败 (HTTP ${response.status}): ${errorText.substring(0, 200)}`);
+        throw new Error(`训练优化分析失败：${summarizeLlmHttpError(response.status, errorText)}`);
     }
 
     const data = await response.json();

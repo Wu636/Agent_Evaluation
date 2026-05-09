@@ -74,7 +74,12 @@ export interface PolymasScriptStep {
         trainerName?: string;
         interactiveRounds?: number;
         agentId?: string;
+        agentVoiceId?: string;
         avatarNid?: string;
+        customDigitalHuman?: string | null;
+        knowledgeBaseId?: string | null;
+        knowledgeBaseSwitch?: number;
+        searchEngineSwitch?: number;
         scriptStepCover?: Record<string, string>;
         backgroundTheme?: string | null;
     };

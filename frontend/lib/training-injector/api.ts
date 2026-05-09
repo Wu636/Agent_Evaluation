@@ -8,7 +8,15 @@ import { PolymasCredentials, PolymasScriptStep, PolymasScriptFlow } from "./type
 
 const POLYMAS_BASE = "https://cloudapi.polymas.com/teacher-course/abilityTrain";
 const POLYMAS_AI_BASE = "https://cloudapi.polymas.com/ai-tools";
+const POLYMAS_AI_PROFILE_BASE = "https://cloudapi.polymas.com/ai-profile";
 const POLYMAS_RESOURCE_BASE = "https://cloudapi.polymas.com/basic-resource";
+const DEFAULT_SCRIPT_MODEL_ID = "Doubao-Seed-2.0-pro";
+const DEFAULT_DIGITAL_HUMAN_USER_NID =
+    process.env.POLYMAS_DIGITAL_HUMAN_USER_NID || "XnRLWOeg6H";
+const DEFAULT_AGENT_ID = process.env.POLYMAS_DEFAULT_AGENT_ID || "Tg3LpKo28D";
+const DEFAULT_AGENT_VOICE_ID =
+    process.env.POLYMAS_DEFAULT_AGENT_VOICE_ID || "zh_male_qingcang_mars_bigtts";
+const DEFAULT_AVATAR_NID = process.env.POLYMAS_DEFAULT_AVATAR_NID || "hnuOVqMu8b";
 const POLYMAS_COMPAT_IMAGE_ENDPOINT =
     process.env.POLYMAS_COMPAT_IMAGE_ENDPOINT ||
     process.env.POLYMAS_OPENAI_IMAGE_ENDPOINT ||
@@ -91,7 +99,16 @@ async function directRequest<T = unknown>(
     payload: Record<string, unknown>,
     credentials: PolymasCredentials
 ): Promise<{ success: boolean; data?: T; error?: string }> {
-    const targetUrl = `${POLYMAS_BASE}/${apiPath}`;
+    return directRequestTo<T>(POLYMAS_BASE, apiPath, payload, credentials);
+}
+
+async function directRequestTo<T = unknown>(
+    baseUrl: string,
+    apiPath: string,
+    payload: Record<string, unknown>,
+    credentials: PolymasCredentials
+): Promise<{ success: boolean; data?: T; error?: string }> {
+    const targetUrl = `${baseUrl}/${apiPath.replace(/^\/+/, "")}`;
 
     const res = await fetch(targetUrl, {
         method: "POST",
@@ -106,7 +123,11 @@ async function directRequest<T = unknown>(
     });
 
     if (!res.ok) {
-        return { success: false, error: `polymas API 请求失败: ${res.status} ${res.statusText}` };
+        const rawText = await res.text().catch(() => "");
+        return {
+            success: false,
+            error: `polymas API 请求失败: ${res.status} ${res.statusText}${rawText ? ` - ${rawText.substring(0, 300)}` : ""}`,
+        };
     }
 
     const result = await res.json();
@@ -114,6 +135,100 @@ async function directRequest<T = unknown>(
         return { success: true, data: result.data };
     }
     return { success: false, error: JSON.stringify(result) };
+}
+
+interface ScriptStepMutationData {
+    stepName: string;
+    description: string;
+    prologue: string;
+    modelId: string;
+    llmPrompt: string;
+    trainerName: string;
+    interactiveRounds: number;
+    agentId: string;
+    agentVoiceId?: string;
+    avatarNid: string;
+    scriptStepCover: Record<string, unknown>;
+    backgroundTheme?: string | null;
+    customDigitalHuman?: string | null;
+    isSkipStep?: number | string;
+    knowledgeBaseId?: string | null;
+    knowledgeBaseSwitch?: number;
+    searchEngineSwitch?: number;
+}
+
+export interface OwnerDigitalHuman {
+    customNid?: string;
+    digitalHumanName?: string;
+    avatarNid?: string;
+    voiceNid?: string;
+    type?: string;
+    createTime?: string;
+}
+
+function buildScriptStepDetailDTO(stepData: ScriptStepMutationData): Record<string, unknown> {
+    const scriptStepCover = stepData.scriptStepCover || {};
+    const coverFileId = typeof scriptStepCover.fileId === "string" ? scriptStepCover.fileId : "";
+    const backgroundTheme = stepData.backgroundTheme || coverFileId || null;
+
+    return {
+        nodeType: "SCRIPT_NODE",
+        stepName: stepData.stepName,
+        isSkipStep: stepData.isSkipStep ?? 0,
+        endStrategy: 2,
+        interactiveRounds: Number(stepData.interactiveRounds) || 0,
+        agentId: stepData.agentId || DEFAULT_AGENT_ID,
+        agentVoiceId: stepData.agentVoiceId || DEFAULT_AGENT_VOICE_ID,
+        avatarNid: stepData.avatarNid || DEFAULT_AVATAR_NID,
+        backgroundTheme,
+        contentSkip: 0,
+        customDigitalHuman: stepData.customDigitalHuman || null,
+        description: stepData.description,
+        digitalHumanType: null,
+        historyRecordNum: -1,
+        isTransition: 0,
+        knowledgeBaseId: stepData.knowledgeBaseId || "",
+        knowledgeBaseSwitch: stepData.knowledgeBaseSwitch ?? 1,
+        knowledgeResourceList: [],
+        llmPrompt: stepData.llmPrompt,
+        modelId: stepData.modelId || DEFAULT_SCRIPT_MODEL_ID,
+        projectId: "",
+        prologue: stepData.prologue,
+        refResourceDesc: 0,
+        scriptBackgroundType: "image",
+        scriptStepCover,
+        scriptStepResourceList: [],
+        searchEngineSwitch: stepData.searchEngineSwitch ?? 1,
+        stepExtProperty: {
+            trainSubType: "ability",
+            resources: [{ nid: "", category: "未分类", list: [] }],
+            bgMediaType: 1,
+            bgMediaVolume: 80,
+            bgMusic: {},
+            bgMusicVolume: 30,
+            transitionBgMedia: null,
+            transitionBgMediaType: 1,
+            transitionBgMediaVolume: 30,
+            useTransitionBgMediaTransition: 0,
+            transitionBgMusic: null,
+            transitionBgMusicVolume: 30,
+            flowAsideContent: "",
+            flowAsideVoiceType: null,
+            flowAsideVoiceNid: null,
+            flowAsideVoiceSpeed: 50,
+            flowAsideVoiceVolume: 30,
+            flowAsideMp3Url: "",
+            hideSubtitle: 0,
+            useAsideTransition: 0,
+        },
+        trainSubType: "ability",
+        trainerName: stepData.trainerName,
+        transitionDescriptionUrl: null,
+        useTransitionDescriptionAsAudio: false,
+        useVideoOriginalSoundAsAudio: false,
+        videoSwitch: 0,
+        whiteBoardSwitch: 0,
+    };
 }
 
 // ─── AI 工具接口 ────────────────────────────────────────────────────
@@ -738,19 +853,7 @@ function generateId(size = 21): string {
 /** 创建脚本节点 */
 export async function createScriptStep(
     trainTaskId: string,
-    stepData: {
-        stepName: string;
-        description: string;
-        prologue: string;
-        modelId: string;
-        llmPrompt: string;
-        trainerName: string;
-        interactiveRounds: number;
-        agentId: string;
-        avatarNid: string;
-        scriptStepCover: Record<string, string>;
-        backgroundTheme?: string | null;
-    },
+    stepData: ScriptStepMutationData,
     position: { x: number; y: number },
     credentials: PolymasCredentials
 ): Promise<string | null> {
@@ -766,15 +869,15 @@ export async function createScriptStep(
                 stepName: stepData.stepName,
                 description: stepData.description,
                 prologue: stepData.prologue,
-                modelId:  "Doubao-Seed-2.0-pro",
+                modelId: stepData.modelId || DEFAULT_SCRIPT_MODEL_ID,
                 llmPrompt: stepData.llmPrompt,
                 trainerName: stepData.trainerName,
                 interactiveRounds: stepData.interactiveRounds,
                 scriptStepCover: stepData.scriptStepCover || {},
                 backgroundTheme: stepData.backgroundTheme || null,
                 whiteBoardSwitch: 0,
-                agentId:  "Tg3LpKo28D",
-                avatarNid:  "hnuOVqMu8b",
+                agentId: stepData.agentId || DEFAULT_AGENT_ID,
+                avatarNid: stepData.avatarNid || DEFAULT_AVATAR_NID,
                 videoSwitch: 0,
                 scriptStepResourceList: [],
                 knowledgeBaseSwitch: 1,
@@ -794,23 +897,79 @@ export async function createScriptStep(
     return result.success ? stepId : null;
 }
 
+/** 查询当前课程/资源库已配置过的自定义数字人 */
+export async function listOwnerDigitalHumans(
+    params: {
+        courseId: string;
+        libraryFolderId?: string;
+        userNid?: string;
+        type?: "NORMAL" | string;
+        sort?: number;
+    },
+    credentials: PolymasCredentials
+): Promise<OwnerDigitalHuman[]> {
+    const result = await directRequestTo<OwnerDigitalHuman[]>(
+        POLYMAS_AI_PROFILE_BASE,
+        "digital_human/owner/list",
+        {
+            userNid: params.userNid || DEFAULT_DIGITAL_HUMAN_USER_NID,
+            courseId: params.courseId,
+            libraryFolderId: params.libraryFolderId || "",
+            sort: params.sort ?? 2,
+            type: params.type || "NORMAL",
+        },
+        credentials
+    );
+
+    if (!result.success) {
+        console.error("[listOwnerDigitalHumans] 查询数字人列表失败:", result.error);
+        return [];
+    }
+
+    return Array.isArray(result.data) ? result.data : [];
+}
+
+/** 创建/同步自定义数字人资源，返回 customNid */
+export async function createCustomDigitalHuman(
+    params: {
+        digitalHumanName: string;
+        voiceNid: string;
+        avatarNid: string;
+        userNid?: string;
+        appCode?: string;
+        type?: "NORMAL" | string;
+    },
+    credentials: PolymasCredentials
+): Promise<string | null> {
+    const result = await directRequestTo<{ customNid?: string }>(
+        POLYMAS_AI_PROFILE_BASE,
+        "digital_human/custom/addAndSyncResource",
+        {
+            userNid: params.userNid || DEFAULT_DIGITAL_HUMAN_USER_NID,
+            appCode: params.appCode ?? "",
+            type: params.type || "NORMAL",
+            voiceNid: params.voiceNid || DEFAULT_AGENT_ID,
+            avatarNid: params.avatarNid || DEFAULT_AVATAR_NID,
+            digitalHumanName: params.digitalHumanName || "训练引导员",
+        },
+        credentials
+    );
+
+    const customNid = result.data?.customNid;
+    if (!result.success || !customNid) {
+        console.error("[createCustomDigitalHuman] 创建数字人失败:", result.error || "缺少 customNid");
+        return null;
+    }
+
+    console.log("[createCustomDigitalHuman] 创建数字人成功:", customNid);
+    return customNid;
+}
+
 /** 更新脚本节点（用于注入背景图等字段） */
 export async function editScriptStep(
     trainTaskId: string,
     stepId: string,
-    stepData: {
-        stepName: string;
-        description: string;
-        prologue: string;
-        modelId: string;
-        llmPrompt: string;
-        trainerName: string;
-        interactiveRounds: number;
-        agentId: string;
-        avatarNid: string;
-        scriptStepCover: Record<string, string>;
-        backgroundTheme?: string | null;
-    },
+    stepData: ScriptStepMutationData,
     courseId: string,
     libraryFolderId: string,
     position: { x: number; y: number },
@@ -823,27 +982,7 @@ export async function editScriptStep(
             stepId,
             courseId,
             libraryFolderId,
-            stepDetailDTO: {
-                nodeType: "SCRIPT_NODE",
-                stepName: stepData.stepName,
-                description: stepData.description,
-                prologue: stepData.prologue,
-                modelId: stepData.modelId || "Doubao-Seed-2.0-pro",
-                llmPrompt: stepData.llmPrompt,
-                trainerName: stepData.trainerName,
-                interactiveRounds: stepData.interactiveRounds,
-                scriptStepCover: stepData.scriptStepCover || {},
-                backgroundTheme: stepData.backgroundTheme || null,
-                whiteBoardSwitch: 0,
-                agentId: stepData.agentId || "Tg3LpKo28D",
-                avatarNid: stepData.avatarNid || "hnuOVqMu8b",
-                videoSwitch: 0,
-                scriptStepResourceList: [],
-                knowledgeBaseSwitch: 1,
-                searchEngineSwitch: 1,
-                historyRecordNum: -1,
-                trainSubType: "ability",
-            },
+            stepDetailDTO: buildScriptStepDetailDTO(stepData),
             positionDTO: position,
         },
         credentials
@@ -971,6 +1110,9 @@ export async function editConfiguration(
         trainTaskName: string;
         description: string;
         trainTaskCover?: BgImageResult | null;
+        entranceVoiceNid?: string;
+        entranceVoiceType?: string;
+        entranceVoiceSpeed?: number;
     },
     credentials: PolymasCredentials
 ): Promise<boolean> {
@@ -979,8 +1121,22 @@ export async function editConfiguration(
         courseId: params.courseId,
         trainTaskName: params.trainTaskName,
         description: params.description,
-        trainType: "voice",
-        trainTime: 10,
+        trainType: "all",
+        trainTime: -1,
+        trainSubType: "ability",
+        entranceVoiceNid: params.entranceVoiceNid || DEFAULT_AGENT_ID,
+        entranceVoiceType: params.entranceVoiceType || DEFAULT_AGENT_VOICE_ID,
+        entranceVoiceSpeed: params.entranceVoiceSpeed ?? 0,
+        extConfig: {
+            trainSubType: "ability",
+            trainTaskName: params.trainTaskName,
+            description: params.description,
+            dialogueLanguage: null,
+        },
+        voiceUrl: null,
+        instanceNid: null,
+        version: null,
+        communicateMethod: null,
     };
 
     if (params.trainTaskCover?.fileId) {

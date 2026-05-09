@@ -1,4 +1,4 @@
-import { parseTaskConfig, parseTrainingScript } from "@/lib/training-injector/parser";
+import { isScriptFieldLine, matchStageHeading, normalizeTrainingScriptSource, parseTaskConfig, parseTrainingScript } from "@/lib/training-injector/parser";
 import { TrainingScriptPlan } from "./types";
 import { detectMultiRoleTextSignal } from "./plan-validation";
 
@@ -33,14 +33,11 @@ function joinLines(lines: string[]): string {
 }
 
 export function extractStageNumberFromHeading(heading: string): number | null {
-    const match = heading.trim().match(/^#{3,}\s*阶段\s*(\d+)(?:\b|[：:])/i);
-    if (!match) return null;
-    const value = Number.parseInt(match[1], 10);
-    return Number.isFinite(value) ? value : null;
+    return matchStageHeading(heading)?.stageNumber ?? null;
 }
 
 export function extractScriptStructure(markdown: string): ScriptStructure {
-    const lines = markdown.split("\n");
+    const lines = normalizeTrainingScriptSource(markdown).split("\n");
     const stageStarts: number[] = [];
     const topLevelHeadings: number[] = [];
     let inCodeBlock = false;
@@ -52,9 +49,9 @@ export function extractScriptStructure(markdown: string): ScriptStructure {
             return;
         }
         if (inCodeBlock) return;
-        if (/^#{3,}\s*阶段/.test(trimmed)) {
+        if (matchStageHeading(trimmed)) {
             stageStarts.push(index);
-        } else if (/^##+\s+/.test(trimmed)) {
+        } else if (/^##+\s+/.test(trimmed) && !isScriptFieldLine(trimmed)) {
             topLevelHeadings.push(index);
         }
     });
@@ -78,7 +75,7 @@ export function extractScriptStructure(markdown: string): ScriptStructure {
         const end = nextStageStart ?? nextTopLevel ?? lines.length;
         const stageLines = lines.slice(start, end);
         const heading = stageLines[0]?.trim() || `### 阶段${index + 1}`;
-        const stepName = heading.split(/[:：]/).slice(1).join(":").trim() || `阶段${index + 1}`;
+        const stepName = matchStageHeading(heading)?.stepName || heading.split(/[:：]/).slice(1).join(":").trim() || `阶段${index + 1}`;
         stageEnds.push(end);
         stages.push({
             index,
@@ -178,12 +175,6 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
         }
         if (!step.interactiveRounds || step.interactiveRounds < 1 || step.interactiveRounds > 10) {
             issues.push({ level: "warning", message: `阶段 ${index + 1} 的互动轮次不合理（建议 1-10 轮）。`, stageIndex: index, field: "interactiveRounds" });
-        }
-        if (index < parsedSteps.length - 1 && !/^NEXT_TO_STAGE\d+$/i.test(step.flowCondition.trim())) {
-            issues.push({ level: "warning", message: `阶段 ${index + 1} 的 flowCondition 不是标准阶段跳转格式。`, stageIndex: index, field: "flowCondition" });
-        }
-        if (index === parsedSteps.length - 1 && !/TASK_COMPLETE|END|本次实训到此结束/i.test(step.flowCondition.trim())) {
-            issues.push({ level: "warning", message: "最后阶段的 flowCondition 看起来不像结束态。", stageIndex: index, field: "flowCondition" });
         }
     });
 

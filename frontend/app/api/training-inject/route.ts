@@ -14,6 +14,8 @@ import {
     deleteScriptStep,
     deleteScriptFlow,
     createScriptStep,
+    createCustomDigitalHuman,
+    listOwnerDigitalHumans,
     editScriptStep,
     createScriptFlow,
     createScoreItem,
@@ -23,10 +25,39 @@ import {
     uploadCoverImageFromUrl,
     parsePolymasUrl,
 } from "@/lib/training-injector/api";
-import { InjectProgressEvent, PolymasCredentials } from "@/lib/training-injector/types";
+import { InjectProgressEvent, PolymasCredentials, PolymasScriptStep } from "@/lib/training-injector/types";
 
 export const maxDuration = 300;
 export const runtime = "nodejs";
+
+function normalizeStageNameForAppend(value: unknown): string {
+    return String(value || "")
+        .trim()
+        .replace(/^阶段\s*[\d一二三四五六七八九十]+[：:、.\-\s]*/u, "")
+        .replace(/\s+/g, "")
+        .toLowerCase();
+}
+
+function normalizeDigitalHumanNameForReuse(value: unknown): string {
+    return String(value || "").trim().replace(/\s+/g, "");
+}
+
+function getNodeX(step: PolymasScriptStep): number {
+    const raw = step.positionDTO?.x;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : 0;
+}
+
+function getNodeY(step: PolymasScriptStep): number {
+    const raw = step.positionDTO?.y;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : 300;
+}
+
+function findLastScriptNode(scriptNodes: PolymasScriptStep[]): PolymasScriptStep | null {
+    if (scriptNodes.length === 0) return null;
+    return [...scriptNodes].sort((a, b) => getNodeX(b) - getNodeX(a))[0] || null;
+}
 
 export async function POST(request: NextRequest) {
     const encoder = new TextEncoder();
@@ -224,13 +255,6 @@ export async function POST(request: NextRequest) {
                         }
                     }
 
-                    send({
-                        type: "start",
-                        phase: "script",
-                        message: `开始注入训练剧本，共 ${steps.length} 个阶段...`,
-                        total: steps.length,
-                    });
-
                     // 提前检测背景图能力
                     const canSetBgImage = !!(injectBackgroundImage && finalCourseId && finalLibraryFolderId);
 
@@ -245,6 +269,9 @@ export async function POST(request: NextRequest) {
                         controller.close();
                         return;
                     }
+
+                    let appendAnchorStepId: string | null = null;
+                    let appendAnchorPosition: { x: number; y: number } | null = null;
 
                     // 全新创建模式：删除旧节点和连线
                     if (injectMode === "replace") {
@@ -263,13 +290,122 @@ export async function POST(request: NextRequest) {
                                 stepsDeleted++;
                             }
                         }
+                    } else {
+                        const scriptNodes = getScriptNodes(existingSteps);
+                        const existingStageNames = new Set(
+                            scriptNodes
+                                .map((step) => normalizeStageNameForAppend(step.stepDetailDTO?.stepName))
+                                .filter(Boolean)
+                        );
+                        const originalStepCount = steps.length;
+                        steps = steps.filter((step) => {
+                            const normalizedName = normalizeStageNameForAppend(step?.stepName);
+                            return !normalizedName || !existingStageNames.has(normalizedName);
+                        });
+
+                        const skippedCount = originalStepCount - steps.length;
+                        if (skippedCount > 0) {
+                            send({
+                                type: "progress",
+                                phase: "script",
+                                message: `追加模式已跳过 ${skippedCount} 个已存在阶段，不会重新生成这些阶段的背景图`,
+                                current: 0,
+                                total: Math.max(steps.length, 1),
+                            });
+                        }
+
+                        const lastExistingNode = findLastScriptNode(scriptNodes);
+                        if (lastExistingNode) {
+                            appendAnchorStepId = lastExistingNode.stepId;
+                            appendAnchorPosition = {
+                                x: getNodeX(lastExistingNode),
+                                y: getNodeY(lastExistingNode),
+                            };
+                        }
                     }
 
                     // 创建节点
                     const X_START = 100;
                     const Y_START = 300;
                     const X_GAP = 400;
+                    const baseX = appendAnchorPosition ? appendAnchorPosition.x + X_GAP : X_START;
+                    const baseY = appendAnchorPosition ? appendAnchorPosition.y : Y_START;
                     const createdStepIds: string[] = [];
+                    const customDigitalHumanCache = new Map<string, string>();
+                    const existingDigitalHumanByExactKey = new Map<string, string>();
+                    const existingDigitalHumanByName = new Map<string, string>();
+
+                    if (steps.length === 0) {
+                        send({
+                            type: "phase_complete",
+                            phase: "script",
+                            message: injectMode === "append"
+                                ? "追加模式下未发现需要新增的阶段，已跳过训练剧本节点注入"
+                                : "训练剧本中未找到需要注入的阶段",
+                        });
+                    } else {
+                    if (finalCourseId) {
+                        send({
+                            type: "progress",
+                            phase: "script",
+                            message: "正在查询课程已有数字人，优先复用同名配置...",
+                            current: 0,
+                            total: steps.length,
+                        });
+
+                        try {
+                            const ownerDigitalHumans = await listOwnerDigitalHumans(
+                                {
+                                    courseId: finalCourseId,
+                                    libraryFolderId: finalLibraryFolderId,
+                                },
+                                credentials
+                            );
+
+                            for (const item of ownerDigitalHumans) {
+                                const customNid = String(item.customNid || "").trim();
+                                const nameKey = normalizeDigitalHumanNameForReuse(item.digitalHumanName);
+                                if (!customNid || !nameKey) continue;
+
+                                const voiceNid = String(item.voiceNid || "").trim();
+                                const avatarNid = String(item.avatarNid || "").trim();
+                                const exactKey = `${nameKey}::${voiceNid}::${avatarNid}`;
+
+                                if (!existingDigitalHumanByExactKey.has(exactKey)) {
+                                    existingDigitalHumanByExactKey.set(exactKey, customNid);
+                                }
+                                if (!existingDigitalHumanByName.has(nameKey)) {
+                                    existingDigitalHumanByName.set(nameKey, customNid);
+                                }
+                            }
+
+                            if (ownerDigitalHumans.length > 0) {
+                                send({
+                                    type: "progress",
+                                    phase: "script",
+                                    message: `已读取 ${ownerDigitalHumans.length} 个已有数字人，同名角色将直接复用`,
+                                    current: 0,
+                                    total: steps.length,
+                                });
+                            }
+                        } catch (digitalHumanListErr) {
+                            console.warn("[inject-route] 查询已有数字人异常:", digitalHumanListErr);
+                            send({
+                                type: "progress",
+                                phase: "script",
+                                message: "查询已有数字人失败，将按需新建数字人",
+                                current: 0,
+                                total: steps.length,
+                            });
+                        }
+                    }
+
+                    send({
+                        type: "start",
+                        phase: "script",
+                        message: `开始注入训练剧本，共 ${steps.length} 个新增阶段...`,
+                        total: steps.length,
+                    });
 
                     for (let i = 0; i < steps.length; i++) {
                         const step = steps[i];
@@ -322,7 +458,77 @@ export async function POST(request: NextRequest) {
                             total: steps.length,
                         });
 
-                        const position = { x: X_START + i * X_GAP, y: Y_START };
+                        const position = { x: baseX + i * X_GAP, y: baseY };
+                        const trainerName = step.trainerName || "训练引导员";
+                        const agentId = step.agentId || "Tg3LpKo28D";
+                        const avatarNid = step.avatarNid || "hnuOVqMu8b";
+                        const digitalHumanNameKey = normalizeDigitalHumanNameForReuse(trainerName);
+                        const digitalHumanExactKey = `${digitalHumanNameKey}::${agentId}::${avatarNid}`;
+                        let customDigitalHuman =
+                            customDigitalHumanCache.get(digitalHumanExactKey) ||
+                            existingDigitalHumanByExactKey.get(digitalHumanExactKey) ||
+                            existingDigitalHumanByName.get(digitalHumanNameKey) ||
+                            "";
+
+                        if (!customDigitalHuman) {
+                            send({
+                                type: "progress",
+                                phase: "script",
+                                message: `正在配置数字人：${trainerName}`,
+                                current: i + 1,
+                                total: steps.length,
+                            });
+                            try {
+                                customDigitalHuman = await createCustomDigitalHuman(
+                                    {
+                                        digitalHumanName: trainerName,
+                                        voiceNid: agentId,
+                                        avatarNid,
+                                    },
+                                    credentials
+                                ) || "";
+                                if (customDigitalHuman) {
+                                    customDigitalHumanCache.set(digitalHumanExactKey, customDigitalHuman);
+                                    if (digitalHumanNameKey && !existingDigitalHumanByName.has(digitalHumanNameKey)) {
+                                        existingDigitalHumanByName.set(digitalHumanNameKey, customDigitalHuman);
+                                    }
+                                    send({
+                                        type: "progress",
+                                        phase: "script",
+                                        message: `数字人配置成功：${trainerName}`,
+                                        current: i + 1,
+                                        total: steps.length,
+                                    });
+                                } else {
+                                    send({
+                                        type: "progress",
+                                        phase: "script",
+                                        message: `数字人配置失败，将继续创建节点：${trainerName}`,
+                                        current: i + 1,
+                                        total: steps.length,
+                                    });
+                                }
+                            } catch (digitalHumanErr) {
+                                console.warn("[inject-route] 数字人配置异常:", digitalHumanErr);
+                                send({
+                                    type: "progress",
+                                    phase: "script",
+                                    message: `数字人配置异常，将继续创建节点：${trainerName}`,
+                                    current: i + 1,
+                                    total: steps.length,
+                                });
+                            }
+                        } else {
+                            customDigitalHumanCache.set(digitalHumanExactKey, customDigitalHuman);
+                            send({
+                                type: "progress",
+                                phase: "script",
+                                message: `复用已有数字人：${trainerName}`,
+                                current: i + 1,
+                                total: steps.length,
+                            });
+                        }
+
                         const newStepId = await createScriptStep(
                             finalTrainTaskId,
                             {
@@ -331,11 +537,12 @@ export async function POST(request: NextRequest) {
                                 prologue: step.prologue,
                                 modelId: step.modelId || "Doubao-Seed-2.0-pro",
                                 llmPrompt: step.llmPrompt,
-                                trainerName: step.trainerName,
+                                trainerName,
                                 interactiveRounds: step.interactiveRounds,
-                                agentId: step.agentId || "Tg3LpKo28D",
-                                avatarNid: step.avatarNid,
+                                agentId,
+                                avatarNid,
                                 scriptStepCover: step.scriptStepCover,
+                                customDigitalHuman: customDigitalHuman || null,
                                 // 不在创建时设置 backgroundTheme，改为创建后用 editScriptStep
                             },
                             position,
@@ -348,10 +555,16 @@ export async function POST(request: NextRequest) {
                             return;
                         }
 
-                        // 创建成功后，用 editScriptStep 设置背景图
-                        if (bgImage && canSetBgImage) {
-                            console.log("[inject-route] 正在调用 editScriptStep 设置背景图, stepId=", newStepId);
-                            send({ type: "progress", phase: "script", message: `正在设置背景图...`, current: i + 1, total: steps.length });
+                        // 创建成功后，用 editScriptStep 写入场景配置、数字人和背景图等完整字段
+                        if (finalCourseId && finalLibraryFolderId) {
+                            console.log("[inject-route] 正在调用 editScriptStep 写入场景配置, stepId=", newStepId);
+                            send({
+                                type: "progress",
+                                phase: "script",
+                                message: bgImage ? "正在写入场景配置与背景图..." : "正在写入场景配置...",
+                                current: i + 1,
+                                total: steps.length,
+                            });
                             try {
                                 const editOk = await editScriptStep(
                                     finalTrainTaskId,
@@ -362,15 +575,16 @@ export async function POST(request: NextRequest) {
                                         prologue: step.prologue,
                                         modelId: step.modelId || "Doubao-Seed-2.0-pro",
                                         llmPrompt: step.llmPrompt,
-                                        trainerName: step.trainerName,
+                                        trainerName,
                                         interactiveRounds: step.interactiveRounds,
-                                        agentId: step.agentId || "Tg3LpKo28D",
-                                        avatarNid: step.avatarNid,
-                                        scriptStepCover: {
+                                        agentId,
+                                        avatarNid,
+                                        scriptStepCover: bgImage ? {
                                             fileId: bgImage.fileId,
                                             fileUrl: bgImage.fileUrl,
-                                        },
-                                        backgroundTheme: bgImage.fileId,
+                                        } : (step.scriptStepCover || {}),
+                                        backgroundTheme: bgImage?.fileId || null,
+                                        customDigitalHuman: customDigitalHuman || null,
                                     },
                                     finalCourseId,
                                     finalLibraryFolderId,
@@ -378,13 +592,25 @@ export async function POST(request: NextRequest) {
                                     credentials
                                 );
                                 if (editOk) {
-                                    send({ type: "progress", phase: "script", message: `背景图设置成功`, current: i + 1, total: steps.length });
+                                    send({
+                                        type: "progress",
+                                        phase: "script",
+                                        message: bgImage ? "场景配置与背景图设置成功" : "场景配置设置成功",
+                                        current: i + 1,
+                                        total: steps.length,
+                                    });
                                 } else {
-                                    send({ type: "progress", phase: "script", message: `背景图设置失败（editScriptStep 返回错误）`, current: i + 1, total: steps.length });
+                                    send({
+                                        type: "progress",
+                                        phase: "script",
+                                        message: `场景配置设置失败（editScriptStep 返回错误）`,
+                                        current: i + 1,
+                                        total: steps.length,
+                                    });
                                 }
                             } catch (editErr) {
                                 console.error("[inject-route] editScriptStep 异常:", editErr);
-                                send({ type: "progress", phase: "script", message: `背景图设置异常: ${editErr instanceof Error ? editErr.message : String(editErr)}`, current: i + 1, total: steps.length });
+                                send({ type: "progress", phase: "script", message: `场景配置设置异常: ${editErr instanceof Error ? editErr.message : String(editErr)}`, current: i + 1, total: steps.length });
                             }
                         }
 
@@ -395,12 +621,12 @@ export async function POST(request: NextRequest) {
                     // 创建连线
                     send({ type: "progress", phase: "script", message: "正在创建节点连线...", current: steps.length, total: steps.length });
 
-                    // START → 第一个节点
+                    // START/已有最后节点 → 第一个新增节点
                     const flowStartOk = await createScriptFlow(
                         finalTrainTaskId,
-                        startId,
+                        appendAnchorStepId || startId,
                         createdStepIds[0],
-                        "",
+                        appendAnchorStepId ? (steps[0].stepName || "下一步") : "",
                         "",
                         credentials
                     );
@@ -434,6 +660,7 @@ export async function POST(request: NextRequest) {
                     if (flowEndOk) flowsCreated++;
 
                     send({ type: "phase_complete", phase: "script", message: `训练剧本注入完成：${stepsCreated} 个节点，${flowsCreated} 条连线` });
+                    }
                 }
 
                 // ─── 评分标准注入 ──────────────────────────────────────

@@ -42,7 +42,12 @@ export async function POST(request: NextRequest) {
                     trainerName: step.stepDetailDTO?.trainerName || "",
                     interactiveRounds: Number(step.stepDetailDTO?.interactiveRounds) || 0,
                     agentId: step.stepDetailDTO?.agentId || "",
+                    agentVoiceId: step.stepDetailDTO?.agentVoiceId || "",
                     avatarNid: step.stepDetailDTO?.avatarNid || "",
+                    customDigitalHuman: step.stepDetailDTO?.customDigitalHuman || "",
+                    knowledgeBaseId: step.stepDetailDTO?.knowledgeBaseId || "",
+                    knowledgeBaseSwitch: step.stepDetailDTO?.knowledgeBaseSwitch,
+                    searchEngineSwitch: step.stepDetailDTO?.searchEngineSwitch,
                     position: {
                         x: Number(step.positionDTO?.x) || 100,
                         y: Number(step.positionDTO?.y) || 300,

@@ -47,6 +47,7 @@ import {
 import { DEFAULT_RUBRIC_TEMPLATE, DEFAULT_SCRIPT_TEMPLATE, TEMPLATE_VERSION, getBuiltInScriptTemplate } from "@/lib/training-generator/prompts";
 import { findMultiRoleModuleIssue } from "@/lib/training-generator/plan-validation";
 import { diagnoseTrainingScript, extractScriptStructure, replaceStageInScript } from "@/lib/training-generator/script-tools";
+import { parseTrainingScript, repairTrainingScriptForParsing } from "@/lib/training-injector/parser";
 import { SettingsModal } from "./SettingsModal";
 import { InjectConfigModal } from "./InjectConfigModal";
 import { TrainingOptimizationModal } from "./TrainingOptimizationModal";
@@ -58,6 +59,7 @@ type PlanRegenerateSource = "current_edited" | "previous_plan" | "teacher_doc_on
 
 const RESULT_CACHE_KEY = "training-generate-result";
 const MODULE_PLAN_CACHE_KEY = "training-generate-module-plan";
+const PLANNING_SUGGESTION_CACHE_KEY = "training-generate-planning-suggestion";
 const MODULE_PLAN_CACHE_VERSION = 1;
 const MODULE_PLAN_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const OPTIMIZATION_SNAPSHOT_KEY = "training-generate-optimization-snapshots";
@@ -425,6 +427,10 @@ export function TrainingGenerateInterface() {
     const [activeTab, setActiveTab] = useState<ResultTab>("script");
     const [taskName, setTaskName] = useState(cached.name);
     const [errorMessage, setErrorMessage] = useState("");
+    const [repairFeedback, setRepairFeedback] = useState<{
+        type: "success" | "error";
+        message: string;
+    } | null>(null);
     const [optimizationSnapshots, setOptimizationSnapshots] = useState<OptimizationSnapshot[]>(() => loadOptimizationSnapshots());
     const [lastOptimizationResult, setLastOptimizationResult] = useState<OptimizationLoopResult | null>(null);
 
@@ -523,6 +529,14 @@ export function TrainingGenerateInterface() {
     const [showPlanRegenerateModal, setShowPlanRegenerateModal] = useState(false);
     const [planRegenerateFeedback, setPlanRegenerateFeedback] = useState("");
     const [planRegenerateSource, setPlanRegenerateSource] = useState<PlanRegenerateSource>("current_edited");
+    const [planningSuggestion, setPlanningSuggestion] = useState<string>(() => {
+        if (typeof window === "undefined") return "";
+        try {
+            return localStorage.getItem(PLANNING_SUGGESTION_CACHE_KEY) || "";
+        } catch {
+            return "";
+        }
+    });
     const moduleCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const resultPaneRef = useRef<HTMLDivElement | null>(null);
 
@@ -621,6 +635,20 @@ export function TrainingGenerateInterface() {
         planAutofillTaskFields,
         planAutofillModuleFields,
     ]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        try {
+            const trimmed = planningSuggestion.trim();
+            if (trimmed) {
+                localStorage.setItem(PLANNING_SUGGESTION_CACHE_KEY, planningSuggestion);
+            } else {
+                localStorage.removeItem(PLANNING_SUGGESTION_CACHE_KEY);
+            }
+        } catch {
+            // ignore
+        }
+    }, [planningSuggestion]);
 
     useEffect(() => {
         if (!teacherDocCacheHydrated) return;
@@ -826,7 +854,7 @@ export function TrainingGenerateInterface() {
                 teacherDocContent: doc.content || "",
                 file: doc.file,
                 teacherDocName: doc.name,
-                planningFeedback: options?.planningFeedback,
+                planningFeedback: options?.planningFeedback ?? planningSuggestion.trim(),
                 usePreviousPlan: options?.usePreviousPlan,
                 currentPlan: options?.currentPlan,
                 previousPlan: options?.previousPlan,
@@ -850,14 +878,14 @@ export function TrainingGenerateInterface() {
         } finally {
             setPlanning(false);
         }
-    }, [generateScript, getDocContent, syncDominantMode]);
+    }, [generateScript, getDocContent, planningSuggestion, syncDominantMode]);
 
     const openPlanRegenerateModal = useCallback(() => {
-        setPlanRegenerateFeedback("");
+        setPlanRegenerateFeedback(planningSuggestion);
         setPlanRegenerateSource("current_edited");
         setPlanErrorMessage("");
         setShowPlanRegenerateModal(true);
-    }, []);
+    }, [planningSuggestion]);
 
     const clearModulePlan = useCallback(() => {
         if (typeof window !== "undefined") {
@@ -883,13 +911,15 @@ export function TrainingGenerateInterface() {
 
     const handleRegeneratePlan = useCallback(async () => {
         if (!modulePlan) return;
+        const nextFeedback = planRegenerateFeedback.trim();
         const ok = await handlePlanScript({
-            planningFeedback: planRegenerateFeedback.trim(),
+            planningFeedback: nextFeedback,
             usePreviousPlan: planRegenerateSource !== "teacher_doc_only",
             currentPlan: planRegenerateSource === "current_edited" ? modulePlan : undefined,
             previousPlan: planRegenerateSource === "previous_plan" ? lastSystemPlan || modulePlan : undefined,
         });
         if (ok) {
+            setPlanningSuggestion(nextFeedback);
             setShowPlanRegenerateModal(false);
         }
     }, [handlePlanScript, lastSystemPlan, modulePlan, planRegenerateFeedback, planRegenerateSource]);
@@ -1302,6 +1332,33 @@ export function TrainingGenerateInterface() {
     const scriptDiagnostics = scriptContent ? diagnoseTrainingScript(scriptContent, modulePlan) : null;
     const scriptStructure = scriptContent ? extractScriptStructure(scriptContent) : { prefix: "", stages: [], suffix: "" };
 
+    const handleRepairScriptParsing = useCallback(() => {
+        if (!scriptContent) return;
+
+        setRepairFeedback(null);
+        const repairedMarkdown = repairTrainingScriptForParsing(scriptContent);
+        const parsedSteps = parseTrainingScript(repairedMarkdown);
+
+        if (parsedSteps.length === 0) {
+            setRepairFeedback({
+                type: "error",
+                message: "重新解析后仍未识别出任何训练阶段。请检查阶段标题是否类似“### 阶段1: 名称”，或确认模型输出里是否夹带了额外说明文字。",
+            });
+            setStatusMessage("");
+            return;
+        }
+
+        setScriptContent(repairedMarkdown);
+        setActiveTab("script");
+        setPhase("completed");
+        setErrorMessage("");
+        setRepairFeedback({
+            type: "success",
+            message: `已重新解析当前剧本，并识别到 ${parsedSteps.length} 个训练阶段。`,
+        });
+        setStatusMessage("");
+    }, [scriptContent]);
+
     const handleRegenerateModule = useCallback(async () => {
         if (!modulePlan || !moduleRegenTargetId || !moduleRegenFeedback.trim()) return;
         const targetStageIndex = modulePlan.modules.findIndex((module) => module.id === moduleRegenTargetId);
@@ -1645,6 +1702,23 @@ export function TrainingGenerateInterface() {
                         </div>
 
                         <div className="p-5 space-y-4">
+                            <div className="space-y-2">
+                                <label className="text-xs font-medium text-slate-700 block">
+                                    用户规划建议
+                                    <span className="ml-1 text-slate-400">可选</span>
+                                </label>
+                                <textarea
+                                    value={planningSuggestion}
+                                    onChange={(e) => setPlanningSuggestion(e.target.value)}
+                                    rows={4}
+                                    placeholder="例如：不要合并第 5、6、7 阶段；单独增加总结复盘模块；优先按教师文档中的原始环节顺序规划；把某个复杂环节拆成 2 个模块。"
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-y"
+                                />
+                                <p className="text-xs text-slate-500">
+                                    这份建议会在“智能规划”和“重新规划”时一并发给大模型，作为模块规划的重要参考。
+                                </p>
+                            </div>
+
                             {planErrorMessage && (
                                 <div className="flex items-start gap-2 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                                     <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
@@ -2287,22 +2361,40 @@ export function TrainingGenerateInterface() {
                         <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/60 space-y-2">
                             <div className="flex items-center justify-between gap-3 text-xs">
                                 <span className="text-slate-500">结构诊断</span>
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium ${scriptDiagnostics.canInject ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
-                                    {scriptDiagnostics.canInject ? "可注入" : "存在阻塞问题"}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                    {scriptDiagnostics.stageCount === 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={handleRepairScriptParsing}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                        >
+                                            <RefreshCw className="w-3.5 h-3.5" />
+                                            重新解析
+                                        </button>
+                                    )}
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium ${scriptDiagnostics.canInject ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                                        {scriptDiagnostics.canInject ? "可注入" : "存在阻塞问题"}
+                                    </span>
+                                </div>
                             </div>
                             {scriptDiagnostics.issues.length === 0 ? (
                                 <p className="text-xs text-emerald-700">未发现结构问题，当前剧本满足基础注入要求。</p>
                             ) : (
                                 <div className="space-y-1.5 max-h-32 overflow-y-auto">
                                     {scriptDiagnostics.issues.map((issue, index) => (
+                                                (() => {
+                                                    const message = issue.stageIndex !== undefined && /^阶段\s*\d+/u.test(issue.message)
+                                                        ? issue.message
+                                                        : issue.stageIndex !== undefined
+                                                            ? `阶段 ${issue.stageIndex + 1}：${issue.message}`
+                                                            : issue.message;
+                                                    return (
                                                 <div
                                                     key={`${issue.message}-${index}`}
                                                     onClick={() => focusModuleFromDiagnostic(issue.stageIndex)}
                                                     className={`px-2.5 py-2 rounded-lg text-xs ${issue.level === "error" ? "bg-rose-50 text-rose-700 border border-rose-100" : "bg-amber-50 text-amber-700 border border-amber-100"} ${issue.stageIndex !== undefined ? "cursor-pointer hover:shadow-sm" : ""}`}
                                                 >
-                                                    {issue.stageIndex !== undefined ? `阶段 ${issue.stageIndex + 1}：` : ""}
-                                                    {issue.message}
+                                                    {message}
                                                     {issue.stageIndex !== undefined && (
                                                         <span className="ml-2 inline-flex items-center gap-1 text-[11px] opacity-80">
                                                             <Crosshair className="w-3 h-3" />
@@ -2310,7 +2402,20 @@ export function TrainingGenerateInterface() {
                                                         </span>
                                                     )}
                                                 </div>
+                                                    );
+                                                })()
                                             ))}
+                                </div>
+                            )}
+                            {repairFeedback && (
+                                <div
+                                    className={`rounded-lg border px-3 py-2 text-xs ${
+                                        repairFeedback.type === "success"
+                                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                            : "border-rose-200 bg-rose-50 text-rose-700"
+                                    }`}
+                                >
+                                    {repairFeedback.message}
                                 </div>
                             )}
                         </div>

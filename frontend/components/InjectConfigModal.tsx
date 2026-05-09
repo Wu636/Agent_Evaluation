@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { X, Shield, Key, FilePlus, Loader2, CheckCircle2, AlertCircle, Play, Cpu, Upload, ChevronDown, ChevronRight, FileText, RefreshCw } from "lucide-react";
+import { X, Shield, Key, FilePlus, Loader2, CheckCircle2, AlertCircle, Play, Cpu, Upload, ChevronDown, ChevronRight, FileText, RefreshCw, Plus, ArrowUp, ArrowDown, Trash2 } from "lucide-react";
 import { getModels, ModelInfo } from "@/lib/api";
-import { PolymasCredentials, InjectProgressEvent, InjectSummary } from "@/lib/training-injector/types";
+import { ParsedStep, PolymasCredentials, InjectProgressEvent, InjectSummary } from "@/lib/training-injector/types";
 import { parsePolymasUrl } from "@/lib/training-injector/api";
 import { AVAILABLE_MODELS } from "@/lib/config";
 import {
@@ -11,7 +11,8 @@ import {
     LLM_SETTINGS_STORAGE_KEY,
     loadLLMSettingsFromStorage,
 } from "@/lib/llm/settings";
-import { parseTaskConfig, parseTrainingScript } from "@/lib/training-injector/parser";
+import { diagnoseTrainingScript } from "@/lib/training-generator/script-tools";
+import { ParsedTaskConfig, parseRubricMarkdown, parseTaskConfig, parseTrainingScript, serializeTrainingScriptMarkdown } from "@/lib/training-injector/parser";
 
 interface InjectConfigModalProps {
     isOpen: boolean;
@@ -107,6 +108,24 @@ interface StageOption {
     };
 }
 
+function createEmptyParsedStep(stageNumber: number): ParsedStep {
+    return {
+        stepName: `新阶段${stageNumber}`,
+        trainerName: "",
+        modelId: "",
+        agentId: "",
+        avatarNid: "",
+        description: "",
+        prologue: "",
+        llmPrompt: "",
+        interactiveRounds: 6,
+        backgroundImage: "",
+        flowCondition: "",
+        transitionPrompt: "",
+        scriptStepCover: {},
+    };
+}
+
 export function InjectConfigModal({
     isOpen,
     onClose,
@@ -155,6 +174,9 @@ export function InjectConfigModal({
     const [customCombinedText, setCustomCombinedText] = useState("");
     const [customScriptText, setCustomScriptText] = useState("");
     const [customRubricText, setCustomRubricText] = useState("");
+    const [parsedJsonExpanded, setParsedJsonExpanded] = useState(false);
+    const [structuredEditorExpanded, setStructuredEditorExpanded] = useState(false);
+    const [expandedStructuredStages, setExpandedStructuredStages] = useState<Record<number, boolean>>({});
 
     const imageProviderPriority = imageProviderMode === "openai" ? "openai,cloudapi" : "cloudapi,openai";
     const switchedImageProviderPriority = imageProviderMode === "openai" ? "cloudapi,openai" : "openai,cloudapi";
@@ -165,19 +187,26 @@ export function InjectConfigModal({
     const rubricFileRef = useRef<HTMLInputElement>(null);
 
     // 计算最终生效的 markdown 文本（自定义文档覆盖生成的文档）
-    const hasCustomDoc = customDocExpanded && (
+    const hasCustomDoc = (
         customDocMode === "combined"
             ? customCombinedText.trim().length > 0
             : (customScriptText.trim().length > 0 || customRubricText.trim().length > 0)
     );
 
-    const effectiveScriptMd = hasCustomDoc
-        ? (customDocMode === "combined" ? customCombinedText : customScriptText) || undefined
-        : scriptMarkdown;
+    const effectiveScriptMd = customDocMode === "combined"
+        ? (customCombinedText.trim() ? customCombinedText : scriptMarkdown)
+        : (customScriptText.trim() ? customScriptText : scriptMarkdown);
 
-    const effectiveRubricMd = hasCustomDoc
-        ? (customDocMode === "combined" ? customCombinedText : customRubricText) || undefined
-        : rubricMarkdown;
+    const effectiveRubricMd = customDocMode === "combined"
+        ? (customCombinedText.trim() ? customCombinedText : rubricMarkdown)
+        : (customRubricText.trim() ? customRubricText : rubricMarkdown);
+    const reviewTaskConfig = effectiveScriptMd ? parseTaskConfig(effectiveScriptMd) : null;
+    const reviewParsedSteps = effectiveScriptMd ? parseTrainingScript(effectiveScriptMd) : [];
+    const reviewScriptDiagnostics = effectiveScriptMd ? diagnoseTrainingScript(effectiveScriptMd) : null;
+    const reviewRubricItems = effectiveRubricMd ? parseRubricMarkdown(effectiveRubricMd) : [];
+    const reviewParsedJson = reviewParsedSteps.length > 0
+        ? JSON.stringify(reviewParsedSteps, null, 2)
+        : "";
     const llmModelOptions = availableLlmModels.some((item) => item.id === llmModel) || !llmModel
         ? availableLlmModels
         : [
@@ -229,11 +258,17 @@ export function InjectConfigModal({
         if (!hasCustomDoc) return;
         if (customDocMode === "combined") {
             const hasCombined = customCombinedText.trim().length > 0;
-            setInjectScript(hasCombined);
-            setInjectRubric(hasCombined);
+            if (hasCombined) {
+                setInjectScript(true);
+                setInjectRubric(true);
+            }
         } else {
-            setInjectScript(customScriptText.trim().length > 0);
-            setInjectRubric(customRubricText.trim().length > 0);
+            if (customScriptText.trim().length > 0) {
+                setInjectScript(true);
+            }
+            if (customRubricText.trim().length > 0) {
+                setInjectRubric(true);
+            }
         }
     }, [hasCustomDoc, customDocMode, customCombinedText, customScriptText, customRubricText]);
 
@@ -309,6 +344,113 @@ export function InjectConfigModal({
             })
         );
         return true;
+    };
+
+    const loadCurrentGeneratedDocsIntoEditor = () => {
+        setCustomDocExpanded(true);
+        setCustomDocMode("separate");
+        if (scriptMarkdown) {
+            setCustomScriptText(scriptMarkdown);
+        }
+        if (rubricMarkdown) {
+            setCustomRubricText(rubricMarkdown);
+        }
+    };
+
+    const writeStructuredScriptToCustomEditor = (
+        nextTaskConfig: Partial<ParsedTaskConfig> | null,
+        nextSteps: ParsedStep[]
+    ) => {
+        const sourceMarkdown = effectiveScriptMd || scriptMarkdown || "";
+        const serialized = serializeTrainingScriptMarkdown({
+            taskConfig: nextTaskConfig,
+            steps: nextSteps,
+            sourceMarkdown,
+        });
+
+        setCustomDocExpanded(true);
+        if (customDocMode === "combined" && customCombinedText.trim() && !customRubricText.trim()) {
+            setCustomRubricText(customCombinedText);
+        }
+        setCustomDocMode("separate");
+        setCustomCombinedText("");
+        setCustomScriptText(serialized);
+        setInjectScript(true);
+    };
+
+    const handleStructuredTaskConfigChange = (
+        field: keyof ParsedTaskConfig,
+        value: string
+    ) => {
+        const nextTaskConfig: ParsedTaskConfig = {
+            trainTaskName: reviewTaskConfig?.trainTaskName || "训练任务",
+            description: reviewTaskConfig?.description || "",
+            [field]: value,
+        };
+        writeStructuredScriptToCustomEditor(nextTaskConfig, reviewParsedSteps);
+    };
+
+    const handleStructuredStageChange = (
+        stageIndex: number,
+        field: keyof ParsedStep,
+        value: string | number
+    ) => {
+        const nextSteps = reviewParsedSteps.map((step, index) => {
+            if (index !== stageIndex) return step;
+            const nextStep: ParsedStep = { ...step };
+            if (field === "interactiveRounds") {
+                const numericValue = typeof value === "number"
+                    ? value
+                    : Number.parseInt(String(value || "").replace(/[^\d]/g, ""), 10);
+                nextStep.interactiveRounds = Number.isFinite(numericValue) ? numericValue : 0;
+            } else {
+                (nextStep[field] as string) = String(value ?? "");
+            }
+            return nextStep;
+        });
+        writeStructuredScriptToCustomEditor(reviewTaskConfig, nextSteps);
+    };
+
+    const toggleStructuredStage = (stageIndex: number) => {
+        setExpandedStructuredStages((prev) => ({
+            ...prev,
+            [stageIndex]: !prev[stageIndex],
+        }));
+    };
+
+    const handleAddStructuredStage = (insertAfterIndex?: number) => {
+        const insertIndex = insertAfterIndex === undefined
+            ? reviewParsedSteps.length
+            : insertAfterIndex + 1;
+        const nextSteps = [...reviewParsedSteps];
+        nextSteps.splice(insertIndex, 0, createEmptyParsedStep(insertIndex + 1));
+        writeStructuredScriptToCustomEditor(reviewTaskConfig, nextSteps);
+        setStructuredEditorExpanded(true);
+        setExpandedStructuredStages({ [insertIndex]: true });
+    };
+
+    const handleDeleteStructuredStage = (stageIndex: number) => {
+        if (reviewParsedSteps.length <= 1) {
+            setError("至少保留 1 个训练阶段；如果想重建，可以先新增一个空阶段再删除当前阶段。");
+            return;
+        }
+
+        const nextSteps = reviewParsedSteps.filter((_, index) => index !== stageIndex);
+        writeStructuredScriptToCustomEditor(reviewTaskConfig, nextSteps);
+        setExpandedStructuredStages(nextSteps.length > 0 ? { [Math.max(0, stageIndex - 1)]: true } : {});
+    };
+
+    const handleMoveStructuredStage = (stageIndex: number, direction: "up" | "down") => {
+        const targetIndex = direction === "up" ? stageIndex - 1 : stageIndex + 1;
+        if (targetIndex < 0 || targetIndex >= reviewParsedSteps.length) {
+            return;
+        }
+
+        const nextSteps = [...reviewParsedSteps];
+        const [movedStep] = nextSteps.splice(stageIndex, 1);
+        nextSteps.splice(targetIndex, 0, movedStep);
+        writeStructuredScriptToCustomEditor(reviewTaskConfig, nextSteps);
+        setExpandedStructuredStages({ [targetIndex]: true });
     };
 
     const buildCredentialKey = () => `${authorization.trim()}::${cookie.trim()}`;
@@ -809,11 +951,11 @@ export function InjectConfigModal({
                 return;
             }
             if (customDocMode === "separate") {
-                if (injectScript && !customScriptText.trim()) {
+                if (injectScript && !effectiveScriptMd?.trim()) {
                     setError("已选注入剧本，但未提供训练剧本配置文档");
                     return;
                 }
-                if (injectRubric && !customRubricText.trim()) {
+                if (injectRubric && !effectiveRubricMd?.trim()) {
                     setError("已选注入评分标准，但未提供评分标准文档");
                     return;
                 }
@@ -1621,7 +1763,7 @@ export function InjectConfigModal({
                                     </div>
                                 )}
 
-                                {/* 自定义文档上传（可折叠） */}
+                                {/* 注入前审阅与修正（可折叠） */}
                                 <div className="pt-3 border-t border-slate-100">
                                     <button
                                         type="button"
@@ -1634,18 +1776,402 @@ export function InjectConfigModal({
                                         }
                                         <Upload className="w-3.5 h-3.5 text-slate-500" />
                                         <span className="text-xs font-medium text-slate-700 group-hover:text-indigo-600 transition-colors">
-                                            自定义注入文档（可选）
+                                            注入前审阅与修正（可选）
                                         </span>
                                         {hasCustomDoc && (
-                                            <span className="ml-auto text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">已加载自定义文档</span>
+                                            <span className="ml-auto text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">将使用修正版注入</span>
                                         )}
                                     </button>
 
                                     {customDocExpanded && (
                                         <div className="mt-3 space-y-4 pl-6">
-                                            <p className="text-xs text-slate-400">
-                                                可上传或粘贴您自己的训练配置/评分标准文档来注入，将替代上方生成的内容。
-                                            </p>
+                                            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-4">
+                                                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                                    <div className="space-y-1">
+                                                        <div className="text-sm font-semibold text-slate-800">当前待注入内容审阅</div>
+                                                        <p className="text-xs text-slate-500">
+                                                            先看解析摘要和阶段 JSON；如果哪里不对，直接在下面粘贴或修改 Markdown，执行注入时会优先使用这里的修正版。
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        {(scriptMarkdown || rubricMarkdown) && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={loadCurrentGeneratedDocsIntoEditor}
+                                                                className="px-3 py-1.5 text-xs font-medium border border-indigo-200 rounded-lg bg-white text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                                            >
+                                                                载入当前生成内容到编辑区
+                                                            </button>
+                                                        )}
+                                                        {hasCustomDoc && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setCustomCombinedText("");
+                                                                    setCustomScriptText("");
+                                                                    setCustomRubricText("");
+                                                                }}
+                                                                className="px-3 py-1.5 text-xs font-medium border border-rose-200 rounded-lg bg-white text-rose-600 hover:bg-rose-50 transition-colors"
+                                                            >
+                                                                清空修正版
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-wrap gap-2">
+                                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${hasCustomDoc ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"}`}>
+                                                        {hasCustomDoc ? "本次将按修正版注入" : "本次将按当前生成结果注入"}
+                                                    </span>
+                                                    {reviewTaskConfig?.trainTaskName && (
+                                                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-white border border-slate-200 text-slate-700">
+                                                            任务：{reviewTaskConfig.trainTaskName}
+                                                        </span>
+                                                    )}
+                                                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-white border border-slate-200 text-slate-700">
+                                                        训练阶段：{reviewParsedSteps.length}
+                                                    </span>
+                                                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-white border border-slate-200 text-slate-700">
+                                                        评分项：{reviewRubricItems.length}
+                                                    </span>
+                                                </div>
+
+                                                {reviewScriptDiagnostics?.issues?.length ? (
+                                                    <div className="space-y-2">
+                                                        <div className="text-xs font-medium text-slate-700">解析提醒</div>
+                                                        <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                                                            {reviewScriptDiagnostics.issues.map((issue, index) => (
+                                                                <div
+                                                                    key={`${issue.message}-${index}`}
+                                                                    className={`rounded-lg border px-3 py-2 text-xs ${issue.level === "error"
+                                                                        ? "border-rose-200 bg-rose-50 text-rose-700"
+                                                                        : "border-amber-200 bg-amber-50 text-amber-700"
+                                                                    }`}
+                                                                >
+                                                                    {issue.stageIndex !== undefined && !/^阶段\s*\d+/u.test(issue.message)
+                                                                        ? `阶段 ${issue.stageIndex + 1}：${issue.message}`
+                                                                        : issue.message}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ) : effectiveScriptMd ? (
+                                                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                                                        当前剧本解析正常，未发现阻塞注入的问题。
+                                                    </div>
+                                                ) : null}
+
+                                                {reviewParsedSteps.length > 0 ? (
+                                                    <div className="space-y-2">
+                                                        <div className="text-xs font-medium text-slate-700">阶段解析摘要</div>
+                                                        <div className="grid grid-cols-1 gap-2">
+                                                            {reviewParsedSteps.map((step, index) => (
+                                                                <div key={`${step.stepName || "stage"}-${index}`} className="rounded-lg border border-slate-200 bg-white px-3 py-3 space-y-2">
+                                                                    <div className="flex flex-wrap items-center gap-2">
+                                                                        <span className="text-sm font-semibold text-slate-800">阶段 {index + 1}</span>
+                                                                        <span className="text-sm text-slate-600">{step.stepName || "未识别名称"}</span>
+                                                                    </div>
+                                                                    <div className="flex flex-wrap gap-2">
+                                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${step.prologue.trim() ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                                                                            开场白{step.prologue.trim() ? "已识别" : "缺失"}
+                                                                        </span>
+                                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${step.llmPrompt.trim() ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                                                                            提示词{step.llmPrompt.trim() ? "已识别" : "缺失"}
+                                                                        </span>
+                                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${step.transitionPrompt.trim() ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                                                                            衔接语{step.transitionPrompt.trim() ? "已识别" : "缺失"}
+                                                                        </span>
+                                                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700">
+                                                                            互动轮次 {step.interactiveRounds || 0}
+                                                                        </span>
+                                                                    </div>
+                                                                    {step.description.trim() && (
+                                                                        <p className="text-xs leading-5 text-slate-600 line-clamp-3">{step.description}</p>
+                                                                    )}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setParsedJsonExpanded((prev) => !prev)}
+                                                            className="px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white hover:bg-slate-50 text-slate-600 transition-colors"
+                                                        >
+                                                            {parsedJsonExpanded ? "收起阶段 JSON" : "显示阶段 JSON"}
+                                                        </button>
+                                                        {parsedJsonExpanded && reviewParsedJson && (
+                                                            <pre className="max-h-80 overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-4 text-[11px] leading-5 text-emerald-200 whitespace-pre-wrap break-all">
+{reviewParsedJson}
+                                                            </pre>
+                                                        )}
+                                                        <div className="rounded-xl border border-slate-200 bg-white">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setStructuredEditorExpanded((prev) => !prev)}
+                                                                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                                                            >
+                                                                <div>
+                                                                    <div className="text-sm font-semibold text-slate-800">逐阶段表单修正</div>
+                                                                    <p className="text-xs text-slate-500 mt-1">
+                                                                        直接改任务信息、阶段名、开场白、提示词、跳转词等字段，系统会自动回写成修正版 Markdown 并用于注入。
+                                                                    </p>
+                                                                </div>
+                                                                {structuredEditorExpanded ? (
+                                                                    <ChevronDown className="w-4 h-4 text-slate-400" />
+                                                                ) : (
+                                                                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                                                                )}
+                                                            </button>
+
+                                                            {structuredEditorExpanded && (
+                                                                <div className="border-t border-slate-200 px-4 py-4 space-y-4">
+                                                                    <div className="grid grid-cols-1 gap-3">
+                                                                        <div>
+                                                                            <label className="text-xs font-medium text-slate-700 block mb-1.5">任务名称</label>
+                                                                            <input
+                                                                                type="text"
+                                                                                value={reviewTaskConfig?.trainTaskName || ""}
+                                                                                onChange={(e) => handleStructuredTaskConfigChange("trainTaskName", e.target.value)}
+                                                                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                                                            />
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="text-xs font-medium text-slate-700 block mb-1.5">任务描述</label>
+                                                                            <textarea
+                                                                                value={reviewTaskConfig?.description || ""}
+                                                                                onChange={(e) => handleStructuredTaskConfigChange("description", e.target.value)}
+                                                                                rows={3}
+                                                                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 resize-y"
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                                                        <div className="text-xs font-medium text-slate-700">阶段列表</div>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleAddStructuredStage()}
+                                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-indigo-200 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
+                                                                        >
+                                                                            <Plus className="w-3.5 h-3.5" />
+                                                                            新增阶段
+                                                                        </button>
+                                                                    </div>
+
+                                                                    <div className="space-y-3">
+                                                                        {reviewParsedSteps.map((step, index) => (
+                                                                            <div key={`structured-stage-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/60 overflow-hidden">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => toggleStructuredStage(index)}
+                                                                                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                                                                                >
+                                                                                    <div>
+                                                                                        <div className="text-sm font-semibold text-slate-800">阶段 {index + 1}</div>
+                                                                                        <div className="text-xs text-slate-500 mt-1">{step.stepName || "未命名阶段"}</div>
+                                                                                    </div>
+                                                                                    {expandedStructuredStages[index] ? (
+                                                                                        <ChevronDown className="w-4 h-4 text-slate-400" />
+                                                                                    ) : (
+                                                                                        <ChevronRight className="w-4 h-4 text-slate-400" />
+                                                                                    )}
+                                                                                </button>
+
+                                                                                {expandedStructuredStages[index] && (
+                                                                                    <div className="border-t border-slate-200 bg-white px-4 py-4 space-y-4">
+                                                                                        <div className="flex flex-wrap items-center gap-2">
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => handleAddStructuredStage(index)}
+                                                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-indigo-200 rounded-lg bg-white text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                                                                            >
+                                                                                                <Plus className="w-3.5 h-3.5" />
+                                                                                                在后面新增
+                                                                                            </button>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => handleMoveStructuredStage(index, "up")}
+                                                                                                disabled={index === 0}
+                                                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                                                                            >
+                                                                                                <ArrowUp className="w-3.5 h-3.5" />
+                                                                                                上移
+                                                                                            </button>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => handleMoveStructuredStage(index, "down")}
+                                                                                                disabled={index === reviewParsedSteps.length - 1}
+                                                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                                                                            >
+                                                                                                <ArrowDown className="w-3.5 h-3.5" />
+                                                                                                下移
+                                                                                            </button>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => handleDeleteStructuredStage(index)}
+                                                                                                disabled={reviewParsedSteps.length <= 1}
+                                                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-rose-200 rounded-lg bg-white text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                                                                            >
+                                                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                                                                删除阶段
+                                                                                            </button>
+                                                                                        </div>
+
+                                                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                                                            <div>
+                                                                                                <label className="text-xs font-medium text-slate-700 block mb-1.5">阶段名称</label>
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    value={step.stepName}
+                                                                                                    onChange={(e) => handleStructuredStageChange(index, "stepName", e.target.value)}
+                                                                                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                                                                                />
+                                                                                            </div>
+                                                                                            <div>
+                                                                                                <label className="text-xs font-medium text-slate-700 block mb-1.5">虚拟训练官名字</label>
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    value={step.trainerName}
+                                                                                                    onChange={(e) => handleStructuredStageChange(index, "trainerName", e.target.value)}
+                                                                                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                                                                                />
+                                                                                            </div>
+                                                                                            <div>
+                                                                                                <label className="text-xs font-medium text-slate-700 block mb-1.5">互动轮次</label>
+                                                                                                <input
+                                                                                                    type="number"
+                                                                                                    min={0}
+                                                                                                    value={step.interactiveRounds || 0}
+                                                                                                    onChange={(e) => handleStructuredStageChange(index, "interactiveRounds", e.target.value)}
+                                                                                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                                                                                />
+                                                                                            </div>
+                                                                                            <div>
+                                                                                                <label className="text-xs font-medium text-slate-700 block mb-1.5">flowCondition</label>
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    value={step.flowCondition}
+                                                                                                    onChange={(e) => handleStructuredStageChange(index, "flowCondition", e.target.value)}
+                                                                                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                                                                                />
+                                                                                            </div>
+                                                                                        </div>
+
+                                                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                                                            <div>
+                                                                                                <label className="text-xs font-medium text-slate-700 block mb-1.5">模型</label>
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    value={step.modelId}
+                                                                                                    onChange={(e) => handleStructuredStageChange(index, "modelId", e.target.value)}
+                                                                                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                                                                                />
+                                                                                            </div>
+                                                                                            <div>
+                                                                                                <label className="text-xs font-medium text-slate-700 block mb-1.5">声音</label>
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    value={step.agentId}
+                                                                                                    onChange={(e) => handleStructuredStageChange(index, "agentId", e.target.value)}
+                                                                                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                                                                                />
+                                                                                            </div>
+                                                                                            <div>
+                                                                                                <label className="text-xs font-medium text-slate-700 block mb-1.5">形象</label>
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    value={step.avatarNid}
+                                                                                                    onChange={(e) => handleStructuredStageChange(index, "avatarNid", e.target.value)}
+                                                                                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                                                                                />
+                                                                                            </div>
+                                                                                            <div>
+                                                                                                <label className="text-xs font-medium text-slate-700 block mb-1.5">背景图</label>
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    value={step.backgroundImage}
+                                                                                                    onChange={(e) => handleStructuredStageChange(index, "backgroundImage", e.target.value)}
+                                                                                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                                                                                />
+                                                                                            </div>
+                                                                                        </div>
+
+                                                                                        <div>
+                                                                                            <label className="text-xs font-medium text-slate-700 block mb-1.5">阶段描述</label>
+                                                                                            <textarea
+                                                                                                value={step.description}
+                                                                                                onChange={(e) => handleStructuredStageChange(index, "description", e.target.value)}
+                                                                                                rows={4}
+                                                                                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 resize-y"
+                                                                                            />
+                                                                                        </div>
+
+                                                                                        <div>
+                                                                                            <label className="text-xs font-medium text-slate-700 block mb-1.5">开场白</label>
+                                                                                            <textarea
+                                                                                                value={step.prologue}
+                                                                                                onChange={(e) => handleStructuredStageChange(index, "prologue", e.target.value)}
+                                                                                                rows={4}
+                                                                                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 resize-y"
+                                                                                            />
+                                                                                        </div>
+
+                                                                                        <div>
+                                                                                            <label className="text-xs font-medium text-slate-700 block mb-1.5">transitionPrompt</label>
+                                                                                            <textarea
+                                                                                                value={step.transitionPrompt}
+                                                                                                onChange={(e) => handleStructuredStageChange(index, "transitionPrompt", e.target.value)}
+                                                                                                rows={6}
+                                                                                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono resize-y"
+                                                                                            />
+                                                                                        </div>
+
+                                                                                        <div>
+                                                                                            <label className="text-xs font-medium text-slate-700 block mb-1.5">提示词</label>
+                                                                                            <textarea
+                                                                                                value={step.llmPrompt}
+                                                                                                onChange={(e) => handleStructuredStageChange(index, "llmPrompt", e.target.value)}
+                                                                                                rows={10}
+                                                                                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono resize-y"
+                                                                                            />
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                    <p className="text-xs text-slate-500">
+                                                                        表单里的修改会自动同步到下方“修正版训练剧本配置文档”，并以修正版参与注入。
+                                                                    </p>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ) : effectiveScriptMd ? (
+                                                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-700 space-y-3">
+                                                        <div>当前文本还没有稳定解析出训练阶段。你可以直接把正确的 Markdown 粘贴到下面编辑区，或先创建一个空阶段再继续编辑。</div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleAddStructuredStage()}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-amber-300 rounded-lg bg-white text-amber-700 hover:bg-amber-100 transition-colors"
+                                                        >
+                                                            <Plus className="w-3.5 h-3.5" />
+                                                            新建第 1 个阶段
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs text-slate-500 space-y-3">
+                                                        <div>当前没有可审阅的剧本内容。你可以先生成内容，或直接创建空阶段从头整理一份可注入剧本。</div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleAddStructuredStage()}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+                                                        >
+                                                            <Plus className="w-3.5 h-3.5" />
+                                                            新建第 1 个阶段
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
 
                                             {/* 文档模式选择 */}
                                             <div className="flex gap-2">
@@ -1675,7 +2201,7 @@ export function InjectConfigModal({
                                                 /* 合并模式：一个文档包含训练配置 + 评分标准 */
                                                 <div className="space-y-2">
                                                     <label className="text-xs font-medium text-slate-700 block">
-                                                        训练配置 + 评分标准（合并文档）
+                                                        修正版文档（训练配置 + 评分标准）
                                                     </label>
                                                     <div className="flex items-center gap-2">
                                                         <input
@@ -1700,8 +2226,8 @@ export function InjectConfigModal({
                                                     <textarea
                                                         value={customCombinedText}
                                                         onChange={(e) => setCustomCombinedText(e.target.value)}
-                                                        placeholder="或直接粘贴包含训练配置和评分标准的 Markdown 文档内容..."
-                                                        rows={6}
+                                                        placeholder="把你想真正注入的平台 Markdown 粘贴到这里；保存后将优先按这里的内容注入..."
+                                                        rows={10}
                                                         className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono resize-y"
                                                     />
                                                 </div>
@@ -1711,7 +2237,7 @@ export function InjectConfigModal({
                                                     {/* 训练剧本配置文档 */}
                                                     <div className="space-y-2">
                                                         <label className="text-xs font-medium text-slate-700 block">
-                                                            训练剧本配置文档
+                                                            修正版训练剧本配置文档
                                                         </label>
                                                         <div className="flex items-center gap-2">
                                                             <input
@@ -1736,8 +2262,8 @@ export function InjectConfigModal({
                                                         <textarea
                                                             value={customScriptText}
                                                             onChange={(e) => setCustomScriptText(e.target.value)}
-                                                            placeholder="粘贴训练剧本配置的 Markdown 内容..."
-                                                            rows={4}
+                                                            placeholder="把训练剧本配置 Markdown 粘贴到这里；执行注入时会优先使用这份修正版..."
+                                                            rows={8}
                                                             className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono resize-y"
                                                         />
                                                     </div>
@@ -1745,7 +2271,7 @@ export function InjectConfigModal({
                                                     {/* 评分标准文档 */}
                                                     <div className="space-y-2">
                                                         <label className="text-xs font-medium text-slate-700 block">
-                                                            评分标准文档
+                                                            修正版评分标准文档
                                                         </label>
                                                         <div className="flex items-center gap-2">
                                                             <input
@@ -1770,28 +2296,17 @@ export function InjectConfigModal({
                                                         <textarea
                                                             value={customRubricText}
                                                             onChange={(e) => setCustomRubricText(e.target.value)}
-                                                            placeholder="粘贴评分标准的 Markdown 内容..."
-                                                            rows={4}
+                                                            placeholder="把评分标准 Markdown 粘贴到这里；执行注入时会优先使用这份修正版..."
+                                                            rows={6}
                                                             className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono resize-y"
                                                         />
                                                     </div>
                                                 </div>
                                             )}
 
-                                            {/* 清空按钮 */}
-                                            {hasCustomDoc && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setCustomCombinedText("");
-                                                        setCustomScriptText("");
-                                                        setCustomRubricText("");
-                                                    }}
-                                                    className="text-xs text-red-500 hover:text-red-600 transition-colors"
-                                                >
-                                                    清空自定义文档，恢复使用生成的内容
-                                                </button>
-                                            )}
+                                            <p className="text-xs text-slate-400">
+                                                你也可以直接把“解析不正确”的原始 Markdown 复制粘贴到上面的编辑区，修完后再注入，不需要回到生成页面重新来一遍。
+                                            </p>
                                         </div>
                                     )}
                                 </div>

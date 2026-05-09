@@ -53,7 +53,12 @@ export async function POST(request: NextRequest) {
                 trainerName?: string;
                 interactiveRounds?: number;
                 agentId?: string;
+                agentVoiceId?: string;
                 avatarNid?: string;
+                customDigitalHuman?: string | null;
+                knowledgeBaseId?: string | null;
+                knowledgeBaseSwitch?: number;
+                searchEngineSwitch?: number;
                 position?: {
                     x?: number;
                     y?: number;
@@ -169,7 +174,12 @@ export async function POST(request: NextRequest) {
                 trainerName: stepSnapshot?.trainerName || "",
                 interactiveRounds: Number(stepSnapshot?.interactiveRounds) || 0,
                 agentId: stepSnapshot?.agentId || "",
+                agentVoiceId: stepSnapshot?.agentVoiceId || "",
                 avatarNid: stepSnapshot?.avatarNid || "",
+                customDigitalHuman: stepSnapshot?.customDigitalHuman || "",
+                knowledgeBaseId: stepSnapshot?.knowledgeBaseId || "",
+                knowledgeBaseSwitch: stepSnapshot?.knowledgeBaseSwitch,
+                searchEngineSwitch: stepSnapshot?.searchEngineSwitch,
             };
             let position = {
                 x: Number(stepSnapshot?.position?.x) || 100,
@@ -196,7 +206,12 @@ export async function POST(request: NextRequest) {
                     trainerName: raw.trainerName || "",
                     interactiveRounds: Number(raw.interactiveRounds) || 0,
                     agentId: raw.agentId || "",
+                    agentVoiceId: raw.agentVoiceId || "",
                     avatarNid: raw.avatarNid || "",
+                    customDigitalHuman: raw.customDigitalHuman || "",
+                    knowledgeBaseId: raw.knowledgeBaseId || "",
+                    knowledgeBaseSwitch: raw.knowledgeBaseSwitch,
+                    searchEngineSwitch: raw.searchEngineSwitch,
                 };
                 position = {
                     x: Number(targetStep.positionDTO?.x) || 100,
@@ -241,12 +256,17 @@ export async function POST(request: NextRequest) {
                     trainerName: stepDetail.trainerName || "",
                     interactiveRounds: Number(stepDetail.interactiveRounds) || 0,
                     agentId: stepDetail.agentId || "Tg3LpKo28D",
+                    agentVoiceId: stepDetail.agentVoiceId || undefined,
                     avatarNid: stepDetail.avatarNid || "hnuOVqMu8b",
                     scriptStepCover: {
                         fileId: bgImage.fileId,
                         fileUrl: bgImage.fileUrl,
                     },
                     backgroundTheme: bgImage.fileId,
+                    customDigitalHuman: stepDetail.customDigitalHuman || null,
+                    knowledgeBaseId: stepDetail.knowledgeBaseId || "",
+                    knowledgeBaseSwitch: stepDetail.knowledgeBaseSwitch,
+                    searchEngineSwitch: stepDetail.searchEngineSwitch,
                 },
                 finalCourseId,
                 finalLibraryFolderId,
@@ -375,12 +395,17 @@ export async function POST(request: NextRequest) {
                                         trainerName: stepDetail.trainerName || "",
                                         interactiveRounds: Number(stepDetail.interactiveRounds) || 0,
                                         agentId: stepDetail.agentId || "Tg3LpKo28D",
+                                        agentVoiceId: stepDetail.agentVoiceId || undefined,
                                         avatarNid: stepDetail.avatarNid || "hnuOVqMu8b",
                                         scriptStepCover: {
                                             fileId: bgImage.fileId,
                                             fileUrl: bgImage.fileUrl,
                                         },
                                         backgroundTheme: bgImage.fileId,
+                                        customDigitalHuman: stepDetail.customDigitalHuman || null,
+                                        knowledgeBaseId: stepDetail.knowledgeBaseId || "",
+                                        knowledgeBaseSwitch: stepDetail.knowledgeBaseSwitch,
+                                        searchEngineSwitch: stepDetail.searchEngineSwitch,
                                     },
                                     finalCourseId,
                                     finalLibraryFolderId,

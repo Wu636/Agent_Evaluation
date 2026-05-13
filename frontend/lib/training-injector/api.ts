@@ -10,6 +10,7 @@ const POLYMAS_BASE = "https://cloudapi.polymas.com/teacher-course/abilityTrain";
 const POLYMAS_AI_BASE = "https://cloudapi.polymas.com/ai-tools";
 const POLYMAS_AI_PROFILE_BASE = "https://cloudapi.polymas.com/ai-profile";
 const POLYMAS_RESOURCE_BASE = "https://cloudapi.polymas.com/basic-resource";
+const POLYMAS_TEACHING_CENTER_AI_BASE = "https://cloudapi.polymas.com/teachingCenterAi";
 const DEFAULT_SCRIPT_MODEL_ID = "Doubao-Seed-2.0-pro";
 const DEFAULT_DIGITAL_HUMAN_USER_NID =
     process.env.POLYMAS_DIGITAL_HUMAN_USER_NID || "XnRLWOeg6H";
@@ -90,6 +91,178 @@ function buildCoverFallbackPrompt(params: {
     ].join("\n");
 }
 
+function safeDecodeURIComponent(value: string): string {
+    try {
+        return decodeURIComponent(value);
+    } catch {
+        return value;
+    }
+}
+
+function normalizeUserNidKey(key: string): string {
+    return key.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function isLikelyUserNid(value: unknown): value is string {
+    const text = String(value || "").trim();
+    return /^[A-Za-z0-9_-]{6,40}$/.test(text);
+}
+
+function findUserNidInObject(value: unknown): string {
+    if (!value || typeof value !== "object") return "";
+
+    const stack: unknown[] = [value];
+    const seen = new Set<unknown>();
+    while (stack.length > 0) {
+        const current = stack.pop();
+        if (!current || typeof current !== "object" || seen.has(current)) continue;
+        seen.add(current);
+
+        for (const [key, entryValue] of Object.entries(current as Record<string, unknown>)) {
+            const normalizedKey = normalizeUserNidKey(key);
+            if (normalizedKey === "usernid" && isLikelyUserNid(entryValue)) {
+                return String(entryValue).trim();
+            }
+            if (entryValue && typeof entryValue === "object") {
+                stack.push(entryValue);
+            }
+        }
+    }
+
+    return "";
+}
+
+function extractUserNidFromCookie(cookie: string): string {
+    const pairs = String(cookie || "").split(";");
+    for (const pair of pairs) {
+        const separatorIndex = pair.indexOf("=");
+        if (separatorIndex === -1) continue;
+
+        const key = pair.slice(0, separatorIndex).trim();
+        const value = safeDecodeURIComponent(pair.slice(separatorIndex + 1).trim());
+        const normalizedKey = normalizeUserNidKey(key);
+
+        if (normalizedKey === "usernid" && isLikelyUserNid(value)) {
+            return value.trim();
+        }
+
+        if (value.startsWith("{") || value.startsWith("[")) {
+            try {
+                const nested = JSON.parse(value);
+                const nestedUserNid = findUserNidInObject(nested);
+                if (nestedUserNid) return nestedUserNid;
+            } catch {
+                // ignore non-JSON cookie values
+            }
+        }
+    }
+
+    return "";
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+    const raw = String(token || "").trim().replace(/^Bearer\s+/i, "");
+    const payload = raw.split(".")[1];
+    if (!payload) return null;
+
+    try {
+        const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = normalized + "=".repeat((4 - normalized.length % 4) % 4);
+        const decoded = typeof atob === "function" ? atob(padded) : "";
+        if (!decoded) return null;
+        const utf8 = safeDecodeURIComponent(
+            decoded
+                .split("")
+                .map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`)
+                .join("")
+        );
+        return JSON.parse(utf8);
+    } catch {
+        return null;
+    }
+}
+
+const loginUserNidCache = new WeakMap<PolymasCredentials, Promise<string>>();
+
+async function directGetRequestTo<T = unknown>(
+    baseUrl: string,
+    apiPath: string,
+    credentials: PolymasCredentials
+): Promise<{ success: boolean; data?: T; error?: string }> {
+    const targetUrl = `${baseUrl}/${apiPath.replace(/^\/+/, "")}`;
+
+    const res = await fetch(targetUrl, {
+        method: "GET",
+        headers: {
+            Accept: "application/json, text/plain, */*",
+            Authorization: credentials.authorization,
+            Cookie: credentials.cookie,
+            "User-Agent":
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        },
+    });
+
+    if (!res.ok) {
+        const rawText = await res.text().catch(() => "");
+        return {
+            success: false,
+            error: `polymas API 请求失败: ${res.status} ${res.statusText}${rawText ? ` - ${rawText.substring(0, 300)}` : ""}`,
+        };
+    }
+
+    const result = await res.json();
+    if (String(result.code) === "200" || result.success === true) {
+        return { success: true, data: result.data };
+    }
+    return { success: false, error: JSON.stringify(result) };
+}
+
+async function getLoginUserNid(credentials: PolymasCredentials): Promise<string> {
+    const cached = loginUserNidCache.get(credentials);
+    if (cached) return cached;
+
+    const promise = directGetRequestTo<PolymasLoginUserInfo>(
+        POLYMAS_TEACHING_CENTER_AI_BASE,
+        "user/getLoginUserInfo",
+        credentials
+    ).then((result) => {
+        if (!result.success) {
+            console.warn("[polymas-user] getLoginUserInfo 获取当前账号失败:", result.error);
+            return "";
+        }
+
+        const userId = String(result.data?.userId || "").trim();
+        return isLikelyUserNid(userId) ? userId : "";
+    }).catch((error) => {
+        console.warn("[polymas-user] getLoginUserInfo 获取当前账号异常:", error);
+        return "";
+    });
+
+    loginUserNidCache.set(credentials, promise);
+    return promise;
+}
+
+async function resolvePolymasUserNid(credentials: PolymasCredentials, explicitUserNid?: string): Promise<string> {
+    const fromLoginUserInfo = await getLoginUserNid(credentials);
+    if (fromLoginUserInfo) return fromLoginUserInfo;
+
+    const fromParam = String(explicitUserNid || "").trim();
+    if (fromParam) return fromParam;
+
+    const fromCredentials = String(credentials.userNid || "").trim();
+    if (fromCredentials) return fromCredentials;
+
+    const fromCookie = extractUserNidFromCookie(credentials.cookie);
+    if (fromCookie) return fromCookie;
+
+    const jwtPayload = decodeJwtPayload(credentials.authorization);
+    const fromJwt = findUserNidInObject(jwtPayload);
+    if (fromJwt) return fromJwt;
+
+    console.warn("[polymas-user] 未能从当前凭证解析 userNid，使用默认兜底值。若切换账号，请在注入凭证中填写当前账号 userNid。");
+    return DEFAULT_DIGITAL_HUMAN_USER_NID;
+}
+
 /**
  * 直接请求 polymas API（此模块仅在 Next.js 服务端 route.ts 中调用，
  * 无 CORS 问题，不需要走 /api/training-inject/proxy 代理）
@@ -131,7 +304,7 @@ async function directRequestTo<T = unknown>(
     }
 
     const result = await res.json();
-    if (result.code === 200 || result.success === true) {
+    if (String(result.code) === "200" || result.success === true) {
         return { success: true, data: result.data };
     }
     return { success: false, error: JSON.stringify(result) };
@@ -164,6 +337,13 @@ export interface OwnerDigitalHuman {
     voiceNid?: string;
     type?: string;
     createTime?: string;
+}
+
+interface PolymasLoginUserInfo {
+    userId?: string;
+    userName?: string;
+    zhsUid?: string;
+    zhsUuid?: string;
 }
 
 function buildScriptStepDetailDTO(stepData: ScriptStepMutationData): Record<string, unknown> {
@@ -908,11 +1088,12 @@ export async function listOwnerDigitalHumans(
     },
     credentials: PolymasCredentials
 ): Promise<OwnerDigitalHuman[]> {
+    const userNid = await resolvePolymasUserNid(credentials, params.userNid);
     const result = await directRequestTo<OwnerDigitalHuman[]>(
         POLYMAS_AI_PROFILE_BASE,
         "digital_human/owner/list",
         {
-            userNid: params.userNid || DEFAULT_DIGITAL_HUMAN_USER_NID,
+            userNid,
             courseId: params.courseId,
             libraryFolderId: params.libraryFolderId || "",
             sort: params.sort ?? 2,
@@ -941,11 +1122,12 @@ export async function createCustomDigitalHuman(
     },
     credentials: PolymasCredentials
 ): Promise<string | null> {
+    const userNid = await resolvePolymasUserNid(credentials, params.userNid);
     const result = await directRequestTo<{ customNid?: string }>(
         POLYMAS_AI_PROFILE_BASE,
         "digital_human/custom/addAndSyncResource",
         {
-            userNid: params.userNid || DEFAULT_DIGITAL_HUMAN_USER_NID,
+            userNid,
             appCode: params.appCode ?? "",
             type: params.type || "NORMAL",
             voiceNid: params.voiceNid || DEFAULT_AGENT_ID,

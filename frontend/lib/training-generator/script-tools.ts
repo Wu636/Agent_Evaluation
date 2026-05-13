@@ -28,8 +28,45 @@ export interface ScriptDiagnosticsResult {
     canInject: boolean;
 }
 
+export const TRAINING_SCRIPT_COMPLETE_MARKER = "<!-- TRAINING_SCRIPT_COMPLETE -->";
+
 function joinLines(lines: string[]): string {
     return lines.join("\n").trim();
+}
+
+function getLastContentLine(markdown: string): string {
+    const lines = String(markdown || "")
+        .trim()
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    while (lines.length > 0 && /^```/.test(lines[lines.length - 1])) {
+        lines.pop();
+    }
+
+    return lines[lines.length - 1] || "";
+}
+
+function hasOddFenceCount(markdown: string): boolean {
+    const fenceCount = String(markdown || "")
+        .split("\n")
+        .filter((line) => line.trim().startsWith("```"))
+        .length;
+
+    return fenceCount % 2 === 1;
+}
+
+export function hasTrainingScriptCompleteMarker(markdown: string): boolean {
+    const raw = String(markdown || "");
+    const normalized = normalizeTrainingScriptSource(raw);
+    return [raw, normalized].some((candidate) => getLastContentLine(candidate) === TRAINING_SCRIPT_COMPLETE_MARKER);
+}
+
+export function hasUnclosedTrainingScriptFence(markdown: string): boolean {
+    const raw = String(markdown || "");
+    const normalized = normalizeTrainingScriptSource(raw);
+    return [raw, normalized].some((candidate) => hasOddFenceCount(candidate));
 }
 
 export function extractStageNumberFromHeading(heading: string): number | null {
@@ -94,15 +131,22 @@ export function extractScriptStructure(markdown: string): ScriptStructure {
 export function replaceStageInScript(markdown: string, stageIndex: number, nextStageMarkdown: string): string {
     const structure = extractScriptStructure(markdown);
     if (!structure.stages[stageIndex]) return markdown;
+    const hadCompletionMarker = hasTrainingScriptCompleteMarker(markdown);
 
     const updatedStages = structure.stages.map((stage, index) => (
         index === stageIndex ? nextStageMarkdown.trim() : stage.markdown.trim()
     ));
 
-    return [structure.prefix, updatedStages.join("\n\n"), structure.suffix]
+    const updatedMarkdown = [structure.prefix, updatedStages.join("\n\n"), structure.suffix]
         .filter(Boolean)
         .join("\n\n")
         .trim();
+
+    if (hadCompletionMarker && !hasTrainingScriptCompleteMarker(updatedMarkdown)) {
+        return `${updatedMarkdown}\n\n${TRAINING_SCRIPT_COMPLETE_MARKER}`;
+    }
+
+    return updatedMarkdown;
 }
 
 export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingScriptPlan | null): ScriptDiagnosticsResult {
@@ -110,6 +154,21 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
     const taskConfig = parseTaskConfig(markdown);
     const parsedSteps = parseTrainingScript(markdown);
     const structure = extractScriptStructure(markdown);
+
+    if (hasUnclosedTrainingScriptFence(markdown)) {
+        issues.push({
+            level: "error",
+            message: "检测到未闭合的 Markdown 代码块，剧本很可能在某个提示词或衔接语中被截断。",
+            field: "markdownFence",
+        });
+    }
+    if (!hasTrainingScriptCompleteMarker(markdown)) {
+        issues.push({
+            level: "error",
+            message: `缺少完整结束标志 ${TRAINING_SCRIPT_COMPLETE_MARKER}，疑似生成未到文档末尾。`,
+            field: "completionMarker",
+        });
+    }
 
     if (!taskConfig?.trainTaskName) {
         issues.push({ level: "warning", message: "基础配置中未解析到任务名称。", field: "taskName" });

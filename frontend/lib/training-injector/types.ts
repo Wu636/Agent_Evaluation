@@ -6,6 +6,7 @@
 export interface PolymasCredentials {
     authorization: string;
     cookie: string;
+    userNid?: string;
 }
 
 /** 解析后的训练阶段（从 Markdown 剧本配置提取） */

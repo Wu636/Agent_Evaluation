@@ -193,8 +193,17 @@ export async function POST(request: NextRequest) {
 
                     // 3.1 课程封面图：先生成源图，再走上传接口，最终用于 trainTaskCover
                     let trainTaskCover: { fileId: string; fileUrl: string } | null = null;
-                    if (!injectCoverImage) {
-                        send({ type: "progress", phase: "script", message: "已跳过课程封面图注入", current: 0, total: steps.length });
+                    const shouldProcessCoverImage = injectCoverImage && injectMode !== "append";
+                    if (!shouldProcessCoverImage) {
+                        send({
+                            type: "progress",
+                            phase: "script",
+                            message: injectMode === "append" && injectCoverImage
+                                ? "追加模式已跳过课程封面图注入，避免覆盖已有封面"
+                                : "已跳过课程封面图注入",
+                            current: 0,
+                            total: steps.length,
+                        });
                     } else if (finalCourseId && taskConfig?.trainTaskName) {
                         send({ type: "progress", phase: "script", message: "正在生成课程封面图...", current: 0, total: steps.length });
                         try {
@@ -233,7 +242,7 @@ export async function POST(request: NextRequest) {
                             console.warn("课程封面图生成/上传失败:", err);
                             send({ type: "progress", phase: "script", message: "课程封面图处理异常，将跳过封面设置", current: 0, total: steps.length });
                         }
-                    } else if (injectCoverImage) {
+                    } else if (shouldProcessCoverImage) {
                         send({ type: "progress", phase: "script", message: "缺少课程ID或任务名称，跳过课程封面图注入", current: 0, total: steps.length });
                     }
 

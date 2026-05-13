@@ -6,9 +6,21 @@
  */
 
 import { ScriptMode } from "./types";
+import { TRAINING_SCRIPT_COMPLETE_MARKER } from "./script-tools";
 
 // 默认模板版本号——每次修改 DEFAULT_*_TEMPLATE 时递增，用于清除旧缓存
-export const TEMPLATE_VERSION = 6;
+export const TEMPLATE_VERSION = 7;
+
+function appendScriptCompletionMarkerInstruction(prompt: string): string {
+    return [
+        prompt.trim(),
+        "",
+        "# 完整性校验要求",
+        `- 完整训练剧本生成结束后，最后一个非空行必须输出：\`${TRAINING_SCRIPT_COMPLETE_MARKER}\``,
+        "- 该标志只用于系统判断生成是否完整，不要放进任意阶段的提示词、开场白、transitionPrompt 或配置说明正文里。",
+        "- 如果你还没有输出到文档末尾，禁止提前输出该标志。",
+    ].join("\n");
+}
 
 // ─── 训练剧本配置模板 ───────────────────────────────────────────────────────
 
@@ -486,7 +498,9 @@ export function getBuiltInScriptTemplate(mode: ScriptMode = "general"): string {
 }
 
 export function buildScriptGeneratorPrompt(teacherDoc: string, template?: string, mode: ScriptMode = "general"): string {
-    return (template || getBuiltInScriptTemplate(mode)).split("{teacherDoc}").join(teacherDoc);
+    return appendScriptCompletionMarkerInstruction(
+        (template || getBuiltInScriptTemplate(mode)).split("{teacherDoc}").join(teacherDoc)
+    );
 }
 
 export const DEFAULT_RUBRIC_TEMPLATE = `你是一个专业的【训练评价标准生成器】。你的任务是根据下方的【教师输入文档】，生成**主评分项+评分区间描述**的评价标准。

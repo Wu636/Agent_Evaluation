@@ -17,7 +17,12 @@ import {
     repairTrainingScriptStructure,
     validateTrainingScriptPlan,
 } from "@/lib/training-generator/generator";
-import { extractScriptStructure } from "@/lib/training-generator/script-tools";
+import {
+    extractScriptStructure,
+    hasTrainingScriptCompleteMarker,
+    hasUnclosedTrainingScriptFence,
+    TRAINING_SCRIPT_COMPLETE_MARKER,
+} from "@/lib/training-generator/script-tools";
 import { parseRubricMarkdown, parseTaskConfig, parseTrainingScript } from "@/lib/training-injector/parser";
 import { convertDocxToText } from "@/lib/converters/docx-converter";
 import { ScriptMode, TrainingScriptPlan } from "@/lib/training-generator/types";
@@ -171,6 +176,10 @@ export async function POST(request: NextRequest) {
                         return { ok: false, reason: "未解析到任何阶段" };
                     }
 
+                    if (hasUnclosedTrainingScriptFence(content)) {
+                        return { ok: false, reason: "存在未闭合的 Markdown 代码块，疑似提示词或衔接语被截断" };
+                    }
+
                     if (stageOneMatches.length > 1) {
                         return { ok: false, reason: "检测到剧本内容从阶段1重新开始，疑似重复生成" };
                     }
@@ -216,6 +225,10 @@ export async function POST(request: NextRequest) {
 
                     if (content.trim().length < 1200) {
                         return { ok: false, reason: "整体内容长度异常偏短，疑似截断" };
+                    }
+
+                    if (!hasTrainingScriptCompleteMarker(content)) {
+                        return { ok: false, reason: `缺少完整结束标志 ${TRAINING_SCRIPT_COMPLETE_MARKER}` };
                     }
 
                     return { ok: true };
@@ -280,6 +293,8 @@ export async function POST(request: NextRequest) {
                     let score = scoreScriptCompleteness(cleaned);
                     score += parsedSteps.length * 4;
                     score += structure.stages.length * 2;
+                    if (hasTrainingScriptCompleteMarker(cleaned)) score += 8;
+                    if (hasUnclosedTrainingScriptFence(cleaned)) score -= 15;
                     if (validation.ok) score += 12;
                     else score -= 12;
                     if (stageOneMatches.length > 1) {

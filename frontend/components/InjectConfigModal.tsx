@@ -88,6 +88,14 @@ function persistTaskContext(trainTaskId: string, courseId?: string, libraryFolde
     writeStoredTaskContexts(contexts);
 }
 
+function normalizeStageNameForAppend(value: unknown): string {
+    return String(value || "")
+        .trim()
+        .replace(/^阶段\s*[\d一二三四五六七八九十]+[：:、.\-\s]*/u, "")
+        .replace(/\s+/g, "")
+        .toLowerCase();
+}
+
 interface StageOption {
     stepId: string;
     stepName: string;
@@ -135,6 +143,7 @@ export function InjectConfigModal({
     // --- 表单状态 ---
     const [authorization, setAuthorization] = useState("");
     const [cookie, setCookie] = useState("");
+    const [userNid, setUserNid] = useState("");
     const [taskId, setTaskId] = useState("");
     const [courseId, setCourseId] = useState("");
     const [libraryFolderId, setLibraryFolderId] = useState("");
@@ -280,6 +289,7 @@ export function InjectConfigModal({
                     const parsed = JSON.parse(stored) as PolymasCredentials;
                     setAuthorization(parsed.authorization || "");
                     setCookie(parsed.cookie || "");
+                    setUserNid(parsed.userNid || "");
                 }
             } catch {
                 // ignore
@@ -306,7 +316,7 @@ export function InjectConfigModal({
         setCloudapiProbeStatus("idle");
         setCloudapiProbeMessage("");
         setCloudapiProbeCredentialKey("");
-    }, [authorization, cookie]);
+    }, [authorization, cookie, userNid]);
 
     // 自动滚动日志
     useEffect(() => {
@@ -341,6 +351,7 @@ export function InjectConfigModal({
             JSON.stringify({
                 authorization: authorization.trim(),
                 cookie: cookie.trim(),
+                userNid: userNid.trim(),
             })
         );
         return true;
@@ -453,7 +464,13 @@ export function InjectConfigModal({
         setExpandedStructuredStages({ [targetIndex]: true });
     };
 
-    const buildCredentialKey = () => `${authorization.trim()}::${cookie.trim()}`;
+    const buildPolymasCredentials = (): PolymasCredentials => ({
+        authorization: authorization.trim(),
+        cookie: cookie.trim(),
+        userNid: userNid.trim() || undefined,
+    });
+
+    const buildCredentialKey = () => `${authorization.trim()}::${cookie.trim()}::${userNid.trim()}`;
 
     const runCloudapiProbe = async (options?: {
         force?: boolean;
@@ -506,6 +523,7 @@ export function InjectConfigModal({
                     credentials: {
                         authorization: auth,
                         cookie: cookieValue,
+                        userNid: userNid.trim() || undefined,
                     },
                 }),
             });
@@ -618,6 +636,30 @@ export function InjectConfigModal({
         return { finalTaskId, finalCourseId, finalLibraryFolderId };
     };
 
+    const fetchStageOptions = async (finalTaskId: string): Promise<StageOption[]> => {
+        const response = await fetch("/api/training-inject/stages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                trainTaskId: finalTaskId,
+                credentials: buildPolymasCredentials(),
+            }),
+        });
+
+        const rawText = await response.text();
+        let data: any = {};
+        try {
+            data = rawText ? JSON.parse(rawText) : {};
+        } catch {
+            data = { success: false, error: rawText || "加载阶段列表失败" };
+        }
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || "加载阶段列表失败");
+        }
+        return Array.isArray(data.stages) ? data.stages : [];
+    };
+
     const loadStages = async () => {
         setError("");
         if (!handleSaveCredentials()) return;
@@ -630,30 +672,7 @@ export function InjectConfigModal({
         setLoadingStages(true);
         setRegenMessage("正在加载阶段列表...");
         try {
-            const response = await fetch("/api/training-inject/stages", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    trainTaskId: finalTaskId,
-                    credentials: {
-                        authorization: authorization.trim(),
-                        cookie: cookie.trim(),
-                    },
-                }),
-            });
-
-            const rawText = await response.text();
-            let data: any = {};
-            try {
-                data = rawText ? JSON.parse(rawText) : {};
-            } catch {
-                data = { success: false, error: rawText || "加载阶段列表失败" };
-            }
-
-            if (!response.ok || !data.success) {
-                throw new Error(data.error || "加载阶段列表失败");
-            }
-            const loadedStages = Array.isArray(data.stages) ? data.stages : [];
+            const loadedStages = await fetchStageOptions(finalTaskId);
             setRegenStages(loadedStages);
             if (loadedStages.length > 0) {
                 setRegenStepId((prev) => prev || loadedStages[0].stepId);
@@ -756,10 +775,7 @@ export function InjectConfigModal({
                 trainTaskId: finalTaskId,
                 courseId: finalCourseId,
                 libraryFolderId: finalLibraryFolderId,
-                credentials: {
-                    authorization: authorization.trim(),
-                    cookie: cookie.trim(),
-                },
+                credentials: buildPolymasCredentials(),
                 llmSettings,
                 coverStylePrompt: coverStylePrompt.trim() || undefined,
                 backgroundStylePrompt: backgroundStylePrompt.trim() || undefined,
@@ -811,10 +827,7 @@ export function InjectConfigModal({
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                             trainTaskId: finalTaskId,
-                            credentials: {
-                                authorization: authorization.trim(),
-                                cookie: cookie.trim(),
-                            },
+                            credentials: buildPolymasCredentials(),
                         }),
                     });
                     const stageText = await stageResponse.text();
@@ -967,14 +980,16 @@ export function InjectConfigModal({
         setSummary(null);
         setProgressLogs([]);
 
-        const needsImageWork = injectScript && (injectCoverImage || injectBackgroundImage);
+        const shouldGenerateCoverForThisRun = injectCoverImage && injectMode !== "append";
+        const shouldGenerateBackgroundForThisRun = injectBackgroundImage;
+        const needsImageWork = injectScript && (shouldGenerateCoverForThisRun || shouldGenerateBackgroundForThisRun);
         const imageExecutionPlan = await prepareImageExecutionPlan(needsImageWork);
         const effectiveProviderMode = imageExecutionPlan.effectiveProviderMode;
         const effectiveImageProviderPriority = imageExecutionPlan.effectiveImageProviderPriority;
         const effectiveSwitchedImageProviderPriority = imageExecutionPlan.effectiveSwitchedImageProviderPriority;
         const shouldRunPostImageBatch = needsImageWork;
-        const shouldInjectCoverInMain = injectCoverImage && !shouldRunPostImageBatch;
-        const shouldInjectBgInMain = injectBackgroundImage && !shouldRunPostImageBatch;
+        const shouldInjectCoverInMain = shouldGenerateCoverForThisRun && !shouldRunPostImageBatch;
+        const shouldInjectBgInMain = shouldGenerateBackgroundForThisRun && !shouldRunPostImageBatch;
 
         // 获取 LLM 配置用于智能提取，使用用户在注入弹窗中选择的模型覆盖
         const storedLlmSettings = loadLLMSettingsFromStorage("trainingInject");
@@ -995,7 +1010,28 @@ export function InjectConfigModal({
             console.warn(`[InjectModal] No LLM settings found in localStorage (key: ${LLM_SETTINGS_STORAGE_KEY})`);
         }
 
+        let appendPreExistingStageNames = new Set<string>();
+
         try {
+            if (injectMode === "append" && injectScript && shouldGenerateBackgroundForThisRun) {
+                const existingStagesBeforeInject = await fetchStageOptions(finalTaskId);
+                appendPreExistingStageNames = new Set(
+                    existingStagesBeforeInject
+                        .map((stage) => normalizeStageNameForAppend(stage.stepName))
+                        .filter(Boolean)
+                );
+                setProgressLogs((prev) => [
+                    ...prev,
+                    {
+                        type: "progress",
+                        phase: "script",
+                        message: `追加模式已记录 ${appendPreExistingStageNames.size} 个已有阶段，后续只为新增阶段补背景图。`,
+                        current: 0,
+                        total: 1,
+                    },
+                ]);
+            }
+
             if (shouldRunPostImageBatch) {
                 setProgressLogs((prev) => [
                     ...prev,
@@ -1015,6 +1051,15 @@ export function InjectConfigModal({
                         current: 0,
                         total: 1,
                     },
+                    ...(injectMode === "append" && injectCoverImage
+                        ? [{
+                            type: "progress" as const,
+                            phase: "script" as const,
+                            message: "追加模式不会重生课程封面图，只处理新增阶段背景图。",
+                            current: 0,
+                            total: 1,
+                        }]
+                        : []),
                 ]);
             }
 
@@ -1025,10 +1070,7 @@ export function InjectConfigModal({
                     trainTaskId: finalTaskId,
                     courseId: finalCourseId,
                     libraryFolderId: finalLibraryFolderId,
-                    credentials: {
-                        authorization: authorization.trim(),
-                        cookie: cookie.trim(),
-                    },
+                    credentials: buildPolymasCredentials(),
                     llmSettings,
                     extractionMode,
                     coverStylePrompt: coverStylePrompt.trim() || undefined,
@@ -1133,33 +1175,30 @@ export function InjectConfigModal({
                 };
 
                 const parsedSteps = effectiveScriptMd ? parseTrainingScript(effectiveScriptMd) : [];
+                const parsedStepNames = new Set(
+                    parsedSteps
+                        .map((step) => normalizeStageNameForAppend(step.stepName))
+                        .filter(Boolean)
+                );
                 let stageList: StageOption[] = [];
-                if (injectBackgroundImage) {
-                    const stageResponse = await fetch("/api/training-inject/stages", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            trainTaskId: finalTaskId,
-                            credentials: {
-                                authorization: authorization.trim(),
-                                cookie: cookie.trim(),
-                            },
-                        }),
-                    });
-                    const stageText = await stageResponse.text();
-                    let stageData: any = {};
-                    try {
-                        stageData = stageText ? JSON.parse(stageText) : {};
-                    } catch {
-                        stageData = { success: false, error: stageText || "加载阶段列表失败" };
+                if (shouldGenerateBackgroundForThisRun) {
+                    stageList = await fetchStageOptions(finalTaskId);
+                    if (injectMode === "append") {
+                        stageList = stageList.filter((stage) => {
+                            const normalizedName = normalizeStageNameForAppend(stage.stepName);
+                            return normalizedName
+                                && parsedStepNames.has(normalizedName)
+                                && !appendPreExistingStageNames.has(normalizedName);
+                        });
+                        pushImageLog(
+                            `追加模式仅补全新增阶段背景图：${stageList.length} 个`,
+                            0,
+                            Math.max(stageList.length, 1)
+                        );
                     }
-                    if (!stageResponse.ok || !stageData.success) {
-                        throw new Error(stageData.error || "加载阶段列表失败");
-                    }
-                    stageList = Array.isArray(stageData.stages) ? stageData.stages : [];
                 }
 
-                const totalImageTasks = (injectCoverImage ? 1 : 0) + (injectBackgroundImage ? stageList.length : 0);
+                const totalImageTasks = (shouldGenerateCoverForThisRun ? 1 : 0) + (shouldGenerateBackgroundForThisRun ? stageList.length : 0);
                 let currentImageTask = 0;
                 const failedItems: string[] = [];
 
@@ -1167,10 +1206,7 @@ export function InjectConfigModal({
                     trainTaskId: finalTaskId,
                     courseId: finalCourseId,
                     libraryFolderId: finalLibraryFolderId,
-                    credentials: {
-                        authorization: authorization.trim(),
-                        cookie: cookie.trim(),
-                    },
+                    credentials: buildPolymasCredentials(),
                     llmSettings,
                     coverStylePrompt: coverStylePrompt.trim() || undefined,
                     backgroundStylePrompt: backgroundStylePrompt.trim() || undefined,
@@ -1211,12 +1247,12 @@ export function InjectConfigModal({
                 };
 
                 let coverPromise: Promise<boolean> | null = null;
-                if (injectCoverImage) {
+                if (shouldGenerateCoverForThisRun) {
                     pushImageLog(`正在并行补全课程封面图（与阶段背景并行）...`, currentImageTask, totalImageTasks);
                     coverPromise = runCoverRegenerateWithRetryForInject();
                 }
 
-                if (injectBackgroundImage) {
+                if (shouldGenerateBackgroundForThisRun) {
                     const concurrency = Math.min(BACKGROUND_IMAGE_CONCURRENCY, stageList.length);
                     if (stageList.length > 0) {
                         pushImageLog(`正在并发补全阶段背景（并发 ${concurrency}，共 ${stageList.length} 个）...`, currentImageTask, totalImageTasks);
@@ -1230,7 +1266,8 @@ export function InjectConfigModal({
                             nextIndex += 1;
 
                             const stage = stageList[index];
-                            const matched = parsedSteps.find((step) => step.stepName === stage.stepName);
+                            const stageNameKey = normalizeStageNameForAppend(stage.stepName);
+                            const matched = parsedSteps.find((step) => normalizeStageNameForAppend(step.stepName) === stageNameKey);
                             let stageOk = true;
                             try {
                                 await callRegenerateApi({
@@ -1260,7 +1297,7 @@ export function InjectConfigModal({
                     }
                 }
 
-                if (injectCoverImage) {
+                if (shouldGenerateCoverForThisRun) {
                     const coverOk = coverPromise ? await coverPromise : false;
                     currentImageTask += 1;
                     if (!coverOk) {
@@ -1352,7 +1389,7 @@ export function InjectConfigModal({
                                     <Shield className="w-4 h-4 text-slate-500" />
                                     <h3 className="font-semibold text-slate-700 text-sm">平台认证凭证 (polymas.com)</h3>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
                                         <label className="text-xs font-medium text-slate-600 block mb-1.5 flex justify-between">
                                             <span>Authorization</span>
@@ -1375,10 +1412,20 @@ export function InjectConfigModal({
                                             className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono"
                                         />
                                     </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-slate-600 block mb-1.5">userNid（兜底，可不填）</label>
+                                        <input
+                                            type="text"
+                                            value={userNid}
+                                            onChange={(e) => setUserNid(e.target.value)}
+                                            placeholder="通常自动读取，失败时再填"
+                                            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono"
+                                        />
+                                    </div>
                                 </div>
                                 <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-2">
                                     <Key className="w-3.5 h-3.5" />
-                                    凭证仅保存在本地浏览器中，用于调用云端建课 API
+                                    凭证仅保存在本地浏览器中；系统会优先调用 getLoginUserInfo 自动识别当前账号 userId，手填 userNid 只作为接口失败时的兜底
                                 </p>
                             </div>
 

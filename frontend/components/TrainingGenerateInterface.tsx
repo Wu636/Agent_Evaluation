@@ -30,9 +30,12 @@ import {
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import {
     PromptTemplate,
+    ScriptFlowEdge,
     ScriptMode,
     ScriptModulePlan,
     ScriptPlanValidationIssue,
+    TRAINING_FLOW_END_NODE_ID,
+    TrainingFlowPlanningPreference,
     TrainingSSEEvent,
     TrainingScriptPlan,
 } from "@/lib/training-generator/types";
@@ -60,6 +63,7 @@ type PlanRegenerateSource = "current_edited" | "previous_plan" | "teacher_doc_on
 const RESULT_CACHE_KEY = "training-generate-result";
 const MODULE_PLAN_CACHE_KEY = "training-generate-module-plan";
 const PLANNING_SUGGESTION_CACHE_KEY = "training-generate-planning-suggestion";
+const PLANNING_FLOW_PREFERENCE_CACHE_KEY = "training-generate-planning-flow-preference";
 const MODULE_PLAN_CACHE_VERSION = 1;
 const MODULE_PLAN_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const OPTIMIZATION_SNAPSHOT_KEY = "training-generate-optimization-snapshots";
@@ -127,6 +131,16 @@ function loadOptimizationSnapshots(): OptimizationSnapshot[] {
         localStorage.removeItem(OPTIMIZATION_SNAPSHOT_KEY);
         return [];
     }
+}
+
+function normalizeCachedModulePlan(plan: TrainingScriptPlan | null | undefined): TrainingScriptPlan | null {
+    if (!plan) return null;
+    return {
+        ...plan,
+        flowType: plan.flowType || "linear",
+        edges: Array.isArray(plan.edges) ? plan.edges : [],
+        notes: Array.isArray(plan.notes) ? plan.notes : [],
+    };
 }
 
 function openTeacherDocCacheDb(): Promise<IDBDatabase | null> {
@@ -255,8 +269,8 @@ function loadCachedModulePlanState(): CachedModulePlanState {
 
         return {
             _v: MODULE_PLAN_CACHE_VERSION,
-            modulePlan: parsed.modulePlan || null,
-            lastSystemPlan: parsed.lastSystemPlan || null,
+            modulePlan: normalizeCachedModulePlan(parsed.modulePlan),
+            lastSystemPlan: normalizeCachedModulePlan(parsed.lastSystemPlan),
             planAutofillApplied: Boolean(parsed.planAutofillApplied),
             planAutofillFields: Array.isArray(parsed.planAutofillFields) ? parsed.planAutofillFields : [],
             planAutofillTaskFields: Array.isArray(parsed.planAutofillTaskFields) ? parsed.planAutofillTaskFields : [],
@@ -277,6 +291,16 @@ const SCRIPT_MODE_LABELS: Record<Exclude<ScriptMode, "auto">, string> = {
     roleplay: "模拟人物型",
     summary: "总结复盘型",
 };
+
+const FLOW_PLANNING_OPTIONS: Array<{
+    value: TrainingFlowPlanningPreference;
+    label: string;
+    description: string;
+}> = [
+    { value: "auto", label: "自动识别", description: "根据文档判断线性或非线性" },
+    { value: "linear", label: "强制线性", description: "按顺序阶段规划" },
+    { value: "graph", label: "强制非线性", description: "规划分支连线与汇合" },
+];
 
 const BUILTIN_TEMPLATE_ORIGINAL = "builtin:original";
 const BUILTIN_TEMPLATE_SEQUENTIAL = "builtin:sequential";
@@ -351,6 +375,32 @@ function validatePlanLocally(plan: TrainingScriptPlan | null): ScriptPlanValidat
         const multiRoleIssue = findMultiRoleModuleIssue(module, index);
         if (multiRoleIssue) issues.push(multiRoleIssue);
     });
+    if ((plan.flowType || "linear") === "graph") {
+        const moduleIds = new Set(plan.modules.map((module) => module.id));
+        if (!plan.edges?.length) {
+            issues.push({ level: "error", message: "非线性流程至少需要配置一条连线。", field: "edges" });
+        }
+        const conditionsBySource = new Map<string, Set<string>>();
+        (plan.edges || []).forEach((edge, index) => {
+            const edgeNumber = index + 1;
+            if (!moduleIds.has(edge.fromModuleId)) {
+                issues.push({ level: "error", message: `连线 ${edgeNumber} 的起点模块不存在。`, field: "edges" });
+            }
+            if (!moduleIds.has(edge.toModuleId) && edge.toModuleId !== TRAINING_FLOW_END_NODE_ID) {
+                issues.push({ level: "error", message: `连线 ${edgeNumber} 的终点模块不存在。`, field: "edges" });
+            }
+            if (!edge.condition.trim()) {
+                issues.push({ level: "error", message: `连线 ${edgeNumber} 缺少跳转关键词。`, field: "edges" });
+            }
+            const key = `${edge.fromModuleId}::${edge.condition.trim()}`;
+            const existing = conditionsBySource.get(edge.fromModuleId) || new Set<string>();
+            if (edge.condition.trim() && existing.has(key)) {
+                issues.push({ level: "error", message: `连线 ${edgeNumber} 与同起点连线使用了重复跳转关键词。`, field: "edges" });
+            }
+            existing.add(key);
+            conditionsBySource.set(edge.fromModuleId, existing);
+        });
+    }
     return issues;
 }
 
@@ -367,6 +417,43 @@ function createEmptyModule(index: number): ScriptModulePlan {
         transitionGoal: "",
         suggestedRounds: 3,
     };
+}
+
+function createEmptyFlowEdge(modules: ScriptModulePlan[], index: number): ScriptFlowEdge {
+    const fromModule = modules[0];
+    const toModule = modules[1];
+    return {
+        id: `edge_${Date.now()}_${index + 1}`,
+        fromModuleId: fromModule?.id || "",
+        toModuleId: toModule?.id || TRAINING_FLOW_END_NODE_ID,
+        condition: `NEXT_TO_BRANCH_${index + 1}`,
+        conditionDescription: "",
+        transitionPrompt: "",
+    };
+}
+
+function createLinearFlowEdgesFromModules(modules: ScriptModulePlan[]): ScriptFlowEdge[] {
+    if (modules.length === 0) return [];
+    const edges: ScriptFlowEdge[] = [];
+    for (let index = 0; index < modules.length - 1; index++) {
+        edges.push({
+            id: `edge_linear_${index + 1}`,
+            fromModuleId: modules[index].id,
+            toModuleId: modules[index + 1].id,
+            condition: `NEXT_TO_STAGE${index + 2}`,
+            conditionDescription: `完成「${modules[index].title || `模块${index + 1}`}」后进入下一模块`,
+            transitionPrompt: `承接当前阶段表现，自然引导学生进入「${modules[index + 1].title || `模块${index + 2}`}」。`,
+        });
+    }
+    edges.push({
+        id: `edge_linear_end`,
+        fromModuleId: modules[modules.length - 1].id,
+        toModuleId: TRAINING_FLOW_END_NODE_ID,
+        condition: "TASK_COMPLETE",
+        conditionDescription: "完成最后一个模块后结束训练",
+        transitionPrompt: "根据最后阶段表现，自然完成收束并结束本次训练。",
+    });
+    return edges;
 }
 
 function reorderModules(modules: ScriptModulePlan[], draggedId: string, targetId: string): ScriptModulePlan[] {
@@ -537,6 +624,15 @@ export function TrainingGenerateInterface() {
             return "";
         }
     });
+    const [planningFlowPreference, setPlanningFlowPreference] = useState<TrainingFlowPlanningPreference>(() => {
+        if (typeof window === "undefined") return "auto";
+        try {
+            const saved = localStorage.getItem(PLANNING_FLOW_PREFERENCE_CACHE_KEY);
+            return saved === "linear" || saved === "graph" ? saved : "auto";
+        } catch {
+            return "auto";
+        }
+    });
     const moduleCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const resultPaneRef = useRef<HTMLDivElement | null>(null);
 
@@ -649,6 +745,15 @@ export function TrainingGenerateInterface() {
             // ignore
         }
     }, [planningSuggestion]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        try {
+            localStorage.setItem(PLANNING_FLOW_PREFERENCE_CACHE_KEY, planningFlowPreference);
+        } catch {
+            // ignore
+        }
+    }, [planningFlowPreference]);
 
     useEffect(() => {
         if (!teacherDocCacheHydrated) return;
@@ -829,6 +934,7 @@ export function TrainingGenerateInterface() {
 
     const handlePlanScript = useCallback(async (options?: {
         planningFeedback?: string;
+        flowPreference?: TrainingFlowPlanningPreference;
         usePreviousPlan?: boolean;
         currentPlan?: TrainingScriptPlan;
         previousPlan?: TrainingScriptPlan;
@@ -855,6 +961,7 @@ export function TrainingGenerateInterface() {
                 file: doc.file,
                 teacherDocName: doc.name,
                 planningFeedback: options?.planningFeedback ?? planningSuggestion.trim(),
+                flowPreference: options?.flowPreference ?? planningFlowPreference,
                 usePreviousPlan: options?.usePreviousPlan,
                 currentPlan: options?.currentPlan,
                 previousPlan: options?.previousPlan,
@@ -878,7 +985,7 @@ export function TrainingGenerateInterface() {
         } finally {
             setPlanning(false);
         }
-    }, [generateScript, getDocContent, planningSuggestion, syncDominantMode]);
+    }, [generateScript, getDocContent, planningFlowPreference, planningSuggestion, syncDominantMode]);
 
     const openPlanRegenerateModal = useCallback(() => {
         setPlanRegenerateFeedback(planningSuggestion);
@@ -941,12 +1048,54 @@ export function TrainingGenerateInterface() {
         });
     }, []);
 
-    const addModule = useCallback(() => {
+    const updateFlowEdge = useCallback((edgeId: string, updater: (edge: ScriptFlowEdge) => ScriptFlowEdge) => {
         setModulePlan((prev) => {
             if (!prev) return prev;
             return {
                 ...prev,
-                modules: [...prev.modules, createEmptyModule(prev.modules.length)],
+                edges: (prev.edges || []).map((edge) => edge.id === edgeId ? updater(edge) : edge),
+            };
+        });
+    }, []);
+
+    const updatePlanFlowType = useCallback((flowType: TrainingScriptPlan["flowType"]) => {
+        setModulePlan((prev) => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                flowType,
+                edges: flowType === "graph"
+                    ? (prev.edges?.length ? prev.edges : createLinearFlowEdgesFromModules(prev.modules))
+                    : [],
+            };
+        });
+    }, []);
+
+    const addFlowEdge = useCallback(() => {
+        setModulePlan((prev) => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                flowType: "graph",
+                edges: [...(prev.edges || []), createEmptyFlowEdge(prev.modules, prev.edges?.length || 0)],
+            };
+        });
+    }, []);
+
+    const removeFlowEdge = useCallback((edgeId: string) => {
+        setModulePlan((prev) => prev ? {
+            ...prev,
+            edges: (prev.edges || []).filter((edge) => edge.id !== edgeId),
+        } : prev);
+    }, []);
+
+    const addModule = useCallback(() => {
+        setModulePlan((prev) => {
+            if (!prev) return prev;
+            const nextModule = createEmptyModule(prev.modules.length);
+            return {
+                ...prev,
+                modules: [...prev.modules, nextModule],
             };
         });
         setShowPlanEditor(true);
@@ -958,6 +1107,7 @@ export function TrainingGenerateInterface() {
             return {
                 ...prev,
                 modules: prev.modules.filter((module) => module.id !== moduleId),
+                edges: (prev.edges || []).filter((edge) => edge.fromModuleId !== moduleId && edge.toModuleId !== moduleId),
             };
         });
         setCollapsedModuleIds((prev) => prev.filter((id) => id !== moduleId));
@@ -1703,6 +1853,34 @@ export function TrainingGenerateInterface() {
 
                         <div className="p-5 space-y-4">
                             <div className="space-y-2">
+                                <label className="text-xs font-medium text-slate-700 block">规划方式</label>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                    {FLOW_PLANNING_OPTIONS.map((option) => {
+                                        const selected = planningFlowPreference === option.value;
+                                        return (
+                                            <button
+                                                key={option.value}
+                                                type="button"
+                                                onClick={() => setPlanningFlowPreference(option.value)}
+                                                className={`text-left px-3 py-2 rounded-lg border transition-colors ${selected
+                                                    ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                                                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                                    }`}
+                                            >
+                                                <span className="block text-xs font-semibold">{option.label}</span>
+                                                <span className={`mt-0.5 block text-[11px] ${selected ? "text-indigo-500" : "text-slate-400"}`}>
+                                                    {option.description}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <p className="text-xs text-slate-500">
+                                    这个选项会直接约束智能规划结果；选择强制非线性时，系统会要求大模型输出分支连线 edges。
+                                </p>
+                            </div>
+
+                            <div className="space-y-2">
                                 <label className="text-xs font-medium text-slate-700 block">
                                     用户规划建议
                                     <span className="ml-1 text-slate-400">可选</span>
@@ -1774,6 +1952,12 @@ export function TrainingGenerateInterface() {
                                         <span className="inline-flex items-center px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs">
                                             模块数 {modulePlan.modules.length}
                                         </span>
+                                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${(modulePlan.flowType || "linear") === "graph"
+                                            ? "bg-violet-100 text-violet-700"
+                                            : "bg-slate-100 text-slate-600"
+                                            }`}>
+                                            {(modulePlan.flowType || "linear") === "graph" ? `非线性连线 ${(modulePlan.edges || []).length}` : "线性流程"}
+                                        </span>
                                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${planValidation.some((item) => item.level === "error")
                                             ? "bg-rose-100 text-rose-700"
                                             : planValidation.length > 0
@@ -1799,6 +1983,23 @@ export function TrainingGenerateInterface() {
                                             <Plus className="w-3 h-3" />
                                             新增模块
                                         </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-3 items-start">
+                                        <div>
+                                            <label className="text-xs font-medium text-slate-600 block mb-1">流程结构</label>
+                                            <select
+                                                value={modulePlan.flowType || "linear"}
+                                                onChange={(e) => updatePlanFlowType(e.target.value as TrainingScriptPlan["flowType"])}
+                                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+                                            >
+                                                <option value="linear">线性顺序</option>
+                                                <option value="graph">非线性分支</option>
+                                            </select>
+                                        </div>
+                                        <p className="text-xs text-slate-500 leading-6">
+                                            非线性分支会按下方连线注入，不再按模块顺序自动串联；适合多案例、多线路、选择后分流再汇合的训练。
+                                        </p>
                                     </div>
 
                                     {planValidation.length > 0 && (
@@ -2004,6 +2205,108 @@ export function TrainingGenerateInterface() {
                                                     );
                                                 })()
                                             ))}
+                                            {(modulePlan.flowType || "linear") === "graph" && (
+                                                <div className="border border-violet-200 rounded-xl p-4 space-y-3 bg-violet-50/30">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <div>
+                                                            <p className="text-sm font-semibold text-slate-700">非线性连线</p>
+                                                            <p className="text-xs text-slate-500 mt-1">每条连线对应一个纯净跳转关键词和一段专用衔接提示词</p>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={addFlowEdge}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-100 text-violet-700 text-xs hover:bg-violet-200 transition-colors"
+                                                        >
+                                                            <Plus className="w-3 h-3" />
+                                                            新增连线
+                                                        </button>
+                                                    </div>
+
+                                                    {(modulePlan.edges || []).length === 0 ? (
+                                                        <div className="px-3 py-2 rounded-lg bg-white border border-violet-100 text-xs text-slate-500">
+                                                            暂无连线。添加连线后，正式生成会为分支阶段写入对应的跳转判定。
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-3">
+                                                            {(modulePlan.edges || []).map((edge, edgeIndex) => (
+                                                                <div key={edge.id} className="bg-white border border-violet-100 rounded-lg p-3 space-y-3">
+                                                                    <div className="flex items-center justify-between gap-3">
+                                                                        <p className="text-xs font-semibold text-slate-600">连线 {edgeIndex + 1}</p>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => removeFlowEdge(edge.id)}
+                                                                            className="p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                                                            title="删除连线"
+                                                                        >
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                                        <div>
+                                                                            <label className="text-xs font-medium text-slate-600 block mb-1">起点</label>
+                                                                            <select
+                                                                                value={edge.fromModuleId}
+                                                                                onChange={(e) => updateFlowEdge(edge.id, (prev) => ({ ...prev, fromModuleId: e.target.value }))}
+                                                                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300"
+                                                                            >
+                                                                                {modulePlan.modules.map((module, moduleIndex) => (
+                                                                                    <option key={module.id} value={module.id}>
+                                                                                        模块{moduleIndex + 1}：{module.title || "未命名"}
+                                                                                    </option>
+                                                                                ))}
+                                                                            </select>
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="text-xs font-medium text-slate-600 block mb-1">终点</label>
+                                                                            <select
+                                                                                value={edge.toModuleId}
+                                                                                onChange={(e) => updateFlowEdge(edge.id, (prev) => ({ ...prev, toModuleId: e.target.value }))}
+                                                                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300"
+                                                                            >
+                                                                                {modulePlan.modules.map((module, moduleIndex) => (
+                                                                                    <option key={module.id} value={module.id}>
+                                                                                        模块{moduleIndex + 1}：{module.title || "未命名"}
+                                                                                    </option>
+                                                                                ))}
+                                                                                <option value={TRAINING_FLOW_END_NODE_ID}>训练结束</option>
+                                                                            </select>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="text-xs font-medium text-slate-600 block mb-1">跳转关键词 condition</label>
+                                                                        <input
+                                                                            value={edge.condition}
+                                                                            onChange={(e) => updateFlowEdge(edge.id, (prev) => ({ ...prev, condition: e.target.value }))}
+                                                                            placeholder="例如 NEXT_TO_CASE_A"
+                                                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="text-xs font-medium text-slate-600 block mb-1">触发条件说明</label>
+                                                                        <textarea
+                                                                            value={edge.conditionDescription}
+                                                                            onChange={(e) => updateFlowEdge(edge.id, (prev) => ({ ...prev, conditionDescription: e.target.value }))}
+                                                                            rows={2}
+                                                                            placeholder="说明用户怎样回答时进入这条线路"
+                                                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 resize-y"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="text-xs font-medium text-slate-600 block mb-1">transitionPrompt</label>
+                                                                        <textarea
+                                                                            value={edge.transitionPrompt}
+                                                                            onChange={(e) => updateFlowEdge(edge.id, (prev) => ({ ...prev, transitionPrompt: e.target.value }))}
+                                                                            rows={3}
+                                                                            placeholder="说明这条线路切换时如何承接上下文并进入目标阶段"
+                                                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 resize-y"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </>

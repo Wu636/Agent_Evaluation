@@ -26,6 +26,21 @@ export interface ParsedStep {
     scriptStepCover: Record<string, string>;
 }
 
+/** 解析后的剧本连线（从非线性跳转关系提取） */
+export interface ParsedFlowEdge {
+    from: string;
+    to: string;
+    condition: string;
+    conditionDescription: string;
+    transitionPrompt: string;
+}
+
+/** 解析后的剧本流程配置 */
+export interface ParsedFlowConfig {
+    flowType: "linear" | "graph";
+    edges: ParsedFlowEdge[];
+}
+
 /** 解析后的评分项（从 Markdown 评分标准提取） */
 export interface ParsedScoreItem {
     itemName: string;

@@ -201,7 +201,11 @@ export function ensureModulePlanFromScript(
     existingPlan?: TrainingScriptPlan
 ): TrainingScriptPlan {
     if (existingPlan?.modules?.length) {
-        return existingPlan;
+        return {
+            ...existingPlan,
+            flowType: existingPlan.flowType || "linear",
+            edges: Array.isArray(existingPlan.edges) ? existingPlan.edges : [],
+        };
     }
 
     const taskConfig = parseTaskConfig(scriptMarkdown);
@@ -224,7 +228,9 @@ export function ensureModulePlanFromScript(
         audience: "待补充",
         overallObjective: taskConfig?.description || "根据教师文档和当前训练剧本自动推断的整体目标",
         recommendedMode: modules[0]?.moduleType || "general",
+        flowType: "linear",
         modules,
+        edges: [],
         notes: ["此模块规划由当前训练剧本自动反推，仅用于闭环优化过程。"],
     };
 }
@@ -234,6 +240,8 @@ function serializeModulePlan(plan: TrainingScriptPlan): string {
         taskName: plan.taskName,
         overallObjective: plan.overallObjective,
         recommendedMode: plan.recommendedMode,
+        flowType: plan.flowType || "linear",
+        edges: plan.edges || [],
         modules: plan.modules.map((module, index) => ({
             id: module.id,
             stageNumber: index + 1,

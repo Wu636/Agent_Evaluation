@@ -4,7 +4,7 @@
  */
 
 import { NextRequest } from "next/server";
-import { parseTrainingScript, parseRubricMarkdown, parseTaskConfig } from "@/lib/training-injector/parser";
+import { parseTrainingScript, parseRubricMarkdown, parseTaskConfig, parseTrainingScriptFlowConfig } from "@/lib/training-injector/parser";
 import { extractScriptConfig, extractRubricConfig, LLMSettings } from "@/lib/training-injector/llm-extractor";
 import {
     queryScriptSteps,
@@ -25,7 +25,7 @@ import {
     uploadCoverImageFromUrl,
     parsePolymasUrl,
 } from "@/lib/training-injector/api";
-import { InjectProgressEvent, PolymasCredentials, PolymasScriptStep } from "@/lib/training-injector/types";
+import { InjectProgressEvent, ParsedFlowConfig, ParsedFlowEdge, PolymasCredentials, PolymasScriptStep } from "@/lib/training-injector/types";
 
 export const maxDuration = 300;
 export const runtime = "nodejs";
@@ -57,6 +57,145 @@ function getNodeY(step: PolymasScriptStep): number {
 function findLastScriptNode(scriptNodes: PolymasScriptStep[]): PolymasScriptStep | null {
     if (scriptNodes.length === 0) return null;
     return [...scriptNodes].sort((a, b) => getNodeX(b) - getNodeX(a))[0] || null;
+}
+
+const FLOW_START_ALIASES = new Set(["start", "script_start", "开始", "起点", "训练开始"]);
+const FLOW_END_ALIASES = new Set(["end", "script_end", "__end__", "task_complete", "结束", "训练结束", "本次实训到此结束"]);
+const CHINESE_ORDINALS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+
+type ResolvedFlowEndpoint = number | "START" | "END" | null;
+
+function normalizeFlowEndpointKey(value: unknown): string {
+    return String(value || "")
+        .trim()
+        .replace(/^["'“”`]+|["'“”`]+$/g, "")
+        .replace(/^第\s*([0-9一二三四五六七八九十]+)\s*阶段/u, "阶段$1")
+        .replace(/^stage[_\s-]*(\d+)$/i, "阶段$1")
+        .replace(/^step[_\s-]*(\d+)$/i, "阶段$1")
+        .replace(/^module[_\s-]*(\d+)$/i, "阶段$1")
+        .replace(/\s+/g, "")
+        .toLowerCase();
+}
+
+function getStepFlowReferenceKeys(step: any, index: number): string[] {
+    const stageNumber = index + 1;
+    const chineseNumber = CHINESE_ORDINALS[stageNumber] || String(stageNumber);
+    const stepName = String(step?.stepName || "").trim();
+    return Array.from(new Set([
+        `阶段${stageNumber}`,
+        `第${stageNumber}阶段`,
+        `阶段${chineseNumber}`,
+        `第${chineseNumber}阶段`,
+        `stage${stageNumber}`,
+        `step${stageNumber}`,
+        `module${stageNumber}`,
+        `module_${stageNumber}`,
+        stepName,
+        normalizeStageNameForAppend(stepName),
+    ].map(normalizeFlowEndpointKey).filter(Boolean)));
+}
+
+function resolveFlowEndpoint(value: unknown, steps: any[]): ResolvedFlowEndpoint {
+    const key = normalizeFlowEndpointKey(value);
+    if (!key) return null;
+    if (FLOW_START_ALIASES.has(key)) return "START";
+    if (FLOW_END_ALIASES.has(key)) return "END";
+
+    for (let index = 0; index < steps.length; index++) {
+        if (getStepFlowReferenceKeys(steps[index], index).includes(key)) {
+            return index;
+        }
+    }
+
+    return null;
+}
+
+function resolveScriptFlowEdges(flowConfig: ParsedFlowConfig, steps: any[]): Array<{
+    from: Exclude<ResolvedFlowEndpoint, null>;
+    to: Exclude<ResolvedFlowEndpoint, null>;
+    edge: ParsedFlowEdge;
+}> {
+    if (flowConfig.flowType !== "graph") return [];
+
+    return flowConfig.edges
+        .map((edge) => ({
+            from: resolveFlowEndpoint(edge.from, steps),
+            to: resolveFlowEndpoint(edge.to, steps),
+            edge,
+        }))
+        .filter((item): item is {
+            from: Exclude<ResolvedFlowEndpoint, null>;
+            to: Exclude<ResolvedFlowEndpoint, null>;
+            edge: ParsedFlowEdge;
+        } => item.from !== null && item.to !== null && item.from !== item.to);
+}
+
+function buildGraphStepPositions(
+    steps: any[],
+    resolvedEdges: Array<{ from: Exclude<ResolvedFlowEndpoint, null>; to: Exclude<ResolvedFlowEndpoint, null> }>,
+    baseX: number,
+    baseY: number,
+    xGap: number
+): Array<{ x: number; y: number }> {
+    const incoming = new Map<number, number>();
+    const outgoing = new Map<number, number[]>();
+
+    steps.forEach((_, index) => {
+        incoming.set(index, 0);
+        outgoing.set(index, []);
+    });
+
+    resolvedEdges.forEach(({ from, to }) => {
+        if (typeof from !== "number" || typeof to !== "number") return;
+        outgoing.set(from, [...(outgoing.get(from) || []), to]);
+        incoming.set(to, (incoming.get(to) || 0) + 1);
+    });
+
+    const layers = new Array(steps.length).fill(-1);
+    const entryIndexes = steps
+        .map((_, index) => index)
+        .filter((index) => (incoming.get(index) || 0) === 0);
+    const queue = (entryIndexes.length > 0 ? entryIndexes : [0]).filter((index) => index < steps.length);
+    queue.forEach((index) => {
+        layers[index] = 0;
+    });
+
+    let guard = 0;
+    while (queue.length > 0 && guard < steps.length * steps.length) {
+        guard += 1;
+        const current = queue.shift()!;
+        const nextLayer = (layers[current] >= 0 ? layers[current] : 0) + 1;
+        for (const next of outgoing.get(current) || []) {
+            if (layers[next] < nextLayer) {
+                layers[next] = nextLayer;
+                queue.push(next);
+            }
+        }
+    }
+
+    steps.forEach((_, index) => {
+        if (layers[index] < 0) {
+            layers[index] = index;
+        }
+    });
+
+    const layerGroups = new Map<number, number[]>();
+    layers.forEach((layer, index) => {
+        layerGroups.set(layer, [...(layerGroups.get(layer) || []), index]);
+    });
+
+    const positions = new Array(steps.length).fill(null).map((_, index) => ({ x: baseX + index * xGap, y: baseY }));
+    Array.from(layerGroups.entries()).forEach(([layer, indexes]) => {
+        indexes.forEach((stepIndex, rank) => {
+            const yOffset = (rank - (indexes.length - 1) / 2) * 220;
+            positions[stepIndex] = {
+                x: baseX + layer * xGap,
+                y: baseY + yOffset,
+            };
+        });
+    });
+
+    return positions;
 }
 
 export async function POST(request: NextRequest) {
@@ -144,6 +283,7 @@ export async function POST(request: NextRequest) {
                 if (scriptMarkdown) {
                     let steps: any[] = [];
                     let taskConfig: any = null;
+                    let flowConfig: ParsedFlowConfig = parseTrainingScriptFlowConfig(scriptMarkdown);
                     const hasLLM = !!(llmSettings?.apiKey && llmSettings?.apiUrl && llmSettings?.model);
 
                     if (extractionMode === "llm" && hasLLM) {
@@ -153,6 +293,7 @@ export async function POST(request: NextRequest) {
                             const extracted = await extractScriptConfig(scriptMarkdown, llmSettings);
                             steps = extracted.steps;
                             taskConfig = extracted.taskConfig;
+                            flowConfig = extracted.flowConfig?.flowType === "graph" ? extracted.flowConfig : flowConfig;
                             send({ type: "progress", phase: "script", message: "AI 提取成功！", current: 1, total: 1 });
                         } catch (err) {
                             console.warn("LLM 剧本提取失败，回退到正则解析:", err);
@@ -164,6 +305,7 @@ export async function POST(request: NextRequest) {
                     if (steps.length === 0) {
                         send({ type: "progress", phase: "script", message: "正在解析训练剧本配置...", current: 0, total: 1 });
                         steps = parseTrainingScript(scriptMarkdown);
+                        flowConfig = parseTrainingScriptFlowConfig(scriptMarkdown);
                     }
 
                     // 提取任务名称/描述：regex 和 hybrid 模式优先用正则
@@ -180,6 +322,7 @@ export async function POST(request: NextRequest) {
                         try {
                             const extracted = await extractScriptConfig(scriptMarkdown, llmSettings);
                             taskConfig = extracted.taskConfig;
+                            flowConfig = extracted.flowConfig?.flowType === "graph" ? extracted.flowConfig : flowConfig;
                         } catch (err) {
                             console.warn("LLM 任务名提取失败，继续:", err);
                         }
@@ -333,12 +476,28 @@ export async function POST(request: NextRequest) {
                         }
                     }
 
+                    if (injectMode === "append" && flowConfig.flowType === "graph") {
+                        send({
+                            type: "progress",
+                            phase: "script",
+                            message: "检测到非线性跳转关系；追加模式下将按线性方式接入新增阶段，避免误连已存在节点",
+                            current: 0,
+                            total: Math.max(steps.length, 1),
+                        });
+                        flowConfig = { flowType: "linear", edges: [] };
+                    }
+
                     // 创建节点
                     const X_START = 100;
                     const Y_START = 300;
                     const X_GAP = 400;
                     const baseX = appendAnchorPosition ? appendAnchorPosition.x + X_GAP : X_START;
                     const baseY = appendAnchorPosition ? appendAnchorPosition.y : Y_START;
+                    const resolvedGraphEdges = resolveScriptFlowEdges(flowConfig, steps);
+                    const useGraphFlow = flowConfig.flowType === "graph" && resolvedGraphEdges.length > 0;
+                    const plannedPositions = useGraphFlow
+                        ? buildGraphStepPositions(steps, resolvedGraphEdges, baseX, baseY, X_GAP)
+                        : [];
                     const createdStepIds: string[] = [];
                     const customDigitalHumanCache = new Map<string, string>();
                     const existingDigitalHumanByExactKey = new Map<string, string>();
@@ -467,7 +626,7 @@ export async function POST(request: NextRequest) {
                             total: steps.length,
                         });
 
-                        const position = { x: baseX + i * X_GAP, y: baseY };
+                        const position = plannedPositions[i] || { x: baseX + i * X_GAP, y: baseY };
                         const trainerName = step.trainerName || "训练引导员";
                         const agentId = step.agentId || "Tg3LpKo28D";
                         const avatarNid = step.avatarNid || "hnuOVqMu8b";
@@ -628,45 +787,135 @@ export async function POST(request: NextRequest) {
                     }
 
                     // 创建连线
-                    send({ type: "progress", phase: "script", message: "正在创建节点连线...", current: steps.length, total: steps.length });
+                    send({
+                        type: "progress",
+                        phase: "script",
+                        message: useGraphFlow ? "正在按非线性跳转关系创建节点连线..." : "正在创建节点连线...",
+                        current: steps.length,
+                        total: steps.length,
+                    });
 
-                    // START/已有最后节点 → 第一个新增节点
-                    const flowStartOk = await createScriptFlow(
-                        finalTrainTaskId,
-                        appendAnchorStepId || startId,
-                        createdStepIds[0],
-                        appendAnchorStepId ? (steps[0].stepName || "下一步") : "",
-                        "",
-                        credentials
-                    );
-                    if (flowStartOk) flowsCreated++;
+                    const createdFlowKeys = new Set<string>();
+                    const createFlowOnce = async (
+                        fromId: string,
+                        toId: string,
+                        condition: string,
+                        transitionPrompt: string
+                    ): Promise<boolean> => {
+                        const key = `${fromId}__${toId}__${condition}`;
+                        if (createdFlowKeys.has(key)) return false;
+                        createdFlowKeys.add(key);
 
-                    // 各节点间连线
-                    for (let i = 0; i < steps.length - 1; i++) {
-                        const condition = steps[i].flowCondition || steps[i + 1].stepName || "下一步";
-                        const transition = steps[i].transitionPrompt || "";
                         const ok = await createScriptFlow(
                             finalTrainTaskId,
-                            createdStepIds[i],
-                            createdStepIds[i + 1],
+                            fromId,
+                            toId,
                             condition,
-                            transition,
+                            transitionPrompt,
                             credentials
                         );
                         if (ok) flowsCreated++;
-                    }
+                        return ok;
+                    };
 
-                    // 最后节点 → END
-                    const lastStep = steps[steps.length - 1];
-                    const flowEndOk = await createScriptFlow(
-                        finalTrainTaskId,
-                        createdStepIds[createdStepIds.length - 1],
-                        endId,
-                        lastStep.flowCondition || "训练结束",
-                        lastStep.transitionPrompt || "",
-                        credentials
-                    );
-                    if (flowEndOk) flowsCreated++;
+                    if (useGraphFlow) {
+                        const incomingNodeIndexes = new Set<number>();
+                        const outgoingNodeIndexes = new Set<number>();
+
+                        resolvedGraphEdges.forEach(({ from, to }) => {
+                            if (typeof to === "number") incomingNodeIndexes.add(to);
+                            if (typeof from === "number" && to !== "START") outgoingNodeIndexes.add(from);
+                        });
+
+                        const explicitStartEdges = resolvedGraphEdges.filter(({ from, to }) => from === "START" && typeof to === "number");
+                        if (explicitStartEdges.length > 0) {
+                            for (const { to, edge } of explicitStartEdges) {
+                                if (typeof to !== "number") continue;
+                                await createFlowOnce(
+                                    startId,
+                                    createdStepIds[to],
+                                    edge.condition || "",
+                                    edge.transitionPrompt || ""
+                                );
+                            }
+                        } else {
+                            const entryIndexes = steps
+                                .map((_, index) => index)
+                                .filter((index) => !incomingNodeIndexes.has(index));
+                            const effectiveEntries = entryIndexes.length > 0 ? entryIndexes : [0];
+                            for (const index of effectiveEntries) {
+                                await createFlowOnce(
+                                    startId,
+                                    createdStepIds[index],
+                                    effectiveEntries.length > 1 ? (steps[index].stepName || `入口${index + 1}`) : "",
+                                    ""
+                                );
+                            }
+                        }
+
+                        for (const { from, to, edge } of resolvedGraphEdges) {
+                            if (from === "START") continue;
+                            if (from === "END" || to === "START") continue;
+                            if (typeof from !== "number") continue;
+
+                            const fromId = createdStepIds[from];
+                            const toId = to === "END"
+                                ? endId
+                                : typeof to === "number"
+                                    ? createdStepIds[to]
+                                    : "";
+                            if (!fromId || !toId) continue;
+
+                            await createFlowOnce(
+                                fromId,
+                                toId,
+                                edge.condition || steps[from]?.flowCondition || "下一步",
+                                edge.transitionPrompt || ""
+                            );
+                        }
+
+                        const terminalIndexes = steps
+                            .map((_, index) => index)
+                            .filter((index) => !outgoingNodeIndexes.has(index));
+                        for (const index of terminalIndexes) {
+                            const step = steps[index];
+                            await createFlowOnce(
+                                createdStepIds[index],
+                                endId,
+                                step.flowCondition || "训练结束",
+                                step.transitionPrompt || ""
+                            );
+                        }
+                    } else {
+                        // START/已有最后节点 → 第一个新增节点
+                        await createFlowOnce(
+                            appendAnchorStepId || startId,
+                            createdStepIds[0],
+                            appendAnchorStepId ? (steps[0].stepName || "下一步") : "",
+                            ""
+                        );
+
+                        // 各节点间连线
+                        for (let i = 0; i < steps.length - 1; i++) {
+                            const condition = steps[i].flowCondition || steps[i + 1].stepName || "下一步";
+                            const transition = steps[i].transitionPrompt || "";
+                            await createFlowOnce(
+                                createdStepIds[i],
+                                createdStepIds[i + 1],
+                                condition,
+                                transition
+                            );
+                        }
+
+                        // 最后节点 → END
+                        const lastStep = steps[steps.length - 1];
+                        await createFlowOnce(
+                            createdStepIds[createdStepIds.length - 1],
+                            endId,
+                            lastStep.flowCondition || "训练结束",
+                            lastStep.transitionPrompt || ""
+                        );
+                    }
 
                     send({ type: "phase_complete", phase: "script", message: `训练剧本注入完成：${stepsCreated} 个节点，${flowsCreated} 条连线` });
                     }

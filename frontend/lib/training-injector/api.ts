@@ -36,7 +36,7 @@ const DEFAULT_IMAGE_PROVIDER_PRIORITY: ImageProvider[] = ["cloudapi", "openai"];
 
 const DEFAULT_BG_IMAGE_REQUIREMENT = "专业写实教学场景背景图，严格16:9横版宽屏构图，单一完整场景，画面干净稳定，适合作为课程阶段背景；禁止拼贴、多宫格、海报排版、极端透视、鱼眼、抽象艺术、卡通漫画；无任何文字、英文单词、logo、字幕、水印，尽量不要出现西方面孔和元素";
 const DEFAULT_COVER_STYLE_REQUIREMENT = "专业、简洁、写实的课程封面图，严格16:9横版宽屏构图，主体明确、构图完整、画面克制；禁止拼贴、多宫格、海报排版、卡通漫画、抽象风格；无任何文字、英文单词、logo、水印，尽量不要出现西方面孔和元素";
-const DEFAULT_SEEDREAM_IMAGE_SIZE = "1792x1024";
+const DEFAULT_SEEDREAM_IMAGE_SIZE = "2560x1440";
 const CLOUDAPI_PROBE_PAYLOAD = {
     trainName: "生图连通性测试",
     trainDescription: "用于检测当前平台凭证下 cloudapi 生图接口是否可用",
@@ -45,6 +45,7 @@ const CLOUDAPI_PROBE_PAYLOAD = {
 };
 
 const IMAGE_GENERATE_TIMEOUT_MS = 25000;
+const OPENAI_COMPAT_IMAGE_TIMEOUT_MS = 120000;
 const COVER_GENERATE_TIMEOUT_MS = 60000;
 const IMAGE_DOWNLOAD_TIMEOUT_MS = 90000;
 const IMAGE_UPLOAD_TIMEOUT_MS = 60000;
@@ -354,7 +355,7 @@ function buildScriptStepDetailDTO(stepData: ScriptStepMutationData): Record<stri
     return {
         nodeType: "SCRIPT_NODE",
         stepName: stepData.stepName,
-        isSkipStep: stepData.isSkipStep ?? 0,
+        isSkipStep: stepData.isSkipStep ?? 1,
         endStrategy: 2,
         interactiveRounds: Number(stepData.interactiveRounds) || 0,
         agentId: stepData.agentId || DEFAULT_AGENT_ID,
@@ -371,7 +372,7 @@ function buildScriptStepDetailDTO(stepData: ScriptStepMutationData): Record<stri
         knowledgeBaseSwitch: stepData.knowledgeBaseSwitch ?? 1,
         knowledgeResourceList: [],
         llmPrompt: stepData.llmPrompt,
-        modelId: stepData.modelId || DEFAULT_SCRIPT_MODEL_ID,
+        modelId:  DEFAULT_SCRIPT_MODEL_ID,
         projectId: "",
         prologue: stepData.prologue,
         refResourceDesc: 0,
@@ -516,7 +517,18 @@ function deriveImageEndpointFromLlmApiUrl(llmApiUrl?: string): string | undefine
 function normalizeEndpoint(url?: string): string {
     const raw = String(url || "").trim();
     if (!raw) return "";
-    if (/^https?:\/\//i.test(raw)) return raw;
+    if (/^https?:\/\//i.test(raw)) {
+        try {
+            const parsed = new URL(raw);
+            if (parsed.protocol === "http:" && parsed.hostname.toLowerCase().endsWith("polymas.com")) {
+                parsed.protocol = "https:";
+                return parsed.toString();
+            }
+        } catch {
+            // Keep the original value if URL parsing fails.
+        }
+        return raw;
+    }
     return `https://${raw.replace(/^\/\//, "")}`;
 }
 
@@ -544,6 +556,69 @@ function buildImageEndpointCandidates(selectedModel: string, preferredEndpoint?:
     return candidates
         .filter(Boolean)
         .filter((endpoint, index, arr) => arr.indexOf(endpoint) === index);
+}
+
+function isArkImageEndpoint(endpoint: string): boolean {
+    try {
+        const hostname = new URL(endpoint).hostname.toLowerCase();
+        return hostname.includes("volces.com") || hostname.includes("volcengine");
+    } catch {
+        return /volces|volcengine|ark/i.test(endpoint);
+    }
+}
+
+function isPolymasImageEndpoint(endpoint: string): boolean {
+    try {
+        return new URL(endpoint).hostname.toLowerCase().endsWith("polymas.com");
+    } catch {
+        return /polymas/i.test(endpoint);
+    }
+}
+
+function buildImageApiKeysForEndpoint(endpoint: string, options?: { apiKey?: string; secondaryApiKey?: string; preferredEndpoint?: string }): string[] {
+    const normalizedEndpoint = normalizeEndpoint(endpoint);
+    const normalizedPreferredEndpoint = normalizeEndpoint(options?.preferredEndpoint);
+    const userApiKey = normalizeApiKey(options?.apiKey);
+    const polymasFallbackApiKey = normalizeApiKey(options?.secondaryApiKey || POLYMAS_IMAGE_FALLBACK_API_KEY);
+    const envArkApiKey = normalizeApiKey(process.env.ARK_API_KEY);
+
+    if (isArkImageEndpoint(normalizedEndpoint)) {
+        return [
+            normalizedEndpoint === normalizedPreferredEndpoint ? userApiKey : "",
+            envArkApiKey,
+        ].filter(Boolean).filter((key, index, arr) => arr.indexOf(key) === index);
+    }
+
+    if (isPolymasImageEndpoint(normalizedEndpoint)) {
+        return [userApiKey, polymasFallbackApiKey]
+            .filter(Boolean)
+            .filter((key, index, arr) => arr.indexOf(key) === index);
+    }
+
+    return [userApiKey, polymasFallbackApiKey, envArkApiKey]
+        .filter(Boolean)
+        .filter((key, index, arr) => arr.indexOf(key) === index);
+}
+
+function buildImageAuthHeaderStrategies(endpoint: string, apiKey: string): Array<Record<string, string>> {
+    if (isArkImageEndpoint(endpoint)) {
+        return [{ Authorization: `Bearer ${apiKey}` }];
+    }
+
+    if (isPolymasImageEndpoint(endpoint)) {
+        return [{ "api-key": apiKey, Authorization: `Bearer ${apiKey}` }];
+    }
+
+    return [
+        { "api-key": apiKey },
+        { Authorization: `Bearer ${apiKey}` },
+        { "api-key": apiKey, Authorization: `Bearer ${apiKey}` },
+    ];
+}
+
+function isAbortError(error: unknown): boolean {
+    const err = error as { name?: string; code?: number; message?: string };
+    return err?.name === "AbortError" || err?.code === 20 || /aborted/i.test(String(err?.message || ""));
 }
 
 function extractGeneratedImageFileUrl(result: any): string | null {
@@ -606,29 +681,29 @@ async function generateImageViaArk(
     prompt: string,
     options?: { apiKey?: string; secondaryApiKey?: string; endpoint?: string; cookie?: string; imageModel?: string; timeoutMs?: number }
 ): Promise<{ fileUrl: string } | null> {
-    const preferredApiKey = normalizeApiKey(options?.apiKey || process.env.ARK_API_KEY);
-    const secondaryApiKey = normalizeApiKey(options?.secondaryApiKey || POLYMAS_IMAGE_FALLBACK_API_KEY);
-    const apiKeys = [preferredApiKey, secondaryApiKey].filter(Boolean).filter((k, i, arr) => arr.indexOf(k) === i);
-
-    if (apiKeys.length === 0) {
-        console.warn("[ark-image] 未配置 ARK_API_KEY，跳过方舟生图兜底");
-        return null;
-    }
-
     const requestTimeoutMs = Number(options?.timeoutMs) > 0
         ? Number(options?.timeoutMs)
         : IMAGE_GENERATE_TIMEOUT_MS;
 
     const selectedModel = options?.imageModel || ARK_IMAGE_MODEL;
-    const endpointCandidates = buildImageEndpointCandidates(selectedModel, options?.endpoint);
+    const preferredEndpoint = normalizeEndpoint(options?.endpoint);
+    const endpointCandidates = buildImageEndpointCandidates(selectedModel, preferredEndpoint);
 
     for (const endpoint of endpointCandidates) {
+        const apiKeys = buildImageApiKeysForEndpoint(endpoint, {
+            apiKey: options?.apiKey,
+            secondaryApiKey: options?.secondaryApiKey,
+            preferredEndpoint,
+        });
+        let endpointTimedOut = false;
+
+        if (apiKeys.length === 0) {
+            console.warn(`[ark-image] ${isArkImageEndpoint(endpoint) ? "未配置 ARK_API_KEY，跳过方舟官方接口" : "未配置生图 API Key，跳过接口"}: ${endpoint}`);
+            continue;
+        }
+
         for (const apiKey of apiKeys) {
-            const authHeaderStrategies: Array<Record<string, string>> = [
-                { "api-key": apiKey },
-                { Authorization: `Bearer ${apiKey}` },
-                { "api-key": apiKey, Authorization: `Bearer ${apiKey}` },
-            ];
+            const authHeaderStrategies = buildImageAuthHeaderStrategies(endpoint, apiKey);
 
             const isDalleModel = isDalleImageModel(selectedModel);
             const isSeedreamModel = isSeedreamImageModel(selectedModel);
@@ -650,20 +725,20 @@ async function generateImageViaArk(
                         watermark: true,
                     }
                     : {
-                    model: selectedModel,
-                    prompt,
-                    watermark: true,
-                };
+                        model: selectedModel,
+                        prompt,
+                        watermark: true,
+                    };
 
             for (const authHeaders of authHeaderStrategies) {
-            try {
-                const headers: Record<string, string> = {
-                    "Content-Type": "application/json",
-                    ...authHeaders,
-                };
-                if (options?.cookie?.trim()) {
-                    headers.Cookie = options.cookie.trim();
-                }
+                try {
+                    const headers: Record<string, string> = {
+                        "Content-Type": "application/json",
+                        ...authHeaders,
+                    };
+                    if (options?.cookie?.trim()) {
+                        headers.Cookie = options.cookie.trim();
+                    }
 
                     const res = await fetchWithTimeout(endpoint, {
                         method: "POST",
@@ -685,10 +760,19 @@ async function generateImageViaArk(
 
                     console.error("[ark-image] 返回数据缺少可用图片字段(url/b64_json):", endpoint, JSON.stringify(result).substring(0, 300));
                     continue;
-            } catch (err) {
-                console.error("[ark-image] 请求异常:", endpoint, err);
-                continue;
+                } catch (err) {
+                    if (isAbortError(err)) {
+                        console.error(`[ark-image] 接口请求超时（${Math.round(requestTimeoutMs / 1000)}秒）:`, endpoint);
+                        endpointTimedOut = true;
+                        break;
+                    }
+                    console.error("[ark-image] 请求异常:", endpoint, err);
+                    continue;
+                }
             }
+
+            if (endpointTimedOut) {
+                break;
             }
         }
     }
@@ -781,7 +865,7 @@ export async function generateBackgroundImage(
                 endpoint: deriveImageEndpointFromLlmApiUrl(params.llmApiUrl),
                 cookie: credentials.cookie,
                 imageModel: params.imageModel,
-                timeoutMs: IMAGE_GENERATE_TIMEOUT_MS,
+                timeoutMs: OPENAI_COMPAT_IMAGE_TIMEOUT_MS,
             });
 
             if (preferredGenerated?.fileUrl) {
@@ -866,7 +950,7 @@ export async function generateCourseCoverImageSource(
                 endpoint: deriveImageEndpointFromLlmApiUrl(params.llmApiUrl),
                 cookie: credentials.cookie,
                 imageModel: params.imageModel,
-                timeoutMs: COVER_GENERATE_TIMEOUT_MS,
+                timeoutMs: Math.max(COVER_GENERATE_TIMEOUT_MS, OPENAI_COMPAT_IMAGE_TIMEOUT_MS),
             });
 
             if (preferredGenerated?.fileUrl) {

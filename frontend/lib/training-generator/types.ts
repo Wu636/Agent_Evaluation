@@ -5,6 +5,10 @@
 export type ScriptMode = "general" | "sequential" | "roleplay" | "summary" | "auto";
 export type ConcreteScriptMode = Exclude<ScriptMode, "auto">;
 export type ScriptModuleType = ConcreteScriptMode;
+export type TrainingFlowType = "linear" | "graph";
+export type TrainingFlowPlanningPreference = "auto" | TrainingFlowType;
+
+export const TRAINING_FLOW_END_NODE_ID = "__END__";
 
 /** 生成请求 */
 export interface TrainingGenerateRequest {
@@ -39,12 +43,23 @@ export interface ScriptModulePlan {
     suggestedRounds: number;
 }
 
+export interface ScriptFlowEdge {
+    id: string;
+    fromModuleId: string;
+    toModuleId: string;
+    condition: string;
+    conditionDescription: string;
+    transitionPrompt: string;
+}
+
 export interface TrainingScriptPlan {
     taskName: string;
     audience: string;
     overallObjective: string;
     recommendedMode: ConcreteScriptMode;
+    flowType: TrainingFlowType;
     modules: ScriptModulePlan[];
+    edges: ScriptFlowEdge[];
     notes: string[];
 }
 
@@ -66,6 +81,7 @@ export interface TrainingScriptPlanResponse {
 
 export interface TrainingPlanRequestOptions {
     planningFeedback?: string;
+    flowPreference?: TrainingFlowPlanningPreference;
     usePreviousPlan?: boolean;
     currentPlan?: TrainingScriptPlan;
     previousPlan?: TrainingScriptPlan;

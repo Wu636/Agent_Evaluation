@@ -9,11 +9,19 @@ import { ScriptMode } from "./types";
 import { TRAINING_SCRIPT_COMPLETE_MARKER } from "./script-tools";
 
 // 默认模板版本号——每次修改 DEFAULT_*_TEMPLATE 时递增，用于清除旧缓存
-export const TEMPLATE_VERSION = 7;
+export const TEMPLATE_VERSION = 8;
 
 function appendScriptCompletionMarkerInstruction(prompt: string): string {
     return [
         prompt.trim(),
+        "",
+        "# 非线性跳转要求",
+        "- 默认保持线性阶段结构；如果教师文档出现多案例并行、用户选择不同线路、按回答进入不同任务线、分支后汇总等结构，不要强行串成阶段1→阶段2→阶段3。",
+        "- 非线性结构必须在阶段列表后额外输出 `## 🔀 非线性跳转关系` 区块，并在其中用 JSON 代码块写出：`flowType: \"graph\"` 与 `edges` 数组。",
+        "- `edges` 中每条连线必须包含 `from`、`to`、`condition`、`conditionDescription`、`transitionPrompt`；from/to 使用 `阶段1`、`阶段2` 或 `END`。",
+        "- 有多个出口的阶段，阶段内提示词必须写出分支互斥判定：命中不同条件时分别仅输出对应 `condition`，不能只输出一个通用下一阶段关键词。",
+        "- 不同分支的 `condition` 和 `transitionPrompt` 必须区分线路语境；同一阶段下多个出口不能共用同一个跳转关键词。",
+        "- 线性结构不需要输出 `## 🔀 非线性跳转关系`。",
         "",
         "# 完整性校验要求",
         `- 完整训练剧本生成结束后，最后一个非空行必须输出：\`${TRAINING_SCRIPT_COMPLETE_MARKER}\``,

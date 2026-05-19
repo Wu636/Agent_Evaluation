@@ -2,7 +2,7 @@
  * 训练配置生成器 - 前端 SSE 客户端封装
  */
 
-import { ScriptMode, TrainingPlanRequestOptions, TrainingSSEEvent, TrainingScriptPlan, TrainingScriptPlanResponse } from "./types";
+import { ScriptMode, TrainingFlowPlanningPreference, TrainingPlanRequestOptions, TrainingSSEEvent, TrainingScriptPlan, TrainingScriptPlanResponse } from "./types";
 import { loadLLMSettingsFromStorage } from "@/lib/llm/settings";
 
 export interface TrainingGenerateParams {
@@ -174,6 +174,7 @@ export interface TrainingPlanParams {
     teacherDocContent?: string;
     teacherDocName: string;
     planningFeedback?: string;
+    flowPreference?: TrainingFlowPlanningPreference;
     usePreviousPlan?: boolean;
     currentPlan?: TrainingScriptPlan;
     previousPlan?: TrainingScriptPlan;
@@ -213,6 +214,7 @@ export async function createTrainingScriptPlan(params: TrainingPlanParams): Prom
     let response: Response;
     const options: TrainingPlanRequestOptions = {
         planningFeedback: params.planningFeedback,
+        flowPreference: params.flowPreference,
         usePreviousPlan: params.usePreviousPlan,
         currentPlan: params.currentPlan,
         previousPlan: params.previousPlan,
@@ -223,6 +225,7 @@ export async function createTrainingScriptPlan(params: TrainingPlanParams): Prom
         formData.append("file", params.file);
         formData.append("teacherDocName", params.teacherDocName);
         if (options.planningFeedback) formData.append("planningFeedback", options.planningFeedback);
+        if (options.flowPreference) formData.append("flowPreference", options.flowPreference);
         if (typeof options.usePreviousPlan === "boolean") formData.append("usePreviousPlan", String(options.usePreviousPlan));
         if (options.currentPlan) formData.append("currentPlan", JSON.stringify(options.currentPlan));
         if (options.previousPlan) formData.append("previousPlan", JSON.stringify(options.previousPlan));
@@ -242,6 +245,7 @@ export async function createTrainingScriptPlan(params: TrainingPlanParams): Prom
                 teacherDocContent: params.teacherDocContent || "",
                 teacherDocName: params.teacherDocName,
                 planningFeedback: options.planningFeedback || "",
+                flowPreference: options.flowPreference || "auto",
                 usePreviousPlan: options.usePreviousPlan ?? false,
                 currentPlan: options.currentPlan,
                 previousPlan: options.previousPlan,

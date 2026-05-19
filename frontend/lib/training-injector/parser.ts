@@ -4,7 +4,8 @@
  * 从 create_task_from_markdown.py 和 create_score_items_from_rubric.py 翻译为 TypeScript
  */
 
-import { ParsedStep, ParsedScoreItem } from "./types";
+import { jsonrepair } from "jsonrepair";
+import { ParsedStep, ParsedScoreItem, ParsedFlowConfig, ParsedFlowEdge } from "./types";
 
 // ─── 基础配置提取 ─────────────────────────────────────────────────────
 
@@ -650,6 +651,165 @@ export function parseTrainingScript(markdown: string): ParsedStep[] {
     }
 
     return [];
+}
+
+function findNonlinearFlowBlock(markdown: string): string {
+    const normalized = normalizeTrainingScriptSource(markdown);
+    const lines = normalized.split("\n");
+    const headingPattern = /^##+\s*(?:🔀\s*)?(?:非线性|分支|图结构|流程图|多线路)[\s\S]{0,24}(?:跳转|流程|连线|关系)\b/i;
+    const genericSectionPattern = /^##+\s+\S/;
+    let startIndex = -1;
+    let inCodeBlock = false;
+
+    for (let index = 0; index < lines.length; index++) {
+        const trimmed = lines[index].trim();
+        if (trimmed.startsWith("```")) {
+            inCodeBlock = !inCodeBlock;
+            continue;
+        }
+        if (inCodeBlock) continue;
+        if (headingPattern.test(trimmed)) {
+            startIndex = index;
+            break;
+        }
+    }
+
+    if (startIndex < 0) return "";
+
+    let endIndex = lines.length;
+    inCodeBlock = false;
+    for (let index = startIndex + 1; index < lines.length; index++) {
+        const trimmed = lines[index].trim();
+        if (trimmed.startsWith("```")) {
+            inCodeBlock = !inCodeBlock;
+            continue;
+        }
+        if (inCodeBlock) continue;
+        if (genericSectionPattern.test(trimmed)) {
+            endIndex = index;
+            break;
+        }
+    }
+
+    return lines.slice(startIndex, endIndex).join("\n").trim();
+}
+
+function extractFlowJsonCandidate(block: string): string | null {
+    const fenced = block.match(/```(?:json)?\s*\n([\s\S]*?)\n```/i);
+    if (fenced?.[1]?.trim()) {
+        return fenced[1].trim();
+    }
+
+    const firstBrace = block.indexOf("{");
+    const lastBrace = block.lastIndexOf("}");
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+        return block.slice(firstBrace, lastBrace + 1).trim();
+    }
+
+    return null;
+}
+
+function normalizeFlowEndpoint(value: unknown): string {
+    return normalizeValue(String(value || ""))
+        .replace(/^第\s*([0-9一二三四五六七八九十]+)\s*阶段/u, "阶段$1")
+        .replace(/^stage[_\s-]*(\d+)$/i, "阶段$1")
+        .replace(/^step[_\s-]*(\d+)$/i, "阶段$1")
+        .trim();
+}
+
+function normalizeFlowEdge(raw: Record<string, unknown>): ParsedFlowEdge | null {
+    const from = normalizeFlowEndpoint(
+        raw.from ?? raw.source ?? raw.sourceStage ?? raw.fromStage ?? raw.fromModuleId ?? raw.start
+    );
+    const to = normalizeFlowEndpoint(
+        raw.to ?? raw.target ?? raw.targetStage ?? raw.toStage ?? raw.toModuleId ?? raw.end
+    );
+    const condition = normalizeValue(String(
+        raw.condition ?? raw.flowCondition ?? raw.keyword ?? raw.jumpKeyword ?? raw.label ?? ""
+    ));
+    const conditionDescription = normalizeValue(String(
+        raw.conditionDescription ?? raw.description ?? raw.when ?? raw.rule ?? ""
+    ));
+    const transitionPrompt = normalizeValue(String(
+        raw.transitionPrompt ?? raw.transition ?? raw.prompt ?? ""
+    ));
+
+    if (!from || !to || !condition) return null;
+
+    return {
+        from,
+        to,
+        condition,
+        conditionDescription,
+        transitionPrompt,
+    };
+}
+
+function parseFlowEdgesFromBullets(block: string): ParsedFlowEdge[] {
+    const edges: ParsedFlowEdge[] = [];
+    const lines = block.split("\n");
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !/(?:→|->)/.test(trimmed)) continue;
+
+        const routeMatch = trimmed.match(/(?:[-*+•]\s*)?(.+?)\s*(?:→|->)\s*(.+?)(?:[：:，,]|$)/);
+        if (!routeMatch) continue;
+
+        const keywordMatch = trimmed.match(/(?:跳转关键词|关键词|flowCondition)\s*[：:]?\s*[`"“”']?([^`"“”'，,。；;]+)/i);
+        const conditionMatch = keywordMatch || trimmed.match(/条件\s*[为是：:]?\s*[`"“”']?([^`"“”'，,。；;]+)/i);
+        const from = normalizeFlowEndpoint(routeMatch[1]);
+        const to = normalizeFlowEndpoint(routeMatch[2]);
+        const condition = normalizeValue(conditionMatch?.[1] || "");
+        if (!from || !to || !condition) continue;
+
+        edges.push({
+            from,
+            to,
+            condition,
+            conditionDescription: "",
+            transitionPrompt: "",
+        });
+    }
+
+    return edges;
+}
+
+/**
+ * 解析训练剧本中的非线性跳转关系。
+ * 线性剧本不需要该区块；只有检测到 “## 🔀 非线性跳转关系” 一类区块时才返回 graph。
+ */
+export function parseTrainingScriptFlowConfig(markdown: string): ParsedFlowConfig {
+    const block = findNonlinearFlowBlock(markdown);
+    if (!block) {
+        return { flowType: "linear", edges: [] };
+    }
+
+    const jsonCandidate = extractFlowJsonCandidate(block);
+    if (jsonCandidate) {
+        try {
+            const parsed = JSON.parse(jsonrepair(jsonCandidate)) as Record<string, unknown>;
+            const rawEdges = Array.isArray(parsed.edges)
+                ? parsed.edges as Array<Record<string, unknown>>
+                : [];
+            const edges = rawEdges
+                .map((edge) => normalizeFlowEdge(edge))
+                .filter((edge): edge is ParsedFlowEdge => Boolean(edge));
+            const rawFlowType = String(parsed.flowType || "").toLowerCase();
+            return {
+                flowType: rawFlowType === "linear" && edges.length === 0 ? "linear" : "graph",
+                edges,
+            };
+        } catch {
+            // 继续尝试行级兜底解析
+        }
+    }
+
+    const bulletEdges = parseFlowEdgesFromBullets(block);
+    return {
+        flowType: bulletEdges.length > 0 ? "graph" : "linear",
+        edges: bulletEdges,
+    };
 }
 
 function formatInlineScriptField(label: string, value: string): string {

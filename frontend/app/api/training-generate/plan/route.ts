@@ -7,11 +7,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { MODEL_NAME_MAPPING } from "@/lib/config";
 import { ApiConfig } from "@/lib/llm/types";
 import { planTrainingScriptModules, validateTrainingScriptPlan } from "@/lib/training-generator/generator";
+import { TrainingFlowPlanningPreference } from "@/lib/training-generator/types";
 import { convertDocxToText } from "@/lib/converters/docx-converter";
 import WordExtractor from "word-extractor";
 
 export const runtime = "nodejs";
 export const maxDuration = 180;
+
+function normalizeFlowPreference(value: unknown): TrainingFlowPlanningPreference {
+    return value === "linear" || value === "graph" ? value : "auto";
+}
 
 export async function POST(request: NextRequest) {
     try {
@@ -21,6 +26,7 @@ export async function POST(request: NextRequest) {
         let apiUrl = "";
         let model = "";
         let planningFeedback = "";
+        let flowPreference: TrainingFlowPlanningPreference = "auto";
         let usePreviousPlan = false;
         let currentPlan = undefined;
         let previousPlan = undefined;
@@ -32,6 +38,7 @@ export async function POST(request: NextRequest) {
             const file = formData.get("file") as File | null;
             teacherDocName = formData.get("teacherDocName") as string || "文档";
             planningFeedback = formData.get("planningFeedback") as string || "";
+            flowPreference = normalizeFlowPreference(formData.get("flowPreference"));
             usePreviousPlan = formData.get("usePreviousPlan") === "true";
             currentPlan = (() => {
                 const raw = formData.get("currentPlan") as string || "";
@@ -68,6 +75,7 @@ export async function POST(request: NextRequest) {
                 teacherDocContent = "",
                 teacherDocName = "文档",
                 planningFeedback = "",
+                flowPreference = "auto",
                 usePreviousPlan = false,
                 currentPlan = undefined,
                 previousPlan = undefined,
@@ -75,6 +83,7 @@ export async function POST(request: NextRequest) {
                 apiUrl = "",
                 model = "",
             } = payload);
+            flowPreference = normalizeFlowPreference(flowPreference);
         }
 
         if (!teacherDocContent.trim()) {
@@ -93,6 +102,7 @@ export async function POST(request: NextRequest) {
 
         const result = await planTrainingScriptModules(teacherDocContent, apiConfig, {
             planningFeedback,
+            flowPreference,
             usePreviousPlan,
             currentPlan,
             previousPlan,

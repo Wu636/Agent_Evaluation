@@ -1,5 +1,5 @@
-import { isScriptFieldLine, matchStageHeading, normalizeTrainingScriptSource, parseTaskConfig, parseTrainingScript } from "@/lib/training-injector/parser";
-import { TrainingScriptPlan } from "./types";
+import { isScriptFieldLine, matchStageHeading, normalizeTrainingScriptSource, parseTaskConfig, parseTrainingScript, parseTrainingScriptFlowConfig } from "@/lib/training-injector/parser";
+import { TRAINING_FLOW_END_NODE_ID, TrainingScriptPlan } from "./types";
 import { detectMultiRoleTextSignal } from "./plan-validation";
 
 export interface ScriptStageSection {
@@ -153,6 +153,7 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
     const issues: ScriptDiagnosticIssue[] = [];
     const taskConfig = parseTaskConfig(markdown);
     const parsedSteps = parseTrainingScript(markdown);
+    const flowConfig = parseTrainingScriptFlowConfig(markdown);
     const structure = extractScriptStructure(markdown);
 
     if (hasUnclosedTrainingScriptFence(markdown)) {
@@ -236,6 +237,73 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
             issues.push({ level: "warning", message: `阶段 ${index + 1} 的互动轮次不合理（建议 1-10 轮）。`, stageIndex: index, field: "interactiveRounds" });
         }
     });
+
+    if (modulePlan?.flowType === "graph" && flowConfig.flowType !== "graph") {
+        issues.push({
+            level: "error",
+            message: "模块规划为非线性图结构，但当前剧本缺少 `## 🔀 非线性跳转关系` 区块，注入后会退化为线性流程。",
+            field: "flowConfig",
+        });
+    }
+
+    if (flowConfig.flowType === "graph") {
+        const normalizeEndpoint = (value: string): string => String(value || "")
+            .trim()
+            .replace(/^第\s*([0-9一二三四五六七八九十]+)\s*阶段/u, "阶段$1")
+            .replace(/^stage[_\s-]*(\d+)$/i, "阶段$1")
+            .replace(/^step[_\s-]*(\d+)$/i, "阶段$1")
+            .replace(/\s+/g, "")
+            .toLowerCase();
+        const stageKeys = new Map<string, number>();
+        parsedSteps.forEach((step, index) => {
+            const stageNumber = index + 1;
+            [
+                `阶段${stageNumber}`,
+                `第${stageNumber}阶段`,
+                step.stepName,
+                step.stepName.replace(/^阶段\s*[0-9一二三四五六七八九十]+[：:、.\-\s]*/u, ""),
+            ].forEach((key) => {
+                const normalized = normalizeEndpoint(key);
+                if (normalized) stageKeys.set(normalized, index);
+            });
+        });
+        const endKeys = new Set(["end", "结束", "训练结束", "task_complete", TRAINING_FLOW_END_NODE_ID.toLowerCase()]);
+        const outgoingConditions = new Map<string, Set<string>>();
+        let hasEndEdge = false;
+
+        if (flowConfig.edges.length === 0) {
+            issues.push({ level: "error", message: "非线性跳转关系区块中没有解析到任何 edges。", field: "flowConfig" });
+        }
+
+        flowConfig.edges.forEach((edge, index) => {
+            const fromKey = normalizeEndpoint(edge.from);
+            const toKey = normalizeEndpoint(edge.to);
+            if (!stageKeys.has(fromKey) && fromKey !== "start" && fromKey !== "开始") {
+                issues.push({ level: "error", message: `非线性连线 ${index + 1} 的起点无法匹配到阶段：${edge.from}`, field: "flowConfig" });
+            }
+            if (!stageKeys.has(toKey) && !endKeys.has(toKey)) {
+                issues.push({ level: "error", message: `非线性连线 ${index + 1} 的终点无法匹配到阶段或 END：${edge.to}`, field: "flowConfig" });
+            }
+            if (endKeys.has(toKey)) {
+                hasEndEdge = true;
+            }
+            const condition = edge.condition.trim();
+            if (!condition) {
+                issues.push({ level: "error", message: `非线性连线 ${index + 1} 缺少 condition。`, field: "flowConfig" });
+                return;
+            }
+            const existing = outgoingConditions.get(fromKey) || new Set<string>();
+            if (existing.has(condition)) {
+                issues.push({ level: "error", message: `非线性连线存在重复跳转关键词：${condition}`, field: "flowConfig" });
+            }
+            existing.add(condition);
+            outgoingConditions.set(fromKey, existing);
+        });
+
+        if (!hasEndEdge) {
+            issues.push({ level: "warning", message: "非线性跳转关系未显式连接到 END，注入时会为无后继阶段自动补结束线。", field: "flowConfig" });
+        }
+    }
 
     if (modulePlan && modulePlan.modules.length !== parsedSteps.length) {
         issues.push({

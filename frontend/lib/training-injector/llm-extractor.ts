@@ -5,7 +5,7 @@
  * 相比正则解析器 (parser.ts)，LLM 提取器能够处理各种格式变体。
  */
 
-import { ParsedStep, ParsedScoreItem } from "./types";
+import { ParsedStep, ParsedScoreItem, ParsedFlowConfig } from "./types";
 import { MODEL_NAME_MAPPING } from "@/lib/config";
 
 export interface LLMSettings {
@@ -21,6 +21,7 @@ export interface ExtractedScriptConfig {
         description: string;
     };
     steps: ParsedStep[];
+    flowConfig: ParsedFlowConfig;
 }
 
 // ─── 通用 LLM 调用 ──────────────────────────────────────────────────
@@ -113,6 +114,18 @@ const SCRIPT_EXTRACTION_PROMPT = `请从以下 Markdown 文档中提取训练剧
     "trainTaskName": "任务名称",
     "description": "任务描述（完整文本，不要截断）"
   },
+  "flowConfig": {
+    "flowType": "linear|graph",
+    "edges": [
+      {
+        "from": "阶段1",
+        "to": "阶段2 或 END",
+        "condition": "跳转关键词",
+        "conditionDescription": "触发该跳转的条件说明",
+        "transitionPrompt": "该条连线专用的transitionPrompt完整内容"
+      }
+    ]
+  },
   "steps": [
     {
       "stepName": "阶段名称",
@@ -151,10 +164,15 @@ const SCRIPT_EXTRACTION_PROMPT = `请从以下 Markdown 文档中提取训练剧
    - ✅ 正确：transitionPrompt = "【输入参数】\\n    - 下一阶段原始开场白..."
 
 4. taskConfig 从 "基础配置" 中提取任务名称和任务描述
-5. steps 从各个 "阶段" 中提取，按阶段顺序排列
-6. interactiveRounds 是整数
-7. 如果某个字段在文档中未找到，填空字符串（字符串字段）或 0（数字字段）
-8. 输出纯 JSON，不要包含任何其他文字
+5. **flowConfig（流程配置）**：
+   - 如果文档存在 "非线性跳转关系"、"分支跳转关系"、"图结构流程" 等区块，flowType 填 "graph"，edges 提取该区块中的所有连线
+   - 如果没有非线性关系，flowType 填 "linear"，edges 填空数组 []
+   - from/to 优先使用 "阶段1"、"阶段2" 这类阶段编号；指向结束节点时 to 填 "END"
+   - 每条边的 condition 必须是该连线实际使用的跳转关键词，transitionPrompt 必须是该连线专用内容
+6. steps 从各个 "阶段" 中提取，按阶段顺序排列
+7. interactiveRounds 是整数
+8. 如果某个字段在文档中未找到，填空字符串（字符串字段）或 0（数字字段）
+9. 输出纯 JSON，不要包含任何其他文字
 
 **文档内容：**
 `;
@@ -177,7 +195,24 @@ export async function extractScriptConfig(
             description: parsed.taskConfig?.description || "",
         },
         steps: [],
+        flowConfig: {
+            flowType: parsed.flowConfig?.flowType === "graph" ? "graph" : "linear",
+            edges: [],
+        },
     };
+
+    if (Array.isArray(parsed.flowConfig?.edges)) {
+        result.flowConfig.edges = parsed.flowConfig.edges.map((edge: Record<string, unknown>) => ({
+            from: String(edge.from || ""),
+            to: String(edge.to || ""),
+            condition: String(edge.condition || ""),
+            conditionDescription: String(edge.conditionDescription || ""),
+            transitionPrompt: String(edge.transitionPrompt || ""),
+        })).filter((edge: ParsedFlowConfig["edges"][number]) => edge.from && edge.to && edge.condition);
+        if (result.flowConfig.edges.length > 0) {
+            result.flowConfig.flowType = "graph";
+        }
+    }
 
     if (Array.isArray(parsed.steps)) {
         result.steps = parsed.steps.map((s: Record<string, unknown>) => ({

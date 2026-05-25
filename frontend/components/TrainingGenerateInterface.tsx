@@ -1749,7 +1749,7 @@ export function TrainingGenerateInterface() {
                             <p className="text-sm font-semibold text-slate-700">生成内容</p>
                             <div className="flex items-center gap-1.5 text-xs text-slate-500 sm:justify-end">
                                 <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-                                <span>建议选择 Claude Sonnet 4.5 生成训练基本配置，不容易出现截断</span>
+                                <span>当生成经常中断或重复时，请尝试切换生成模型</span>
                             </div>
                         </div>
                         <div className="flex flex-col sm:flex-row gap-3">

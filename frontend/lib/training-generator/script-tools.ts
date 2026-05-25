@@ -69,6 +69,24 @@ export function hasUnclosedTrainingScriptFence(markdown: string): boolean {
     return [raw, normalized].some((candidate) => hasOddFenceCount(candidate));
 }
 
+export function normalizeTrainingScriptCompletion(markdown: string): string {
+    const lines = String(markdown || "").split("\n");
+    const markerIndex = lines.findIndex((line) => line.trim() === TRAINING_SCRIPT_COMPLETE_MARKER);
+    if (markerIndex < 0) return markdown;
+
+    const truncatedLines = lines.slice(0, markerIndex + 1);
+    const truncated = truncatedLines.join("\n").trim();
+    if (!hasOddFenceCount(truncated)) return truncated;
+
+    const beforeMarker = truncatedLines.slice(0, markerIndex).join("\n").trimEnd();
+    return [
+        beforeMarker,
+        "```",
+        "",
+        TRAINING_SCRIPT_COMPLETE_MARKER,
+    ].filter((line, index) => index !== 0 || line).join("\n").trim();
+}
+
 export function extractStageNumberFromHeading(heading: string): number | null {
     return matchStageHeading(heading)?.stageNumber ?? null;
 }
@@ -291,19 +309,20 @@ export function ensureNonlinearFlowConfigMarkdown(
 
 export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingScriptPlan | null): ScriptDiagnosticsResult {
     const issues: ScriptDiagnosticIssue[] = [];
-    const taskConfig = parseTaskConfig(markdown);
-    const parsedSteps = parseTrainingScript(markdown);
-    const flowConfig = parseTrainingScriptFlowConfig(markdown);
-    const structure = extractScriptStructure(markdown);
+    const normalizedMarkdown = normalizeTrainingScriptCompletion(markdown);
+    const taskConfig = parseTaskConfig(normalizedMarkdown);
+    const parsedSteps = parseTrainingScript(normalizedMarkdown);
+    const flowConfig = parseTrainingScriptFlowConfig(normalizedMarkdown);
+    const structure = extractScriptStructure(normalizedMarkdown);
 
-    if (hasUnclosedTrainingScriptFence(markdown)) {
+    if (hasUnclosedTrainingScriptFence(normalizedMarkdown)) {
         issues.push({
             level: "error",
             message: "检测到未闭合的 Markdown 代码块，剧本很可能在某个提示词或衔接语中被截断。",
             field: "markdownFence",
         });
     }
-    if (!hasTrainingScriptCompleteMarker(markdown)) {
+    if (!hasTrainingScriptCompleteMarker(normalizedMarkdown)) {
         issues.push({
             level: "error",
             message: `缺少完整结束标志 ${TRAINING_SCRIPT_COMPLETE_MARKER}，疑似生成未到文档末尾。`,

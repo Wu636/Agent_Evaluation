@@ -20,6 +20,7 @@ import {
 import {
     ensureNonlinearFlowConfigMarkdown,
     extractScriptStructure,
+    normalizeTrainingScriptCompletion,
     hasTrainingScriptCompleteMarker,
     hasUnclosedTrainingScriptFence,
     TRAINING_SCRIPT_COMPLETE_MARKER,
@@ -163,9 +164,10 @@ export async function POST(request: NextRequest) {
                 };
 
                 const validateScriptStructure = (content: string): { ok: boolean; reason?: string } => {
-                    const parsedTask = parseTaskConfig(content);
-                    const parsedSteps = parseTrainingScript(content);
-                    const structure = extractScriptStructure(content);
+                    const normalizedContent = normalizeTrainingScriptCompletion(content);
+                    const parsedTask = parseTaskConfig(normalizedContent);
+                    const parsedSteps = parseTrainingScript(normalizedContent);
+                    const structure = extractScriptStructure(normalizedContent);
                     const stageCount = structure.stages.length || parsedSteps.length;
                     const stageOneMatches = structure.stages.filter((stage) => /^#{3,}\s*阶段\s*1(?:\b|[：:])/i.test(stage.heading));
 
@@ -177,7 +179,7 @@ export async function POST(request: NextRequest) {
                         return { ok: false, reason: "未解析到任何阶段" };
                     }
 
-                    if (hasUnclosedTrainingScriptFence(content)) {
+                    if (hasUnclosedTrainingScriptFence(normalizedContent)) {
                         return { ok: false, reason: "存在未闭合的 Markdown 代码块，疑似提示词或衔接语被截断" };
                     }
 
@@ -224,11 +226,11 @@ export async function POST(request: NextRequest) {
                         return { ok: false, reason: `阶段${missingFlowIndex + 1}缺少flowCondition` };
                     }
 
-                    if (content.trim().length < 1200) {
+                    if (normalizedContent.trim().length < 1200) {
                         return { ok: false, reason: "整体内容长度异常偏短，疑似截断" };
                     }
 
-                    if (!hasTrainingScriptCompleteMarker(content)) {
+                    if (!hasTrainingScriptCompleteMarker(normalizedContent)) {
                         return { ok: false, reason: `缺少完整结束标志 ${TRAINING_SCRIPT_COMPLETE_MARKER}` };
                     }
 
@@ -402,9 +404,10 @@ export async function POST(request: NextRequest) {
                     return enforceMonotonicStageOrder(normalizeScriptRestartLoop(normalizeRepeatedStageOneRestart(clean)));
                 };
 
-                const normalizeGeneratedScript = (content: string): string => (
-                    ensureNonlinearFlowConfigMarkdown(applyScriptContinuationGuards(content), modulePlan)
-                );
+                const normalizeGeneratedScript = (content: string): string => {
+                    const completed = normalizeTrainingScriptCompletion(applyScriptContinuationGuards(content));
+                    return normalizeTrainingScriptCompletion(ensureNonlinearFlowConfigMarkdown(completed, modulePlan));
+                };
 
                 const mergeScriptContinuationContent = (previousContent: string, continuationContent: string): string => {
                     const previous = normalizeGeneratedScript(previousContent);

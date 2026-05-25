@@ -50,6 +50,7 @@ export interface ScriptFlowEdge {
     condition: string;
     conditionDescription: string;
     transitionPrompt: string;
+    isDefault?: number | boolean | string;
 }
 
 export interface TrainingScriptPlan {

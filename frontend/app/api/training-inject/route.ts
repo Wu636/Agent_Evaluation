@@ -59,6 +59,10 @@ function findLastScriptNode(scriptNodes: PolymasScriptStep[]): PolymasScriptStep
     return [...scriptNodes].sort((a, b) => getNodeX(b) - getNodeX(a))[0] || null;
 }
 
+function isDefaultFlow(value: unknown): boolean {
+    return value === 1 || value === true || String(value || "").trim() === "1";
+}
+
 const FLOW_START_ALIASES = new Set(["start", "script_start", "开始", "起点", "训练开始"]);
 const FLOW_END_ALIASES = new Set(["end", "script_end", "__end__", "task_complete", "结束", "训练结束", "本次实训到此结束"]);
 const CHINESE_ORDINALS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
@@ -422,6 +426,12 @@ export async function POST(request: NextRequest) {
                         return;
                     }
 
+                    const startIdsWithDefaultFlow = new Set(
+                        existingFlows
+                            .filter((flow) => isDefaultFlow(flow.isDefault))
+                            .map((flow) => flow.scriptStepStartId)
+                            .filter(Boolean)
+                    );
                     let appendAnchorStepId: string | null = null;
                     let appendAnchorPosition: { x: number; y: number } | null = null;
 
@@ -436,6 +446,7 @@ export async function POST(request: NextRequest) {
                                 await deleteScriptFlow(finalTrainTaskId, flow.flowId, credentials);
                                 flowsDeleted++;
                             }
+                            startIdsWithDefaultFlow.clear();
                             // 再删节点
                             for (const step of scriptNodes) {
                                 await deleteScriptStep(finalTrainTaskId, step.stepId, credentials);
@@ -805,6 +816,7 @@ export async function POST(request: NextRequest) {
                         const key = `${fromId}__${toId}__${condition}`;
                         if (createdFlowKeys.has(key)) return false;
                         createdFlowKeys.add(key);
+                        const shouldBeDefault = !startIdsWithDefaultFlow.has(fromId);
 
                         const ok = await createScriptFlow(
                             finalTrainTaskId,
@@ -812,9 +824,15 @@ export async function POST(request: NextRequest) {
                             toId,
                             condition,
                             transitionPrompt,
-                            credentials
+                            credentials,
+                            { isDefault: shouldBeDefault }
                         );
-                        if (ok) flowsCreated++;
+                        if (ok) {
+                            flowsCreated++;
+                            if (shouldBeDefault) {
+                                startIdsWithDefaultFlow.add(fromId);
+                            }
+                        }
                         return ok;
                     };
 

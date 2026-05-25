@@ -656,8 +656,8 @@ export function parseTrainingScript(markdown: string): ParsedStep[] {
 function findNonlinearFlowBlock(markdown: string): string {
     const normalized = normalizeTrainingScriptSource(markdown);
     const lines = normalized.split("\n");
-    const headingPattern = /^##+\s*(?:🔀\s*)?(?:非线性|分支|图结构|流程图|多线路)[\s\S]{0,24}(?:跳转|流程|连线|关系)\b/i;
-    const genericSectionPattern = /^##+\s+\S/;
+    const headingPattern = /^#{1,6}\s*(?:🔀\s*)?(?:非线性|分支|图结构|流程图|多线路)[\s\S]{0,32}(?:跳转|流程|连线|关系)(?:\s|$|[（(])/i;
+    const genericSectionPattern = /^#{1,6}\s+\S/;
     let startIndex = -1;
     let inCodeBlock = false;
 
@@ -717,6 +717,13 @@ function normalizeFlowEndpoint(value: unknown): string {
         .trim();
 }
 
+function normalizeFlowDefaultValue(value: unknown): number | undefined {
+    if (value === undefined || value === null || value === "") return undefined;
+    if (value === 1 || value === true) return 1;
+    const normalized = String(value).trim().toLowerCase();
+    return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "default" ? 1 : 0;
+}
+
 function normalizeFlowEdge(raw: Record<string, unknown>): ParsedFlowEdge | null {
     const from = normalizeFlowEndpoint(
         raw.from ?? raw.source ?? raw.sourceStage ?? raw.fromStage ?? raw.fromModuleId ?? raw.start
@@ -733,6 +740,7 @@ function normalizeFlowEdge(raw: Record<string, unknown>): ParsedFlowEdge | null 
     const transitionPrompt = normalizeValue(String(
         raw.transitionPrompt ?? raw.transition ?? raw.prompt ?? ""
     ));
+    const isDefault = normalizeFlowDefaultValue(raw.isDefault ?? raw.default ?? raw.is_default);
 
     if (!from || !to || !condition) return null;
 
@@ -742,6 +750,7 @@ function normalizeFlowEdge(raw: Record<string, unknown>): ParsedFlowEdge | null 
         condition,
         conditionDescription,
         transitionPrompt,
+        ...(isDefault === undefined ? {} : { isDefault }),
     };
 }
 

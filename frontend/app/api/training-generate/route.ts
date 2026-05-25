@@ -18,6 +18,7 @@ import {
     validateTrainingScriptPlan,
 } from "@/lib/training-generator/generator";
 import {
+    ensureNonlinearFlowConfigMarkdown,
     extractScriptStructure,
     hasTrainingScriptCompleteMarker,
     hasUnclosedTrainingScriptFence,
@@ -401,8 +402,12 @@ export async function POST(request: NextRequest) {
                     return enforceMonotonicStageOrder(normalizeScriptRestartLoop(normalizeRepeatedStageOneRestart(clean)));
                 };
 
+                const normalizeGeneratedScript = (content: string): string => (
+                    ensureNonlinearFlowConfigMarkdown(applyScriptContinuationGuards(content), modulePlan)
+                );
+
                 const mergeScriptContinuationContent = (previousContent: string, continuationContent: string): string => {
-                    const previous = applyScriptContinuationGuards(previousContent);
+                    const previous = normalizeGeneratedScript(previousContent);
                     const continuation = cleanupMarkdownFence(continuationContent);
                     if (!continuation.trim()) {
                         return previous;
@@ -410,7 +415,7 @@ export async function POST(request: NextRequest) {
 
                     const guardedCandidates: string[] = [];
                     const pushGuardedCandidate = (candidate: string) => {
-                        const guarded = applyScriptContinuationGuards(candidate);
+                        const guarded = normalizeGeneratedScript(candidate);
                         if (guarded.trim()) {
                             guardedCandidates.push(guarded);
                         }
@@ -546,7 +551,7 @@ export async function POST(request: NextRequest) {
                             }
 
                             return phase === 'script'
-                                ? applyScriptContinuationGuards(fullContent)
+                                ? normalizeGeneratedScript(fullContent)
                                 : cleanupMarkdownFence(fullContent);
                         } catch (err) {
                             lastError = err;
@@ -609,7 +614,7 @@ export async function POST(request: NextRequest) {
                             : `开始生成${getScriptModeLabel(resolvedScriptMode)}剧本配置...`,
                         () => generateTrainingScriptStream(teacherDocContent, apiConfig, scriptPromptTemplate || undefined, resolvedScriptMode || "general", modulePlan)
                     );
-                    fullScript = applyScriptContinuationGuards(fullScript);
+                    fullScript = normalizeGeneratedScript(fullScript);
 
                     for (let continuationAttempt = 1; continuationAttempt <= maxContinuationAttempts; continuationAttempt++) {
                         const scriptValidation = validateScriptStructure(fullScript);
@@ -631,7 +636,7 @@ export async function POST(request: NextRequest) {
                                 message: `检测到阶段结构与模块规划不一致（${scriptValidation.reason || "结构异常"}），正在自动整理阶段结构...`,
                             });
                             try {
-                                fullScript = applyScriptContinuationGuards(await repairTrainingScriptStructure(
+                                fullScript = normalizeGeneratedScript(await repairTrainingScriptStructure(
                                     teacherDocContent,
                                     fullScript,
                                     apiConfig,
@@ -697,7 +702,7 @@ export async function POST(request: NextRequest) {
                         }
                     }
 
-                    fullScript = applyScriptContinuationGuards(fullScript);
+                    fullScript = normalizeGeneratedScript(fullScript);
                     const finalScriptValidation = validateScriptStructure(fullScript);
                     if (!finalScriptValidation.ok) {
                         throw new Error(`生成结果疑似截断：${finalScriptValidation.reason || "剧本结构不完整"}，请重试`);

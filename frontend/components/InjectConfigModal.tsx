@@ -176,6 +176,10 @@ export function InjectConfigModal({
     const [loadingStages, setLoadingStages] = useState(false);
     const [regeneratingImage, setRegeneratingImage] = useState(false);
     const [regenMessage, setRegenMessage] = useState("");
+    const [prologueStepId, setPrologueStepId] = useState("");
+    const [prologueText, setPrologueText] = useState("");
+    const [updatingPrologue, setUpdatingPrologue] = useState(false);
+    const [prologueMessage, setPrologueMessage] = useState("");
 
     // --- 自定义文档状态 ---
     const [customDocExpanded, setCustomDocExpanded] = useState(false);
@@ -660,7 +664,7 @@ export function InjectConfigModal({
         return Array.isArray(data.stages) ? data.stages : [];
     };
 
-    const loadStages = async () => {
+    const loadStages = async (target: "image" | "prologue" = "image") => {
         setError("");
         if (!handleSaveCredentials()) return;
         const { finalTaskId } = resolveTaskIds();
@@ -670,22 +674,131 @@ export function InjectConfigModal({
         }
 
         setLoadingStages(true);
-        setRegenMessage("正在加载阶段列表...");
+        if (target === "prologue") {
+            setPrologueMessage("正在加载阶段列表...");
+        } else {
+            setRegenMessage("正在加载阶段列表...");
+        }
         try {
             const loadedStages = await fetchStageOptions(finalTaskId);
             setRegenStages(loadedStages);
             if (loadedStages.length > 0) {
                 setRegenStepId((prev) => prev || loadedStages[0].stepId);
-                setRegenMessage(`阶段列表已加载：${loadedStages.length} 个阶段`);
+                if (target === "prologue") {
+                    const nextStepId = loadedStages.some((stage) => stage.stepId === prologueStepId)
+                        ? prologueStepId
+                        : loadedStages[0].stepId;
+                    const selectedStage = loadedStages.find((stage) => stage.stepId === nextStepId) || loadedStages[0];
+                    setPrologueStepId(nextStepId);
+                    setPrologueText(selectedStage.stepSnapshot?.prologue || "");
+                } else {
+                    setPrologueStepId((prev) => prev || loadedStages[0].stepId);
+                    setPrologueText((prev) => prev || loadedStages[0].stepSnapshot?.prologue || "");
+                }
+                const message = `阶段列表已加载：${loadedStages.length} 个阶段`;
+                if (target === "prologue") {
+                    setPrologueMessage(message);
+                } else {
+                    setRegenMessage(message);
+                }
             } else {
                 setRegenStepId("");
-                setRegenMessage("未查询到可用阶段，请确认任务中已存在 SCRIPT_NODE 节点");
+                setPrologueStepId("");
+                const message = "未查询到可用阶段，请确认任务中已存在 SCRIPT_NODE 节点";
+                if (target === "prologue") {
+                    setPrologueMessage(message);
+                } else {
+                    setRegenMessage(message);
+                }
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : "加载阶段列表失败");
-            setRegenMessage("");
+            if (target === "prologue") {
+                setPrologueMessage("");
+            } else {
+                setRegenMessage("");
+            }
         } finally {
             setLoadingStages(false);
+        }
+    };
+
+    const handlePrologueStageChange = (nextStepId: string) => {
+        setPrologueStepId(nextStepId);
+        const selectedStage = regenStages.find((stage) => stage.stepId === nextStepId);
+        setPrologueText(selectedStage?.stepSnapshot?.prologue || "");
+        setPrologueMessage(selectedStage ? `已载入「${selectedStage.stepName}」当前开场白` : "");
+    };
+
+    const handleUpdatePrologue = async () => {
+        setError("");
+        setPrologueMessage("");
+        if (!handleSaveCredentials()) return;
+
+        const { finalTaskId, finalCourseId, finalLibraryFolderId } = resolveTaskIds();
+        if (!finalTaskId) {
+            setError("请先填写目标训练任务 ID 或完整链接");
+            return;
+        }
+        if (!finalCourseId) {
+            setError("手动注入开场白需要 courseId，请粘贴完整任务链接后重试");
+            return;
+        }
+        if (!prologueStepId) {
+            setError("请选择要写入开场白的阶段卡片");
+            return;
+        }
+        if (!prologueText.trim()) {
+            setError("请填写要注入的开场白内容");
+            return;
+        }
+
+        setUpdatingPrologue(true);
+        setPrologueMessage("正在写入开场白...");
+        try {
+            const response = await fetch("/api/training-inject/prologue", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    trainTaskId: finalTaskId,
+                    courseId: finalCourseId,
+                    libraryFolderId: finalLibraryFolderId,
+                    stepId: prologueStepId,
+                    prologue: prologueText,
+                    credentials: buildPolymasCredentials(),
+                }),
+            });
+
+            const rawText = await response.text();
+            let data: any = {};
+            try {
+                data = rawText ? JSON.parse(rawText) : {};
+            } catch {
+                data = { success: false, error: rawText || "开场白写入失败" };
+            }
+
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || `请求失败: ${response.status} ${response.statusText}`);
+            }
+
+            setRegenStages((prev) => prev.map((stage) => (
+                stage.stepId === prologueStepId
+                    ? {
+                        ...stage,
+                        stepSnapshot: {
+                            ...(stage.stepSnapshot || {}),
+                            prologue: prologueText,
+                        },
+                    }
+                    : stage
+            )));
+            const selectedStage = regenStages.find((stage) => stage.stepId === prologueStepId);
+            setPrologueMessage(`已写入「${selectedStage?.stepName || "目标阶段"}」开场白`);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "开场白写入失败");
+            setPrologueMessage("");
+        } finally {
+            setUpdatingPrologue(false);
         }
     };
 
@@ -1708,7 +1821,7 @@ export function InjectConfigModal({
                                             <div className="flex items-center gap-2">
                                                 <button
                                                     type="button"
-                                                    onClick={loadStages}
+                                                    onClick={() => loadStages()}
                                                     disabled={loadingStages || regeneratingImage || injecting}
                                                     className="px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-50"
                                                 >
@@ -1740,6 +1853,60 @@ export function InjectConfigModal({
                                             {regeneratingImage ? "重生中..." : "执行图片重生"}
                                         </button>
                                         {regenMessage && <span className="text-xs text-emerald-600">{regenMessage}</span>}
+                                    </div>
+                                </div>
+
+                                <div className="pt-3 border-t border-slate-100 space-y-3">
+                                    <div className="flex items-center gap-2">
+                                        <FileText className="w-3.5 h-3.5 text-slate-500" />
+                                        <label className="text-xs font-medium text-slate-700">开场白手动注入（可选）</label>
+                                    </div>
+                                    <p className="text-xs leading-5 text-slate-400">
+                                        当平台前端输入框限制字数、开场白内容较长时，可使用此功能通过接口直接写入 prologue，不受前端字数限制。
+                                    </p>
+
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => loadStages("prologue")}
+                                            disabled={loadingStages || updatingPrologue || injecting}
+                                            className="px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-50"
+                                        >
+                                            {loadingStages ? "加载中..." : "加载阶段列表"}
+                                        </button>
+                                        <span className="text-xs text-slate-400">选择阶段卡片后写入 prologue</span>
+                                    </div>
+
+                                    <select
+                                        value={prologueStepId}
+                                        onChange={(e) => handlePrologueStageChange(e.target.value)}
+                                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white"
+                                    >
+                                        {regenStages.length === 0 && <option value="">请先加载阶段列表</option>}
+                                        {regenStages.map((stage) => (
+                                            <option key={stage.stepId} value={stage.stepId}>{stage.stepName}</option>
+                                        ))}
+                                    </select>
+
+                                    <textarea
+                                        value={prologueText}
+                                        onChange={(e) => setPrologueText(e.target.value)}
+                                        rows={5}
+                                        placeholder="填写要写入该阶段的完整开场白..."
+                                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 resize-y"
+                                    />
+
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleUpdatePrologue}
+                                            disabled={updatingPrologue || injecting || !prologueStepId || !prologueText.trim()}
+                                            className="px-3 py-2 text-sm bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white rounded-lg font-medium flex items-center gap-2"
+                                        >
+                                            {updatingPrologue ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                                            {updatingPrologue ? "写入中..." : "写入开场白"}
+                                        </button>
+                                        {prologueMessage && <span className="text-xs text-emerald-600">{prologueMessage}</span>}
                                     </div>
                                 </div>
 

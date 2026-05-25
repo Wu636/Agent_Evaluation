@@ -1,5 +1,5 @@
 import { isScriptFieldLine, matchStageHeading, normalizeTrainingScriptSource, parseTaskConfig, parseTrainingScript, parseTrainingScriptFlowConfig } from "@/lib/training-injector/parser";
-import { TRAINING_FLOW_END_NODE_ID, TrainingScriptPlan } from "./types";
+import { ScriptFlowEdge, TRAINING_FLOW_END_NODE_ID, TrainingScriptPlan } from "./types";
 import { detectMultiRoleTextSignal } from "./plan-validation";
 
 export interface ScriptStageSection {
@@ -149,6 +149,146 @@ export function replaceStageInScript(markdown: string, stageIndex: number, nextS
     return updatedMarkdown;
 }
 
+function normalizeEndNodeId(value: string): boolean {
+    const normalized = String(value || "").trim().toLowerCase();
+    return normalized === TRAINING_FLOW_END_NODE_ID.toLowerCase() ||
+        normalized === "end" ||
+        normalized === "task_complete" ||
+        normalized === "结束" ||
+        normalized === "训练结束";
+}
+
+function resolveEdgeStageLabel(
+    moduleId: string,
+    plan: TrainingScriptPlan,
+    fallback: "from" | "to"
+): string {
+    if (normalizeEndNodeId(moduleId)) return "END";
+    const index = plan.modules.findIndex((module) => module.id === moduleId);
+    if (index >= 0) return `阶段${index + 1}`;
+    return fallback === "to" ? "END" : "阶段1";
+}
+
+function buildSerializableGraphEdges(plan: TrainingScriptPlan): Array<{
+    from: string;
+    to: string;
+    condition: string;
+    conditionDescription: string;
+    transitionPrompt: string;
+    isDefault: number;
+}> {
+    const moduleIds = new Set(plan.modules.map((module) => module.id));
+    const defaultAssignedBySource = new Set<string>();
+    return (plan.edges || [])
+        .filter((edge: ScriptFlowEdge) =>
+            moduleIds.has(edge.fromModuleId) &&
+            (moduleIds.has(edge.toModuleId) || normalizeEndNodeId(edge.toModuleId)) &&
+            edge.fromModuleId !== edge.toModuleId &&
+            edge.condition.trim()
+        )
+        .map((edge) => {
+            const from = resolveEdgeStageLabel(edge.fromModuleId, plan, "from");
+            const isDefault = defaultAssignedBySource.has(from) ? 0 : 1;
+            if (isDefault === 1) {
+                defaultAssignedBySource.add(from);
+            }
+            return {
+                from,
+                to: resolveEdgeStageLabel(edge.toModuleId, plan, "to"),
+                condition: edge.condition.trim(),
+                conditionDescription: edge.conditionDescription || "",
+                transitionPrompt: edge.transitionPrompt || "",
+                isDefault,
+            };
+        });
+}
+
+function stripNonlinearFlowConfigBlocks(markdown: string): string {
+    const lines = String(markdown || "").split("\n");
+    const headingPattern = /^#{1,6}\s*(?:🔀\s*)?(?:非线性|分支|图结构|流程图|多线路)[\s\S]{0,32}(?:跳转|流程|连线|关系)(?:\s|$|[（(])/i;
+    const genericSectionPattern = /^#{1,6}\s+\S/;
+    const keptLines: string[] = [];
+    let inCodeBlock = false;
+    let skippingFlowBlock = false;
+    let skippingCodeBlock = false;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+
+        if (skippingFlowBlock) {
+            if (trimmed.startsWith("```")) {
+                skippingCodeBlock = !skippingCodeBlock;
+                continue;
+            }
+
+            if (!skippingCodeBlock && trimmed === TRAINING_SCRIPT_COMPLETE_MARKER) {
+                skippingFlowBlock = false;
+                keptLines.push(line);
+                continue;
+            }
+
+            if (!skippingCodeBlock && genericSectionPattern.test(trimmed)) {
+                skippingFlowBlock = false;
+                if (headingPattern.test(trimmed)) {
+                    skippingFlowBlock = true;
+                    skippingCodeBlock = false;
+                    continue;
+                }
+                keptLines.push(line);
+            }
+            continue;
+        }
+
+        if (trimmed.startsWith("```")) {
+            inCodeBlock = !inCodeBlock;
+            keptLines.push(line);
+            continue;
+        }
+
+        if (!inCodeBlock && headingPattern.test(trimmed)) {
+            skippingFlowBlock = true;
+            skippingCodeBlock = false;
+            continue;
+        }
+
+        keptLines.push(line);
+    }
+
+    return keptLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+export function buildNonlinearFlowConfigMarkdown(plan?: TrainingScriptPlan | null): string {
+    if (!plan || plan.flowType !== "graph") return "";
+    const edges = buildSerializableGraphEdges(plan);
+    if (edges.length === 0) return "";
+
+    return [
+        "## 🔀 非线性跳转关系",
+        "```json",
+        JSON.stringify({ flowType: "graph", edges }, null, 2),
+        "```",
+    ].join("\n");
+}
+
+export function ensureNonlinearFlowConfigMarkdown(
+    markdown: string,
+    plan?: TrainingScriptPlan | null
+): string {
+    if (!plan || plan.flowType !== "graph") return markdown;
+    const flowBlock = buildNonlinearFlowConfigMarkdown(plan);
+    if (!flowBlock) return markdown;
+
+    const raw = stripNonlinearFlowConfigBlocks(markdown);
+    if (!raw) return raw;
+
+    const markerPattern = new RegExp(`\\n*${TRAINING_SCRIPT_COMPLETE_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`);
+    if (markerPattern.test(raw)) {
+        return raw.replace(markerPattern, `\n\n${flowBlock}\n\n${TRAINING_SCRIPT_COMPLETE_MARKER}`);
+    }
+
+    return `${raw}\n\n${flowBlock}`;
+}
+
 export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingScriptPlan | null): ScriptDiagnosticsResult {
     const issues: ScriptDiagnosticIssue[] = [];
     const taskConfig = parseTaskConfig(markdown);
@@ -269,6 +409,7 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
         });
         const endKeys = new Set(["end", "结束", "训练结束", "task_complete", TRAINING_FLOW_END_NODE_ID.toLowerCase()]);
         const outgoingConditions = new Map<string, Set<string>>();
+        const defaultCountBySource = new Map<string, number>();
         let hasEndEdge = false;
 
         if (flowConfig.edges.length === 0) {
@@ -298,6 +439,14 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
             }
             existing.add(condition);
             outgoingConditions.set(fromKey, existing);
+
+            if (edge.isDefault === 1) {
+                const defaultCount = (defaultCountBySource.get(fromKey) || 0) + 1;
+                defaultCountBySource.set(fromKey, defaultCount);
+                if (defaultCount > 1) {
+                    issues.push({ level: "error", message: `非线性连线起点「${edge.from}」存在多条 isDefault=1 的默认出口。`, field: "flowConfig" });
+                }
+            }
         });
 
         if (!hasEndEdge) {

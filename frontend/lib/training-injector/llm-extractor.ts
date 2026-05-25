@@ -122,7 +122,8 @@ const SCRIPT_EXTRACTION_PROMPT = `请从以下 Markdown 文档中提取训练剧
         "to": "阶段2 或 END",
         "condition": "跳转关键词",
         "conditionDescription": "触发该跳转的条件说明",
-        "transitionPrompt": "该条连线专用的transitionPrompt完整内容"
+        "transitionPrompt": "该条连线专用的transitionPrompt完整内容",
+        "isDefault": 1
       }
     ]
   },
@@ -169,6 +170,7 @@ const SCRIPT_EXTRACTION_PROMPT = `请从以下 Markdown 文档中提取训练剧
    - 如果没有非线性关系，flowType 填 "linear"，edges 填空数组 []
    - from/to 优先使用 "阶段1"、"阶段2" 这类阶段编号；指向结束节点时 to 填 "END"
    - 每条边的 condition 必须是该连线实际使用的跳转关键词，transitionPrompt 必须是该连线专用内容
+   - 每条边必须提取或补充 isDefault；同一个 from 下只能有一条边 isDefault=1，其他边必须为 0
 6. steps 从各个 "阶段" 中提取，按阶段顺序排列
 7. interactiveRounds 是整数
 8. 如果某个字段在文档中未找到，填空字符串（字符串字段）或 0（数字字段）
@@ -202,13 +204,26 @@ export async function extractScriptConfig(
     };
 
     if (Array.isArray(parsed.flowConfig?.edges)) {
-        result.flowConfig.edges = parsed.flowConfig.edges.map((edge: Record<string, unknown>) => ({
-            from: String(edge.from || ""),
-            to: String(edge.to || ""),
-            condition: String(edge.condition || ""),
-            conditionDescription: String(edge.conditionDescription || ""),
-            transitionPrompt: String(edge.transitionPrompt || ""),
-        })).filter((edge: ParsedFlowConfig["edges"][number]) => edge.from && edge.to && edge.condition);
+        const defaultAssignedBySource = new Set<string>();
+        result.flowConfig.edges = parsed.flowConfig.edges.map((edge: Record<string, unknown>) => {
+            const from = String(edge.from || "");
+            const rawDefault = edge.isDefault ?? edge.default ?? edge.is_default;
+            const explicitDefault = rawDefault === undefined || rawDefault === null || rawDefault === ""
+                ? undefined
+                : rawDefault === 1 || rawDefault === true || String(rawDefault).trim().toLowerCase() === "1" || String(rawDefault).trim().toLowerCase() === "true";
+            const isDefault = explicitDefault === false || defaultAssignedBySource.has(from) ? 0 : 1;
+            if (isDefault === 1) {
+                defaultAssignedBySource.add(from);
+            }
+            return {
+                from,
+                to: String(edge.to || ""),
+                condition: String(edge.condition || ""),
+                conditionDescription: String(edge.conditionDescription || ""),
+                transitionPrompt: String(edge.transitionPrompt || ""),
+                isDefault,
+            };
+        }).filter((edge: ParsedFlowConfig["edges"][number]) => edge.from && edge.to && edge.condition);
         if (result.flowConfig.edges.length > 0) {
             result.flowConfig.flowType = "graph";
         }

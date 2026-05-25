@@ -33,6 +33,7 @@ export interface ParsedFlowEdge {
     condition: string;
     conditionDescription: string;
     transitionPrompt: string;
+    isDefault?: number;
 }
 
 /** 解析后的剧本流程配置 */
@@ -112,4 +113,5 @@ export interface PolymasScriptFlow {
     scriptStepEndId: string;
     flowCondition: string;
     transitionPrompt: string;
+    isDefault?: number | boolean | string;
 }

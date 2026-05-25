@@ -1262,6 +1262,37 @@ export async function editScriptStep(
     return result.success;
 }
 
+/** 用平台返回的原始 stepDetailDTO 更新节点，适合只改开场白这类单字段补丁 */
+export async function editScriptStepDetailDTO(
+    trainTaskId: string,
+    stepId: string,
+    stepDetailDTO: Record<string, unknown>,
+    courseId: string,
+    libraryFolderId: string,
+    position: { x: number; y: number },
+    credentials: PolymasCredentials
+): Promise<boolean> {
+    const result = await directRequest(
+        "editScriptStep",
+        {
+            trainTaskId,
+            stepId,
+            courseId,
+            libraryFolderId,
+            stepDetailDTO,
+            positionDTO: position,
+        },
+        credentials
+    );
+
+    if (!result.success) {
+        console.error("[editScriptStepDetailDTO] 更新节点失败:", result.error);
+    } else {
+        console.log("[editScriptStepDetailDTO] 更新节点成功: stepId=", stepId);
+    }
+    return result.success;
+}
+
 /** 创建连线 */
 export async function createScriptFlow(
     trainTaskId: string,
@@ -1269,9 +1300,15 @@ export async function createScriptFlow(
     endId: string,
     conditionText: string,
     transitionPrompt: string,
-    credentials: PolymasCredentials
+    credentials: PolymasCredentials,
+    options?: { isDefault?: boolean | number }
 ): Promise<boolean> {
     const flowId = generateId();
+    const isDefault = options?.isDefault === undefined
+        ? 1
+        : options.isDefault
+            ? 1
+            : 0;
 
     const result = await directRequest(
         "createScriptStepFlow",
@@ -1296,7 +1333,7 @@ export async function createScriptFlow(
             },
             transitionPrompt: transitionPrompt,
             transitionHistoryNum: -1,
-            isDefault: 1,
+            isDefault,
             isError: false,
         },
         credentials

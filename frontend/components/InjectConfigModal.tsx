@@ -162,6 +162,8 @@ export function InjectConfigModal({
     const [availableImageModels, setAvailableImageModels] = useState<ModelInfo[]>(IMAGE_MODEL_OPTIONS);
     const [coverStylePrompt, setCoverStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染， 电影级光影 高清细节，16:9宽屏构图，尽量不要出现西方面孔");
     const [backgroundStylePrompt, setBackgroundStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染，电影级光影，16:9宽屏构图，单一完整场景，适合作为教学阶段背景，尽量不要出现西方面孔");
+    const [digitalHumanAvatarMode, setDigitalHumanAvatarMode] = useState<"existing" | "ai">("existing");
+    const [digitalHumanAvatarStylePrompt, setDigitalHumanAvatarStylePrompt] = useState("必须是清晰可见的人类导师头像，有完整头部、脸部、颈部和肩部；专业教学数字人头像，单人正面半身，亲切可信，干净背景；不要空教室、会议室、室内场景图、文字、logo、水印、多人合影");
     const [imageProviderMode, setImageProviderMode] = useState<"cloudapi" | "openai">("cloudapi");
     const [imageModel, setImageModel] = useState(DEFAULT_IMAGE_MODEL);
     const [taskContextHint, setTaskContextHint] = useState("");
@@ -1095,12 +1097,13 @@ export function InjectConfigModal({
 
         const shouldGenerateCoverForThisRun = injectCoverImage && injectMode !== "append";
         const shouldGenerateBackgroundForThisRun = injectBackgroundImage;
-        const needsImageWork = injectScript && (shouldGenerateCoverForThisRun || shouldGenerateBackgroundForThisRun);
-        const imageExecutionPlan = await prepareImageExecutionPlan(needsImageWork);
+        const shouldGenerateAvatarForThisRun = injectScript && digitalHumanAvatarMode === "ai";
+        const needsImageProviderPrecheck = injectScript && (shouldGenerateCoverForThisRun || shouldGenerateBackgroundForThisRun);
+        const imageExecutionPlan = await prepareImageExecutionPlan(needsImageProviderPrecheck);
         const effectiveProviderMode = imageExecutionPlan.effectiveProviderMode;
         const effectiveImageProviderPriority = imageExecutionPlan.effectiveImageProviderPriority;
         const effectiveSwitchedImageProviderPriority = imageExecutionPlan.effectiveSwitchedImageProviderPriority;
-        const shouldRunPostImageBatch = needsImageWork;
+        const shouldRunPostImageBatch = injectScript && (shouldGenerateCoverForThisRun || shouldGenerateBackgroundForThisRun);
         const shouldInjectCoverInMain = shouldGenerateCoverForThisRun && !shouldRunPostImageBatch;
         const shouldInjectBgInMain = shouldGenerateBackgroundForThisRun && !shouldRunPostImageBatch;
 
@@ -1175,6 +1178,18 @@ export function InjectConfigModal({
                         : []),
                 ]);
             }
+            if (shouldGenerateAvatarForThisRun) {
+                setProgressLogs((prev) => [
+                    ...prev,
+                    {
+                        type: "progress",
+                        phase: "script",
+                        message: "已开启 AI 数字人头像：头像固定使用 OpenAI 兼容接口生成，随后上传并同步为数字人形象。",
+                        current: 0,
+                        total: 1,
+                    },
+                ]);
+            }
 
             const response = await fetch("/api/training-inject", {
                 method: "POST",
@@ -1188,10 +1203,12 @@ export function InjectConfigModal({
                     extractionMode,
                     coverStylePrompt: coverStylePrompt.trim() || undefined,
                     backgroundStylePrompt: backgroundStylePrompt.trim() || undefined,
-                    imageModel: effectiveProviderMode === "openai" ? imageModel : undefined,
+                    imageModel: digitalHumanAvatarMode === "ai" || effectiveProviderMode === "openai" ? imageModel : undefined,
                     imageProviderPriority: effectiveImageProviderPriority,
                     injectCoverImage: shouldInjectCoverInMain,
                     injectBackgroundImage: shouldInjectBgInMain,
+                    digitalHumanAvatarMode,
+                    digitalHumanAvatarStylePrompt: digitalHumanAvatarStylePrompt.trim() || undefined,
                     scriptMarkdown: injectScript ? effectiveScriptMd : undefined,
                     rubricMarkdown: injectRubric ? effectiveRubricMd : undefined,
                     injectMode,
@@ -1744,6 +1761,50 @@ export function InjectConfigModal({
                                             ))}
                                         </select>
                                         <p className="text-xs text-slate-400">仅在 OpenAI 兼容接口生图时生效。当前默认推荐 `doubao-seedream-5-0-260128`。</p>
+                                    </div>
+                                )}
+
+                                {injectScript && (
+                                    <div className="pt-3 border-t border-slate-100 space-y-3">
+                                        <label className="text-xs font-medium text-slate-700 block">数字人头像来源</label>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            <label className={`p-2 border rounded-lg cursor-pointer transition-colors ${digitalHumanAvatarMode === 'existing' ? 'border-indigo-500 bg-indigo-50/50' : 'hover:bg-slate-50 border-slate-200'}`}>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <input
+                                                        type="radio"
+                                                        checked={digitalHumanAvatarMode === 'existing'}
+                                                        onChange={() => setDigitalHumanAvatarMode('existing')}
+                                                        className="text-indigo-600 focus:ring-indigo-500"
+                                                    />
+                                                    <span className="text-sm font-medium text-slate-800">复用账号已有头像</span>
+                                                </div>
+                                                <p className="text-xs text-slate-500 pl-6">从当前账号已有数字人中选择可用形象和音色参数。</p>
+                                            </label>
+                                            <label className={`p-2 border rounded-lg cursor-pointer transition-colors ${digitalHumanAvatarMode === 'ai' ? 'border-indigo-500 bg-indigo-50/50' : 'hover:bg-slate-50 border-slate-200'}`}>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <input
+                                                        type="radio"
+                                                        checked={digitalHumanAvatarMode === 'ai'}
+                                                        onChange={() => setDigitalHumanAvatarMode('ai')}
+                                                        className="text-indigo-600 focus:ring-indigo-500"
+                                                    />
+                                                    <span className="text-sm font-medium text-slate-800">AI 生成头像并上传</span>
+                                                </div>
+                                                <p className="text-xs text-slate-500 pl-6">为每个训练官生成头像，上传后同步为数字人形象。</p>
+                                            </label>
+                                        </div>
+                                        {digitalHumanAvatarMode === "ai" && (
+                                            <div className="space-y-2">
+                                                <input
+                                                    type="text"
+                                                    value={digitalHumanAvatarStylePrompt}
+                                                    onChange={(e) => setDigitalHumanAvatarStylePrompt(e.target.value)}
+                                                    placeholder="例如：专业讲师、半身头像、亲切可信、干净背景"
+                                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                                />
+                                                <p className="text-xs text-slate-400">头像固定使用 OpenAI 兼容接口生成；音色仍优先取账号已有数字人的可用音色参数。</p>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 

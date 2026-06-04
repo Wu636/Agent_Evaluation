@@ -371,7 +371,6 @@ function validatePlanLocally(plan: TrainingScriptPlan | null): ScriptPlanValidat
         if (!module.description.trim()) issues.push({ level: "error", message: `模块 ${index + 1} 缺少模块说明。`, moduleId: module.id, field: "description" });
         if (module.keyPoints.length < 2) issues.push({ level: "error", message: `模块 ${index + 1} 的关键要点不足 2 条。`, moduleId: module.id, field: "keyPoints" });
         if (module.suggestedRounds < 1) issues.push({ level: "error", message: `模块 ${index + 1} 的建议轮次不能小于 1。`, moduleId: module.id, field: "suggestedRounds" });
-        if (module.suggestedRounds > 10) issues.push({ level: "error", message: `模块 ${index + 1} 的建议轮次超过 10，需拆分为多个模块。`, moduleId: module.id, field: "suggestedRounds" });
         const multiRoleIssue = findMultiRoleModuleIssue(module, index);
         if (multiRoleIssue) issues.push(multiRoleIssue);
     });
@@ -2138,7 +2137,6 @@ export function TrainingGenerateInterface() {
                                                             <input
                                                                 type="number"
                                                                 min={1}
-                                                                max={10}
                                                                 value={module.suggestedRounds}
                                                                 onChange={(e) => updateModule(module.id, (prev) => ({ ...prev, suggestedRounds: Number(e.target.value) || 1 }))}
                                                                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"

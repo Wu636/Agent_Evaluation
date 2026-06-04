@@ -490,8 +490,8 @@ function buildOptimizationPrompt(params: {
         "7. 若问题涉及“流程推进过快/过早跳转/学生还没完成就进入下一阶段”，必须同时检查两类根因：",
         "   - 准入/准出条件是否过松",
         "   - 互动轮次是否过小。系统按“学生一次发言 + AI 一次回复”为 1 轮，到达预设轮次后会强制流转，不能只盯准入准出条件。",
-        "8. 单阶段互动轮次上限为 10。若你判断某阶段合理完成目标需要超过 10 轮，必须输出 scope=global 且 action_type=replan 的动作，明确要求把该模块拆成两个相邻阶段，而不是继续堆高单阶段轮次。",
-        "9. 只有在需要拆分阶段、调整模块数或重排全局结构时，才使用 scope=global / action_type=replan；否则优先用 module 动作局部修补。",
+        "8. 单阶段互动轮次不再限制上限；可以根据合理完成目标所需的交互深度直接提高互动轮次，不得仅因为轮次较多而拆分阶段。",
+        "9. 只有在任务阶段本身不同、需要切换智能体角色、需要调整模块数或重排全局结构时，才使用 scope=global / action_type=replan；否则优先用 module 动作局部修补。",
         "",
         "JSON 结构如下：",
         "{",
@@ -588,7 +588,7 @@ function buildFeedbackFromActions(actions: OptimizationAction[]): string {
         "- 满足跳转条件时保持 flowCondition 输出纯净。",
         "- 优先修订开场白、互动轮次、准入准出检查、追问路径和提示词中的约束逻辑。",
         "- 学生一次发言 + AI 一次回复记为 1 轮；达到预设轮次后系统会强制推进，因此遇到“流程推进过快”时必须同步检查互动轮次，而不是只收紧准入准出条件。",
-        "- 单阶段互动轮次最高为 10；若当前阶段合理完成目标预计超过 10 轮，请改写为可在 10 轮内完成的范围，或明确提示需要拆分阶段。",
+        "- 单阶段互动轮次不限制上限；不得仅因为轮次较多而要求拆分阶段。",
     ].join("\n");
 }
 
@@ -623,13 +623,8 @@ function buildPlanningFeedbackFromActions(
                 ? `模块「${action.module_title}」`
                 : "目标模块";
 
-        const splitHint = Number.isFinite(action.target_stage_number)
-            ? `请将模块${action.target_stage_number}拆分成两个模块。`
-            : "";
-
         return [
             `${index + 1}. ${action.title}`,
-            splitHint,
             `- 目标位置：${target}`,
             `- 结构修订要求：${action.instruction}`,
             action.rationale ? `- 修订原因：${action.rationale}` : "",
@@ -645,8 +640,8 @@ function buildPlanningFeedbackFromActions(
         "结构修订硬约束：",
         "- 学生一次发言 + AI 一次回复记为 1 轮；达到预设轮次后系统会强制流转。",
         "- 若问题是流程推进过快，必须同时处理准入条件、准出检查和建议轮次，不能只收紧准入准出。",
-        "- 每个模块的建议轮次最高为 10。",
-        "- 若某个模块合理完成目标预计超过 10 轮，必须拆分成两个相邻模块分阶段推进。",
+        "- 每个模块的建议轮次不限制上限，应根据完成训练目标所需的交互深度合理设置。",
+        "- 不得仅因为轮次较多而拆分模块；只有任务阶段本身不同、流程结构需要调整或需要切换智能体角色时才拆分模块。",
         "- 非必要不要减少模块数量，也不要打乱原有整体训练逻辑。",
         optimizationFeedback?.trim()
             ? ["", "用户额外修订建议：", optimizationFeedback.trim()].join("\n")

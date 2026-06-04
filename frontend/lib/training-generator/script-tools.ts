@@ -392,8 +392,8 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
         if (!step.transitionPrompt.trim() && index < parsedSteps.length - 1) {
             issues.push({ level: "warning", message: `阶段 ${index + 1} 缺少 transitionPrompt。`, stageIndex: index, field: "transitionPrompt" });
         }
-        if (!step.interactiveRounds || step.interactiveRounds < 1 || step.interactiveRounds > 10) {
-            issues.push({ level: "warning", message: `阶段 ${index + 1} 的互动轮次不合理（建议 1-10 轮）。`, stageIndex: index, field: "interactiveRounds" });
+        if (!step.interactiveRounds || step.interactiveRounds < 1) {
+            issues.push({ level: "warning", message: `阶段 ${index + 1} 的互动轮次不合理（应大于等于 1 轮）。`, stageIndex: index, field: "interactiveRounds" });
         }
     });
 

@@ -22,6 +22,7 @@ import {
     editConfiguration,
     generateBackgroundImage,
     generateCourseCoverImageSource,
+    generateAndSyncDigitalHumanAvatar,
     uploadCoverImageFromUrl,
     parsePolymasUrl,
 } from "@/lib/training-injector/api";
@@ -40,6 +41,70 @@ function normalizeStageNameForAppend(value: unknown): string {
 
 function normalizeDigitalHumanNameForReuse(value: unknown): string {
     return String(value || "").trim().replace(/\s+/g, "");
+}
+
+type OwnerDigitalHumanItem = Awaited<ReturnType<typeof listOwnerDigitalHumans>>[number];
+
+interface ResolvedDigitalHumanConfig {
+    customNid: string;
+    digitalHumanName: string;
+    nameKey: string;
+    avatarNid: string;
+    voiceNid: string;
+    agentVoiceId?: string;
+    voiceName?: string;
+    source: "existing" | "created";
+}
+
+function cleanDigitalHumanValue(value: unknown): string {
+    return String(value || "").trim();
+}
+
+function buildDigitalHumanExactKey(nameKey: string, voiceNid: string, avatarNid: string): string {
+    return `${nameKey}::${voiceNid}::${avatarNid}`;
+}
+
+function toResolvedDigitalHumanConfig(item: OwnerDigitalHumanItem): ResolvedDigitalHumanConfig | null {
+    const customNid = cleanDigitalHumanValue(item.customNid || item.bizId);
+    const digitalHumanName = cleanDigitalHumanValue(item.digitalHumanName);
+    const nameKey = normalizeDigitalHumanNameForReuse(digitalHumanName);
+    const avatarNid = cleanDigitalHumanValue(item.avatarNid);
+    const voiceNid = cleanDigitalHumanValue(item.voiceNid);
+    if (!customNid || !nameKey || !avatarNid || !voiceNid) return null;
+
+    const agentVoiceId = cleanDigitalHumanValue(item.bigModelVoiceParam) || undefined;
+
+    return {
+        customNid,
+        digitalHumanName,
+        nameKey,
+        avatarNid,
+        voiceNid,
+        agentVoiceId,
+        voiceName: cleanDigitalHumanValue(item.voiceName) || undefined,
+        source: "existing",
+    };
+}
+
+function findReusableDigitalHumanByName(
+    configs: ResolvedDigitalHumanConfig[],
+    nameKey: string
+): ResolvedDigitalHumanConfig | null {
+    if (!nameKey) return null;
+    const exactMatch = configs.find((item) => item.nameKey === nameKey);
+    if (exactMatch) return exactMatch;
+
+    if (nameKey.length < 2) return null;
+    return configs.find((item) => (
+        item.nameKey.length >= 2 &&
+        (item.nameKey.includes(nameKey) || nameKey.includes(item.nameKey))
+    )) || null;
+}
+
+function describeDigitalHuman(config: ResolvedDigitalHumanConfig): string {
+    return config.voiceName
+        ? `${config.digitalHumanName}（音色：${config.voiceName}）`
+        : config.digitalHumanName;
 }
 
 function getNodeX(step: PolymasScriptStep): number {
@@ -232,6 +297,8 @@ export async function POST(request: NextRequest) {
                     imageProviderPriority,
                     injectCoverImage = true,
                     injectBackgroundImage = true,
+                    digitalHumanAvatarMode = "existing",
+                    digitalHumanAvatarStylePrompt,
                     scriptMarkdown,
                     rubricMarkdown,
                     injectMode = "replace",
@@ -248,6 +315,8 @@ export async function POST(request: NextRequest) {
                     imageProviderPriority?: string;
                     injectCoverImage?: boolean;
                     injectBackgroundImage?: boolean;
+                    digitalHumanAvatarMode?: "existing" | "ai";
+                    digitalHumanAvatarStylePrompt?: string;
                     scriptMarkdown?: string;
                     rubricMarkdown?: string;
                     injectMode: "replace" | "append";
@@ -413,6 +482,7 @@ export async function POST(request: NextRequest) {
 
                     // 提前检测背景图能力
                     const canSetBgImage = !!(injectBackgroundImage && finalCourseId && finalLibraryFolderId);
+                    const shouldGenerateDigitalHumanAvatar = digitalHumanAvatarMode === "ai";
 
                     // 查询现有节点和连线
                     send({ type: "progress", phase: "script", message: "正在查询现有工作流...", current: 0, total: steps.length });
@@ -510,9 +580,11 @@ export async function POST(request: NextRequest) {
                         ? buildGraphStepPositions(steps, resolvedGraphEdges, baseX, baseY, X_GAP)
                         : [];
                     const createdStepIds: string[] = [];
-                    const customDigitalHumanCache = new Map<string, string>();
-                    const existingDigitalHumanByExactKey = new Map<string, string>();
-                    const existingDigitalHumanByName = new Map<string, string>();
+                    const customDigitalHumanCache = new Map<string, ResolvedDigitalHumanConfig>();
+                    const existingDigitalHumanByExactKey = new Map<string, ResolvedDigitalHumanConfig>();
+                    const existingDigitalHumanByName = new Map<string, ResolvedDigitalHumanConfig>();
+                    const reusableDigitalHumanConfigs: ResolvedDigitalHumanConfig[] = [];
+                    const generatedAvatarCache = new Map<string, { avatarNid: string; avatarUrl: string }>();
 
                     if (steps.length === 0) {
                         send({
@@ -542,19 +614,20 @@ export async function POST(request: NextRequest) {
                             );
 
                             for (const item of ownerDigitalHumans) {
-                                const customNid = String(item.customNid || "").trim();
-                                const nameKey = normalizeDigitalHumanNameForReuse(item.digitalHumanName);
-                                if (!customNid || !nameKey) continue;
+                                const config = toResolvedDigitalHumanConfig(item);
+                                if (!config) continue;
 
-                                const voiceNid = String(item.voiceNid || "").trim();
-                                const avatarNid = String(item.avatarNid || "").trim();
-                                const exactKey = `${nameKey}::${voiceNid}::${avatarNid}`;
-
+                                const exactKey = buildDigitalHumanExactKey(
+                                    config.nameKey,
+                                    config.voiceNid,
+                                    config.avatarNid
+                                );
+                                reusableDigitalHumanConfigs.push(config);
                                 if (!existingDigitalHumanByExactKey.has(exactKey)) {
-                                    existingDigitalHumanByExactKey.set(exactKey, customNid);
+                                    existingDigitalHumanByExactKey.set(exactKey, config);
                                 }
-                                if (!existingDigitalHumanByName.has(nameKey)) {
-                                    existingDigitalHumanByName.set(nameKey, customNid);
+                                if (!existingDigitalHumanByName.has(config.nameKey)) {
+                                    existingDigitalHumanByName.set(config.nameKey, config);
                                 }
                             }
 
@@ -562,7 +635,7 @@ export async function POST(request: NextRequest) {
                                 send({
                                     type: "progress",
                                     phase: "script",
-                                    message: `已读取 ${ownerDigitalHumans.length} 个已有数字人，同名角色将直接复用`,
+                                    message: `已读取 ${ownerDigitalHumans.length} 个已有数字人，其中 ${reusableDigitalHumanConfigs.length} 个可作为账号内安全参数源`,
                                     current: 0,
                                     total: steps.length,
                                 });
@@ -639,26 +712,117 @@ export async function POST(request: NextRequest) {
 
                         const position = plannedPositions[i] || { x: baseX + i * X_GAP, y: baseY };
                         const trainerName = step.trainerName || "训练引导员";
-                        const agentId = step.agentId || "Tg3LpKo28D";
-                        const avatarNid = step.avatarNid || "hnuOVqMu8b";
+                        const requestedAgentId = cleanDigitalHumanValue(step.agentId);
+                        const requestedAvatarNid = cleanDigitalHumanValue(step.avatarNid);
                         const digitalHumanNameKey = normalizeDigitalHumanNameForReuse(trainerName);
-                        const digitalHumanExactKey = `${digitalHumanNameKey}::${agentId}::${avatarNid}`;
-                        let customDigitalHuman =
-                            customDigitalHumanCache.get(digitalHumanExactKey) ||
-                            existingDigitalHumanByExactKey.get(digitalHumanExactKey) ||
+                        const requestedExactKey = buildDigitalHumanExactKey(
+                            digitalHumanNameKey,
+                            requestedAgentId,
+                            requestedAvatarNid
+                        );
+                        const exactExistingDigitalHuman =
+                            (requestedAgentId && requestedAvatarNid
+                                ? existingDigitalHumanByExactKey.get(requestedExactKey)
+                                : null) ||
+                            findReusableDigitalHumanByName(reusableDigitalHumanConfigs, digitalHumanNameKey) ||
                             existingDigitalHumanByName.get(digitalHumanNameKey) ||
-                            "";
+                            null;
+                        const fallbackDigitalHuman = exactExistingDigitalHuman || reusableDigitalHumanConfigs[0] || null;
+                        let digitalHumanConfig =
+                            customDigitalHumanCache.get(digitalHumanNameKey) ||
+                            (shouldGenerateDigitalHumanAvatar ? null : exactExistingDigitalHuman) ||
+                            null;
+                        let agentId = fallbackDigitalHuman?.voiceNid || requestedAgentId || "Tg3LpKo28D";
+                        let avatarNid = fallbackDigitalHuman?.avatarNid || requestedAvatarNid || "hnuOVqMu8b";
+                        let agentVoiceId = fallbackDigitalHuman?.agentVoiceId;
 
-                        if (!customDigitalHuman) {
+                        if (!digitalHumanConfig && shouldGenerateDigitalHumanAvatar) {
+                            let generatedAvatar = generatedAvatarCache.get(digitalHumanNameKey) || null;
+                            if (!generatedAvatar) {
+                                send({
+                                    type: "progress",
+                                    phase: "script",
+                                    message: `正在为数字人「${trainerName}」生成并上传 AI 头像...`,
+                                    current: i + 1,
+                                    total: steps.length,
+                                });
+                                try {
+                                    const trainName = taskConfig?.trainTaskName || "训练任务";
+                                    const trainDesc = taskConfig?.description || "";
+                                    const result = await generateAndSyncDigitalHumanAvatar(
+                                        {
+                                            trainName,
+                                            trainDescription: trainDesc,
+                                            trainerName,
+                                            stageName: step.stepName,
+                                            stageDescription: step.description || "",
+                                            courseId: finalCourseId,
+                                            libraryFolderId: finalLibraryFolderId,
+                                            baseAvatarNid: avatarNid,
+                                            avatarStylePrompt: String(digitalHumanAvatarStylePrompt || "").trim() || undefined,
+                                            arkApiKey: llmSettings?.apiKey,
+                                            llmApiUrl: llmSettings?.apiUrl,
+                                            imageModel: imageModel || undefined,
+                                            imageProviderPriority,
+                                            userNid: credentials.userNid,
+                                        },
+                                        credentials
+                                    );
+                                    if (result?.avatarNid) {
+                                        generatedAvatar = {
+                                            avatarNid: result.avatarNid,
+                                            avatarUrl: result.avatarUrl,
+                                        };
+                                        generatedAvatarCache.set(digitalHumanNameKey, generatedAvatar);
+                                        send({
+                                            type: "progress",
+                                            phase: "script",
+                                            message: `AI 头像已同步：${trainerName}`,
+                                            current: i + 1,
+                                            total: steps.length,
+                                        });
+                                    } else {
+                                        send({
+                                            type: "progress",
+                                            phase: "script",
+                                            message: `AI 头像生成或同步失败，将改用账号已有数字人参数：${trainerName}`,
+                                            current: i + 1,
+                                            total: steps.length,
+                                        });
+                                    }
+                                } catch (avatarErr) {
+                                    console.warn("[inject-route] AI 数字人头像生成/同步异常:", avatarErr);
+                                    send({
+                                        type: "progress",
+                                        phase: "script",
+                                        message: `AI 头像生成异常，将改用账号已有数字人参数：${trainerName}`,
+                                        current: i + 1,
+                                        total: steps.length,
+                                    });
+                                }
+                            }
+
+                            if (generatedAvatar?.avatarNid) {
+                                avatarNid = generatedAvatar.avatarNid;
+                            } else if (exactExistingDigitalHuman) {
+                                digitalHumanConfig = exactExistingDigitalHuman;
+                            }
+                        }
+
+                        if (!digitalHumanConfig) {
                             send({
                                 type: "progress",
                                 phase: "script",
-                                message: `正在配置数字人：${trainerName}`,
+                                message: shouldGenerateDigitalHumanAvatar
+                                    ? `正在配置数字人：${trainerName}（使用 AI 头像和账号内可用音色）`
+                                    : fallbackDigitalHuman
+                                    ? `正在配置数字人：${trainerName}（使用账号内「${describeDigitalHuman(fallbackDigitalHuman)}」的可用形象/音色参数）`
+                                    : `正在配置数字人：${trainerName}`,
                                 current: i + 1,
                                 total: steps.length,
                             });
                             try {
-                                customDigitalHuman = await createCustomDigitalHuman(
+                                const customDigitalHuman = await createCustomDigitalHuman(
                                     {
                                         digitalHumanName: trainerName,
                                         voiceNid: agentId,
@@ -667,14 +831,24 @@ export async function POST(request: NextRequest) {
                                     credentials
                                 ) || "";
                                 if (customDigitalHuman) {
-                                    customDigitalHumanCache.set(digitalHumanExactKey, customDigitalHuman);
+                                    digitalHumanConfig = {
+                                        customNid: customDigitalHuman,
+                                        digitalHumanName: trainerName,
+                                        nameKey: digitalHumanNameKey,
+                                        avatarNid,
+                                        voiceNid: agentId,
+                                        agentVoiceId,
+                                        voiceName: fallbackDigitalHuman?.voiceName,
+                                        source: "created",
+                                    };
+                                    customDigitalHumanCache.set(digitalHumanNameKey, digitalHumanConfig);
                                     if (digitalHumanNameKey && !existingDigitalHumanByName.has(digitalHumanNameKey)) {
-                                        existingDigitalHumanByName.set(digitalHumanNameKey, customDigitalHuman);
+                                        existingDigitalHumanByName.set(digitalHumanNameKey, digitalHumanConfig);
                                     }
                                     send({
                                         type: "progress",
                                         phase: "script",
-                                        message: `数字人配置成功：${trainerName}`,
+                                        message: `数字人配置成功：${describeDigitalHuman(digitalHumanConfig)}`,
                                         current: i + 1,
                                         total: steps.length,
                                     });
@@ -698,15 +872,20 @@ export async function POST(request: NextRequest) {
                                 });
                             }
                         } else {
-                            customDigitalHumanCache.set(digitalHumanExactKey, customDigitalHuman);
+                            agentId = digitalHumanConfig.voiceNid || agentId;
+                            avatarNid = digitalHumanConfig.avatarNid || avatarNid;
+                            agentVoiceId = digitalHumanConfig.agentVoiceId || agentVoiceId;
+                            customDigitalHumanCache.set(digitalHumanNameKey, digitalHumanConfig);
                             send({
                                 type: "progress",
                                 phase: "script",
-                                message: `复用已有数字人：${trainerName}`,
+                                message: `复用已有数字人：${describeDigitalHuman(digitalHumanConfig)}`,
                                 current: i + 1,
                                 total: steps.length,
                             });
                         }
+
+                        const customDigitalHuman = digitalHumanConfig?.customNid || "";
 
                         const newStepId = await createScriptStep(
                             finalTrainTaskId,
@@ -719,6 +898,7 @@ export async function POST(request: NextRequest) {
                                 trainerName,
                                 interactiveRounds: step.interactiveRounds,
                                 agentId,
+                                agentVoiceId,
                                 avatarNid,
                                 scriptStepCover: step.scriptStepCover,
                                 customDigitalHuman: customDigitalHuman || null,
@@ -757,6 +937,7 @@ export async function POST(request: NextRequest) {
                                         trainerName,
                                         interactiveRounds: step.interactiveRounds,
                                         agentId,
+                                        agentVoiceId,
                                         avatarNid,
                                         scriptStepCover: bgImage ? {
                                             fileId: bgImage.fileId,

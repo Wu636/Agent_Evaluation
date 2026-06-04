@@ -37,6 +37,8 @@ const DEFAULT_IMAGE_PROVIDER_PRIORITY: ImageProvider[] = ["cloudapi", "openai"];
 const DEFAULT_BG_IMAGE_REQUIREMENT = "专业写实教学场景背景图，严格16:9横版宽屏构图，单一完整场景，画面干净稳定，适合作为课程阶段背景；禁止拼贴、多宫格、海报排版、极端透视、鱼眼、抽象艺术、卡通漫画；无任何文字、英文单词、logo、字幕、水印，尽量不要出现西方面孔和元素";
 const DEFAULT_COVER_STYLE_REQUIREMENT = "专业、简洁、写实的课程封面图，严格16:9横版宽屏构图，主体明确、构图完整、画面克制；禁止拼贴、多宫格、海报排版、卡通漫画、抽象风格；无任何文字、英文单词、logo、水印，尽量不要出现西方面孔和元素";
 const DEFAULT_SEEDREAM_IMAGE_SIZE = "2560x1440";
+const DEFAULT_AVATAR_IMAGE_SIZE =
+    process.env.POLYMAS_AVATAR_IMAGE_SIZE || "1920x1920";
 const CLOUDAPI_PROBE_PAYLOAD = {
     trainName: "生图连通性测试",
     trainDescription: "用于检测当前平台凭证下 cloudapi 生图接口是否可用",
@@ -89,6 +91,32 @@ function buildCoverFallbackPrompt(params: {
         `课程名称：${params.trainName}`,
         `课程简介：${params.trainDescription}`,
         `封面风格要求：${params.coverStylePrompt || DEFAULT_COVER_STYLE_REQUIREMENT}`,
+    ].join("\n");
+}
+
+function buildDigitalHumanAvatarPrompt(params: {
+    trainName: string;
+    trainDescription: string;
+    trainerName: string;
+    stageName: string;
+    stageDescription: string;
+    avatarStylePrompt?: string;
+}): string {
+    return [
+        "Create a realistic professional human portrait headshot, not a background scene.",
+        "The image must contain exactly one adult human mentor with a clearly visible head, face, neck, and shoulders.",
+        "The person's head and upper body should be centered and occupy most of the image, like a formal profile avatar.",
+        "Use a clean plain studio background or softly blurred office background.",
+        "Do not create an empty room, classroom, meeting room, interior design scene, object, icon, landscape, cartoon mascot, text, logo, watermark, poster, or multi-person image.",
+        `Training task: ${params.trainName}`,
+        `Task description: ${params.trainDescription}`,
+        `Mentor / digital human role name: ${params.trainerName}`,
+        `Related stage: ${params.stageName}`,
+        `Stage goal: ${params.stageDescription}`,
+        params.avatarStylePrompt
+            ? `Additional avatar style requirement: ${params.avatarStylePrompt}`
+            : "Additional avatar style requirement: professional teaching mentor avatar, friendly, trustworthy, realistic, suitable for a course training scenario.",
+        "Final hard constraint: this must be a portrait of a human mentor with a visible head. If the scene does not contain a human head and face, it is wrong.",
     ].join("\n");
 }
 
@@ -334,8 +362,18 @@ interface ScriptStepMutationData {
 export interface OwnerDigitalHuman {
     customNid?: string;
     digitalHumanName?: string;
+    digitalHumanAvatarUrl?: string;
     avatarNid?: string;
     voiceNid?: string;
+    voiceParam?: string;
+    bigModelVoiceParam?: string;
+    voiceName?: string;
+    voiceIntroduce?: string;
+    voiceAvatarUrl?: string;
+    voiceAudioUrl?: string;
+    libraryFolderType?: string;
+    libraryFolderId?: string;
+    bizId?: string;
     type?: string;
     createTime?: string;
 }
@@ -677,9 +715,16 @@ function resolveImageProviderPriority(customPriority?: string | ImageProvider[])
     return DEFAULT_IMAGE_PROVIDER_PRIORITY;
 }
 
+function normalizeDalleImageSize(imageSize?: string): string {
+    const normalized = String(imageSize || "").trim();
+    return ["1024x1024", "1792x1024", "1024x1792"].includes(normalized)
+        ? normalized
+        : "1024x1024";
+}
+
 async function generateImageViaArk(
     prompt: string,
-    options?: { apiKey?: string; secondaryApiKey?: string; endpoint?: string; cookie?: string; imageModel?: string; timeoutMs?: number }
+    options?: { apiKey?: string; secondaryApiKey?: string; endpoint?: string; cookie?: string; imageModel?: string; timeoutMs?: number; imageSize?: string; watermark?: boolean }
 ): Promise<{ fileUrl: string } | null> {
     const requestTimeoutMs = Number(options?.timeoutMs) > 0
         ? Number(options?.timeoutMs)
@@ -688,6 +733,7 @@ async function generateImageViaArk(
     const selectedModel = options?.imageModel || ARK_IMAGE_MODEL;
     const preferredEndpoint = normalizeEndpoint(options?.endpoint);
     const endpointCandidates = buildImageEndpointCandidates(selectedModel, preferredEndpoint);
+    const watermark = options?.watermark ?? true;
 
     for (const endpoint of endpointCandidates) {
         const apiKeys = buildImageApiKeysForEndpoint(endpoint, {
@@ -712,22 +758,22 @@ async function generateImageViaArk(
                     model: selectedModel,
                     prompt,
                     n: 1,
-                    size: "1792x1024",
+                    size: normalizeDalleImageSize(options?.imageSize),
                     quality: "standard",
                 }
                 : isSeedreamModel
                     ? {
                         model: selectedModel,
                         prompt,
-                        size: DEFAULT_SEEDREAM_IMAGE_SIZE,
+                        size: options?.imageSize || DEFAULT_SEEDREAM_IMAGE_SIZE,
                         response_format: "url",
                         sequential_image_generation: "disabled",
-                        watermark: true,
+                        watermark,
                     }
                     : {
                         model: selectedModel,
                         prompt,
-                        watermark: true,
+                        watermark,
                     };
 
             for (const authHeaders of authHeaderStrategies) {
@@ -799,6 +845,24 @@ function inferImageFileName(imageUrl: string, mimeType: string): string {
     };
     const ext = extByMime[mimeType.toLowerCase()] || "png";
     return `course-cover.${ext}`;
+}
+
+function inferImageExtension(mimeType: string): string {
+    const normalized = mimeType.toLowerCase();
+    if (normalized.includes("jpeg") || normalized.includes("jpg")) return "jpg";
+    if (normalized.includes("webp")) return "webp";
+    if (normalized.includes("gif")) return "gif";
+    return "png";
+}
+
+function sanitizeFileBaseName(value: string): string {
+    const text = String(value || "")
+        .trim()
+        .replace(/[\\/:*?"<>|]/g, "-")
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "");
+    return text || "digital-human-avatar";
 }
 
 /** 为训练阶段生成背景图 */
@@ -1072,6 +1136,297 @@ export async function uploadCoverImageFromUrl(
     }
 }
 
+export interface OwnerAvatar {
+    nid?: string;
+    name?: string | null;
+    avatar?: string;
+    avatarDynamic?: string;
+    recordUrl?: string;
+    recordDynamicUrl?: string;
+    scope?: string;
+    type?: number | string;
+    createTime?: string;
+    libraryFolderId?: string | null;
+    bizId?: string | null;
+}
+
+export interface DigitalHumanAvatarResult {
+    avatarNid: string;
+    avatarUrl: string;
+    fileId?: string;
+    fileName?: string;
+}
+
+async function generateDigitalHumanAvatarImageSource(
+    params: {
+        trainName: string;
+        trainDescription: string;
+        trainerName: string;
+        stageName: string;
+        stageDescription: string;
+        avatarStylePrompt?: string;
+        arkApiKey?: string;
+        llmApiUrl?: string;
+        imageModel?: string;
+        imageProviderPriority?: string | ImageProvider[];
+    },
+    credentials: PolymasCredentials
+): Promise<{ fileUrl: string; fileId?: string } | null> {
+    const prompt = buildDigitalHumanAvatarPrompt(params);
+
+    const generated = await generateImageViaArk(prompt, {
+        apiKey: params.arkApiKey,
+        secondaryApiKey: POLYMAS_IMAGE_FALLBACK_API_KEY,
+        endpoint: deriveImageEndpointFromLlmApiUrl(params.llmApiUrl),
+        cookie: credentials.cookie,
+        imageModel: params.imageModel,
+        imageSize: DEFAULT_AVATAR_IMAGE_SIZE,
+        watermark: false,
+        timeoutMs: Math.max(COVER_GENERATE_TIMEOUT_MS, OPENAI_COMPAT_IMAGE_TIMEOUT_MS),
+    });
+
+    if (generated?.fileUrl) {
+        return generated;
+    }
+
+    console.error("[digital-avatar] OpenAI 兼容接口未返回可用头像图片");
+    return null;
+}
+
+async function uploadDigitalHumanAvatarImageFromUrl(
+    imageUrl: string,
+    trainerName: string,
+    credentials: PolymasCredentials
+): Promise<{ fileId: string; fileUrl: string; fileName?: string } | null> {
+    const downloadHeadersWithAuth: HeadersInit = {
+        Authorization: credentials.authorization,
+        Cookie: credentials.cookie,
+        "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+    };
+    const downloadHeadersWithoutAuth: HeadersInit = {
+        "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+    };
+
+    try {
+        let hostname = "";
+        try {
+            hostname = new URL(imageUrl).hostname.toLowerCase();
+        } catch {
+            hostname = "";
+        }
+
+        const shouldUseAuthFirst =
+            hostname.endsWith("polymas.com") ||
+            hostname.includes("cloudapi");
+
+        let imgRes = await fetchWithTimeout(imageUrl, {
+            method: "GET",
+            headers: shouldUseAuthFirst
+                ? downloadHeadersWithAuth
+                : downloadHeadersWithoutAuth,
+        }, IMAGE_DOWNLOAD_TIMEOUT_MS);
+
+        if (
+            !imgRes.ok &&
+            shouldUseAuthFirst &&
+            [400, 401, 403].includes(imgRes.status)
+        ) {
+            imgRes = await fetchWithTimeout(imageUrl, {
+                method: "GET",
+                headers: downloadHeadersWithoutAuth,
+            }, IMAGE_DOWNLOAD_TIMEOUT_MS);
+        }
+
+        if (!imgRes.ok) {
+            console.error("[digital-avatar] 下载头像失败:", imgRes.status, imgRes.statusText);
+            return null;
+        }
+
+        const mimeType = imgRes.headers.get("content-type") || "image/png";
+        const arrayBuffer = await imgRes.arrayBuffer();
+        const fileSize = arrayBuffer.byteLength;
+        if (!fileSize) {
+            console.error("[digital-avatar] 下载头像为空");
+            return null;
+        }
+
+        const fileName = `${sanitizeFileBaseName(trainerName)}-avatar.${inferImageExtension(mimeType)}`;
+        const formData = new FormData();
+        formData.append("file", new Blob([arrayBuffer], { type: mimeType }), fileName);
+        formData.append("showName", fileName);
+        formData.append("identifyCode", crypto.randomUUID());
+        formData.append("size", String(fileSize));
+
+        const uploadRes = await fetchWithTimeout(
+            `${POLYMAS_RESOURCE_BASE}/file/upload?folderId=recent&hidden=false&syncLibrary=true`,
+            {
+                method: "POST",
+                headers: {
+                    Authorization: credentials.authorization,
+                    Cookie: credentials.cookie,
+                    "User-Agent":
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                },
+                body: formData,
+            },
+            IMAGE_UPLOAD_TIMEOUT_MS
+        );
+
+        if (!uploadRes.ok) {
+            console.error("[digital-avatar] 上传头像失败:", uploadRes.status, uploadRes.statusText);
+            return null;
+        }
+
+        const uploadJson = await uploadRes.json();
+        if (!(uploadJson.code === 200 || uploadJson.success === true)) {
+            console.error("[digital-avatar] 上传头像接口返回失败:", JSON.stringify(uploadJson).substring(0, 300));
+            return null;
+        }
+
+        const data = uploadJson.data || {};
+        const fileId = data.fileId;
+        const fileUrl = data.ossUrl || data.fileUrl;
+        if (!fileId || !fileUrl) {
+            console.error("[digital-avatar] 上传头像成功但缺少 fileId/fileUrl:", JSON.stringify(uploadJson).substring(0, 300));
+            return null;
+        }
+
+        return { fileId, fileUrl, fileName: data.fileName || fileName };
+    } catch (err) {
+        console.error("[digital-avatar] 上传头像异常:", err);
+        return null;
+    }
+}
+
+export async function listOwnerAvatars(
+    params: {
+        courseId: string;
+        libraryFolderId?: string;
+        userNid?: string;
+        type?: "NORMAL" | string;
+        sort?: number;
+    },
+    credentials: PolymasCredentials
+): Promise<OwnerAvatar[]> {
+    const userNid = await resolvePolymasUserNid(credentials, params.userNid);
+    const result = await directRequestTo<OwnerAvatar[]>(
+        POLYMAS_AI_PROFILE_BASE,
+        "ai_avatar/getOwnerAvatar",
+        {
+            userNid,
+            courseId: params.courseId,
+            libraryFolderId: params.libraryFolderId || "",
+            sort: params.sort ?? 2,
+            type: params.type || "NORMAL",
+        },
+        credentials
+    );
+
+    if (!result.success) {
+        console.error("[listOwnerAvatars] 查询账号头像列表失败:", result.error);
+        return [];
+    }
+
+    return Array.isArray(result.data) ? result.data : [];
+}
+
+async function saveAndSyncDigitalHumanAvatar(
+    params: {
+        avatarUrl: string;
+        baseAvatarNid?: string;
+        userNid?: string;
+        appCode?: string;
+    },
+    credentials: PolymasCredentials
+): Promise<string | null> {
+    const userNid = await resolvePolymasUserNid(credentials, params.userNid);
+    const result = await directRequestTo<{ avatarNid?: string }>(
+        POLYMAS_AI_PROFILE_BASE,
+        "ai_avatar/saveAndSyncResource",
+        {
+            userNid,
+            appCode: params.appCode ?? "",
+            avatarDynamicUrl: params.avatarUrl,
+            avatarNid: params.baseAvatarNid || DEFAULT_AVATAR_NID,
+            avatarUrl: params.avatarUrl,
+            sync: false,
+        },
+        credentials
+    );
+
+    const avatarNid = result.data?.avatarNid;
+    if (!result.success || !avatarNid) {
+        console.error("[saveAndSyncDigitalHumanAvatar] 保存数字人头像失败:", result.error || "缺少 avatarNid");
+        return null;
+    }
+
+    return avatarNid;
+}
+
+export async function generateAndSyncDigitalHumanAvatar(
+    params: {
+        trainName: string;
+        trainDescription: string;
+        trainerName: string;
+        stageName: string;
+        stageDescription: string;
+        courseId?: string;
+        libraryFolderId?: string;
+        baseAvatarNid?: string;
+        avatarStylePrompt?: string;
+        arkApiKey?: string;
+        llmApiUrl?: string;
+        imageModel?: string;
+        imageProviderPriority?: string | ImageProvider[];
+        userNid?: string;
+    },
+    credentials: PolymasCredentials
+): Promise<DigitalHumanAvatarResult | null> {
+    const generated = await generateDigitalHumanAvatarImageSource(params, credentials);
+    if (!generated?.fileUrl) return null;
+
+    const uploaded = await uploadDigitalHumanAvatarImageFromUrl(
+        generated.fileUrl,
+        params.trainerName,
+        credentials
+    );
+    if (!uploaded?.fileUrl) return null;
+
+    const avatarNid = await saveAndSyncDigitalHumanAvatar(
+        {
+            avatarUrl: uploaded.fileUrl,
+            baseAvatarNid: params.baseAvatarNid,
+            userNid: params.userNid,
+        },
+        credentials
+    );
+    if (!avatarNid) return null;
+
+    if (params.courseId) {
+        const avatars = await listOwnerAvatars(
+            {
+                courseId: params.courseId,
+                libraryFolderId: params.libraryFolderId,
+                userNid: params.userNid,
+            },
+            credentials
+        );
+        const matched = avatars.find((item) => item.nid === avatarNid || item.avatar === uploaded.fileUrl);
+        if (!matched) {
+            console.warn("[digital-avatar] 已保存头像，但 getOwnerAvatar 暂未返回匹配项:", avatarNid);
+        }
+    }
+
+    return {
+        avatarNid,
+        avatarUrl: uploaded.fileUrl,
+        fileId: uploaded.fileId,
+        fileName: uploaded.fileName,
+    };
+}
+
 // ─── 查询接口 ────────────────────────────────────────────────────────
 
 /** 查询现有脚本节点 */
@@ -1148,6 +1503,8 @@ export async function createScriptStep(
                 searchEngineSwitch: 1,
                 historyRecordNum: -1,
                 trainSubType: "ability",
+                agentVoiceId: stepData.agentVoiceId || DEFAULT_AGENT_VOICE_ID,
+                customDigitalHuman: stepData.customDigitalHuman || null,
             },
             positionDTO: position,
         },

@@ -154,7 +154,14 @@ const getGeneratedFileKey = (file: GeneratedAnswerFile) => file.path || file.rel
 function loadCredentials(): Credentials {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        authorization: parsed.authorization || "",
+        cookie: parsed.cookie || "",
+        instanceNid: parsed.instanceNid || "",
+      };
+    }
   } catch { /* ignore */ }
   return { authorization: "", cookie: "", instanceNid: "" };
 }
@@ -373,6 +380,101 @@ function buildScoreTableFromSummary(summary: any): ScoreTable | null {
   }
 }
 
+function extractReviewFailureMessage(result: any): string {
+  if (!result || typeof result !== "object") return "未知错误";
+
+  const candidates: string[] = [];
+  const push = (value: unknown) => {
+    if (value !== null && value !== undefined && String(value).trim()) {
+      candidates.push(String(value).trim());
+    }
+  };
+
+  const data = result.data;
+  const status = data?.status;
+  const message = status?.message;
+  const parts = Array.isArray(message?.parts) ? message.parts : [];
+  for (const part of parts) {
+    const partData = part?.data;
+    if (partData && typeof partData === "object") {
+      const msg = partData.msg || partData.message;
+      const code = partData.code;
+      if (msg && code) return `${msg}（code ${code}）`;
+      push(msg);
+    }
+  }
+
+  push(result.msg);
+  push(result.error);
+  push(data?.msg);
+  push(status?.state === "failed" ? "任务执行失败" : "");
+  return candidates[0] || "未知错误";
+}
+
+function summarizeReviewFailures(summary: any): { total: number; failed: number; messages: string[] } {
+  const results: any[] = Array.isArray(summary?.results) ? summary.results : [];
+  const failedItems = results.filter((item) => item && !item.success);
+  const messages = Array.from(new Set(
+    failedItems.map((item) => extractReviewFailureMessage(item.result))
+  )).slice(0, 3);
+
+  return {
+    total: results.length,
+    failed: failedItems.length,
+    messages,
+  };
+}
+
+const INSTANCE_NID_PARAM_KEYS = [
+  "instanceNid",
+  "instanceId",
+  "instance_nid",
+  "instance_id",
+  "agentInstanceNid",
+  "agentInstanceId",
+];
+
+function isLikelyInstanceNid(value: string): boolean {
+  return /^[A-Za-z0-9_-]{6,80}$/.test(value.trim());
+}
+
+function looksLikeUrlOrQuery(value: string): boolean {
+  const text = value.trim();
+  return /^https?:\/\//i.test(text) || text.includes("=") || text.startsWith("?");
+}
+
+function parseHomeworkInstanceNid(input: string): string {
+  const text = input.trim().replace(/^['"]|['"]$/g, "");
+  if (!text) return "";
+  if (!looksLikeUrlOrQuery(text) && isLikelyInstanceNid(text)) return text;
+
+  try {
+    const url = new URL(
+      /^https?:\/\//i.test(text) ? text : `https://example.com?${text.replace(/^\?/, "")}`
+    );
+
+    const paramSets = [url.searchParams];
+    const hashQueryIndex = url.hash.indexOf("?");
+    if (hashQueryIndex >= 0) {
+      paramSets.push(new URLSearchParams(url.hash.slice(hashQueryIndex + 1)));
+    }
+
+    for (const params of paramSets) {
+      for (const key of INSTANCE_NID_PARAM_KEYS) {
+        const value = params.get(key);
+        if (value && isLikelyInstanceNid(value)) return value.trim();
+      }
+    }
+
+    const pathMatch = url.pathname.match(/\/(?:instance|instances|agent-instance|homework|review)[/-]([A-Za-z0-9_-]{6,80})(?:[/?#]|$)/i);
+    if (pathMatch && isLikelyInstanceNid(pathMatch[1])) return pathMatch[1];
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
 export function HomeworkReviewInterface() {
   // Railway API 直连（绕过 Vercel 300秒超时限制）
   const RAILWAY_API = process.env.NEXT_PUBLIC_HOMEWORK_API_URL || "";
@@ -479,6 +581,7 @@ export function HomeworkReviewInterface() {
   // 智慧树认证
   const [authorization, setAuthorization] = useState("");
   const [cookie, setCookie] = useState("");
+  const [instanceInput, setInstanceInput] = useState("");
   const [instanceNid, setInstanceNid] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -502,10 +605,23 @@ export function HomeworkReviewInterface() {
     setHistoryList(loadHistory());
   }, []);
 
+  const handleInstanceInputChange = (value: string) => {
+    setInstanceInput(value);
+    const parsed = parseHomeworkInstanceNid(value);
+    if (parsed) {
+      setInstanceNid(parsed);
+    } else if (!looksLikeUrlOrQuery(value) && value.trim()) {
+      setInstanceNid(value.trim());
+    } else {
+      setInstanceNid("");
+    }
+  };
+
   useEffect(() => {
     const creds = loadCredentials();
     setAuthorization(creds.authorization);
     setCookie(creds.cookie);
+    setInstanceInput(creds.instanceNid);
     setInstanceNid(creds.instanceNid);
     setLlmInfo(loadLLMSettings());
     refreshHistory();
@@ -687,6 +803,17 @@ export function HomeworkReviewInterface() {
     if (isGenerateMode && selectedLevels.length === 0) {
       setError("请至少选择一个生成等级");
       return;
+    }
+    if (mode === "generate" && !usingTextInput && hasUploadedFiles) {
+      const ext = files[0].name.split(".").pop()?.toLowerCase() || "";
+      if (ext === "doc") {
+        setError("仅生成答案的本地解析不支持旧版 .doc，请另存为 .docx/PDF，或切换到“粘贴文字”。");
+        return;
+      }
+      if (!["docx", "pdf"].includes(ext)) {
+        setError("仅生成答案支持 .docx 或 .pdf 题卷文件");
+        return;
+      }
     }
 
     // 仅生成答案模式只需 LLM Key，不需要智慧树认证
@@ -912,6 +1039,13 @@ export function HomeworkReviewInterface() {
                   scoreTable: data.scoreTable || null,
                 };
                 setResult(completedResult);
+                const failureSummary = summarizeReviewFailures(completedResult.summary);
+                if (failureSummary.total > 0 && failureSummary.failed > 0) {
+                  appendLog(`⚠️ 批阅失败 ${failureSummary.failed}/${failureSummary.total} 次：${failureSummary.messages[0] || "未知错误"}`);
+                  if (failureSummary.failed === failureSummary.total) {
+                    setError(`批阅全部失败：${failureSummary.messages[0] || "未知错误"}`);
+                  }
+                }
 
                 // 自动保存评分表到历史
                 const finalTable: ScoreTable | null =
@@ -971,6 +1105,7 @@ export function HomeworkReviewInterface() {
       setError("请填写完整的智慧树平台认证信息");
       return;
     }
+    saveCredentials({ authorization, cookie, instanceNid });
 
     // 锁定当前 Tab 的 log setter
     activeLogSetterRef.current = setLogs;
@@ -1088,6 +1223,13 @@ export function HomeworkReviewInterface() {
                 };
                 setResult(completedResult);
                 setGenPhase("idle");
+                const failureSummary = summarizeReviewFailures(completedResult.summary);
+                if (failureSummary.total > 0 && failureSummary.failed > 0) {
+                  appendLog(`⚠️ 批阅失败 ${failureSummary.failed}/${failureSummary.total} 次：${failureSummary.messages[0] || "未知错误"}`);
+                  if (failureSummary.failed === failureSummary.total) {
+                    setError(`批阅全部失败：${failureSummary.messages[0] || "未知错误"}`);
+                  }
+                }
 
                 const finalTable: ScoreTable | null =
                   (completedResult.scoreTable && completedResult.scoreTable.students?.length > 0)
@@ -1280,14 +1422,21 @@ export function HomeworkReviewInterface() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Instance NID</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">作业链接 / Instance NID</label>
               <input
                 type="text"
-                value={instanceNid}
-                onChange={(e) => setInstanceNid(e.target.value)}
-                placeholder="XLRNIzbkox"
+                value={instanceInput}
+                onChange={(e) => handleInstanceInputChange(e.target.value)}
+                placeholder="请粘贴智慧树作业批阅页面完整链接，或直接填写 XLRNIzbkox"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
+              {instanceInput.trim() && (
+                <div className={clsx("mt-1 text-xs", instanceNid ? "text-emerald-600" : "text-red-500")}>
+                  {instanceNid
+                    ? `已提取 Instance NID：${instanceNid}`
+                    : "未从链接中识别到 Instance NID，请确认链接包含 instanceNid/instanceId 参数"}
+                </div>
+              )}
             </div>
             {/* LLM 信息提示 */}
             <div className="flex items-start gap-2 bg-indigo-50 text-indigo-700 text-xs rounded-lg px-3 py-2">
@@ -1398,7 +1547,7 @@ export function HomeworkReviewInterface() {
                 ref={inputRef}
                 type="file"
                 multiple={mode === "review"}
-                accept={mode === "review" ? ".doc,.docx,.pdf,.ppt,.pptx,.png,.jpg,.jpeg" : ".doc,.docx,.pdf"}
+                accept={mode === "review" ? ".doc,.docx,.pdf,.ppt,.pptx,.png,.jpg,.jpeg" : mode === "generate" ? ".docx,.pdf" : ".doc,.docx,.pdf"}
                 className="hidden"
                 onChange={(e) => handleFilesSelected(e.target.files)}
               />
@@ -1442,7 +1591,9 @@ export function HomeworkReviewInterface() {
                   <div className="text-sm text-slate-600">
                     {mode === "review"
                       ? "支持 doc/docx/pdf/ppt/pptx/png/jpg，支持多文件或文件夹"
-                      : "支持 doc/docx/pdf 格式的题卷文件，也支持切换到“粘贴文字”直接生成"
+                      : mode === "generate"
+                        ? "支持 docx/pdf 格式的题卷文件，也支持切换到“粘贴文字”直接生成"
+                        : "支持 doc/docx/pdf 格式的题卷文件，也支持切换到“粘贴文字”直接生成"
                     }
                   </div>
                   <div className="flex gap-2">
@@ -2371,20 +2522,23 @@ export function HomeworkReviewInterface() {
     }
   };
 
-        // 将文件分为 "重要" 和 "其他"
-        const importantExts = [".xlsx", ".pdf", ".csv"];
-  const importantFiles = result.outputFiles.filter((f) =>
-    importantExts.some((ext) => f.toLowerCase().endsWith(ext))
-        );
-        const otherFiles = result.outputFiles.filter(
-    (f) => !importantExts.some((ext) => f.toLowerCase().endsWith(ext))
-        );
+      // 将文件分为 "重要" 和 "其他"
+      const importantExts = [".xlsx", ".pdf", ".csv"];
+      const importantFiles = result.outputFiles.filter((f) =>
+        importantExts.some((ext) => f.toLowerCase().endsWith(ext))
+      );
+      const otherFiles = result.outputFiles.filter(
+        (f) => !importantExts.some((ext) => f.toLowerCase().endsWith(ext))
+      );
+      const failureSummary = summarizeReviewFailures(result.summary);
+      const hasFailures = failureSummary.total > 0 && failureSummary.failed > 0;
+      const allFailed = hasFailures && failureSummary.failed === failureSummary.total;
 
-        return (
+      return (
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8">
-          <div className="flex items-center gap-2 text-emerald-600 mb-3">
-            <CheckCircle2 className="w-5 h-5" />
-            <span className="font-semibold text-lg">批阅完成</span>
+          <div className={clsx("flex items-center gap-2 mb-3", allFailed ? "text-red-600" : "text-emerald-600")}>
+            {allFailed ? <AlertCircle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+            <span className="font-semibold text-lg">{allFailed ? "批阅失败" : "批阅完成"}</span>
           </div>
           <div className="text-sm text-slate-500 mb-4">
             Job ID: <span className="font-mono">{result.jobId}</span>
@@ -2393,7 +2547,24 @@ export function HomeworkReviewInterface() {
                 成功 <strong className="text-emerald-600">{result.summary.success_count}</strong> 次
               </span>
             )}
+            {hasFailures && (
+              <span className="ml-3">
+                失败 <strong className="text-red-600">{failureSummary.failed}</strong> 次
+              </span>
+            )}
           </div>
+
+          {hasFailures && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <div className="font-semibold">{allFailed ? "所有批阅请求都失败了" : "部分批阅请求失败"}</div>
+              <div className="mt-1">
+                {failureSummary.messages.join("；") || "未知错误"}
+              </div>
+              <div className="mt-1 text-xs text-red-600">
+                若提示“智能体配置错误”，请确认链接中提取的 Instance NID 是否对应当前作业，并更新 Authorization/Cookie 后重试。
+              </div>
+            </div>
+          )}
 
           {/* 重要文件（xlsx 等） */}
           {importantFiles.length > 0 && (

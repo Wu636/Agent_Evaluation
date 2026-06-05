@@ -137,7 +137,7 @@ async def main():
         return
 
     if not generated_files:
-        printer.error("未能生成任何答案文件，请检查 LLM 配置。")
+        printer.error("未能生成任何答案文件：题卷解析或 LLM 生成失败。请查看上方具体错误；若 LLM Key 已显示已配置，优先检查题卷文件格式/内容。")
         return
 
     printer.log(f"✅ 全部生成完成，共 {len(generated_files)} 份答案")

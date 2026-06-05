@@ -279,7 +279,6 @@ async def review_answers(
     authorization: Optional[str] = Form(None),
     cookie: Optional[str] = Form(None),
     instance_nid: Optional[str] = Form(None),
-    task_id: Optional[str] = Form(None),
     attempts: int = Form(5),
     max_workers: int = Form(3),
     output_format: str = Form("json"),
@@ -328,8 +327,6 @@ async def review_answers(
     env["LLM_API_KEY"] = llm_api_key or os.getenv("LLM_API_KEY", "")
     env["LLM_API_URL"] = llm_api_url or os.getenv("LLM_API_URL", "")
     env["LLM_MODEL"] = llm_model or os.getenv("LLM_MODEL", "")
-    if task_id:
-        env["TASK_ID"] = task_id
     
     # 构建命令 - 与前端本地模式一致，调用 review_service.py
     cmd = [

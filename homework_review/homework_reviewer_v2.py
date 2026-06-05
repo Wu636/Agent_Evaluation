@@ -599,8 +599,46 @@ def save_result(output_dir: Path, file_info: dict, attempt_index: int, attempt_t
         "savedAt": datetime.now().isoformat(timespec="seconds"),
         "response": result
     }
+    if not success:
+        payload["failureDetail"] = extract_failure_detail(result)
     output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
     return output_path
+
+
+def extract_failure_detail(result) -> str:
+    if not isinstance(result, dict):
+        return str(result)
+
+    parts = []
+
+    def add(label: str, value):
+        if value not in (None, ""):
+            parts.append(f"{label}={value}")
+
+    add("status", result.get("status_code") or result.get("status"))
+    add("code", result.get("code"))
+    add("msg", result.get("msg") or result.get("error"))
+
+    data = result.get("data")
+    if isinstance(data, dict):
+        add("taskId", data.get("id") or data.get("taskId"))
+        status = data.get("status")
+        if isinstance(status, dict):
+            add("state", status.get("state"))
+            message = status.get("message")
+            if isinstance(message, dict):
+                for part in message.get("parts") or []:
+                    if not isinstance(part, dict):
+                        continue
+                    part_data = part.get("data")
+                    if isinstance(part_data, dict):
+                        add("code", part_data.get("code"))
+                        add("msg", part_data.get("msg") or part_data.get("message"))
+
+    if not parts:
+        return json.dumps(result, ensure_ascii=False)[:300]
+
+    return "，".join(parts)
 
 
 def load_pdf_generator():
@@ -1020,6 +1058,7 @@ async def evaluate_and_save(file_path: Path, file_info: dict, text_input: str, c
         else:
             if retry > 0:
                 print(f"❌ 重试{retry}次后仍失败: {file_info['fileName']} ({attempt_index}/{attempt_total})")
+            print(f"❌ 批改失败: {file_info['fileName']} ({attempt_index}/{attempt_total}) - {extract_failure_detail(result)}")
             break
     
     output_path = save_output(output_dir, file_info, attempt_index, attempt_total, success, result, output_format)

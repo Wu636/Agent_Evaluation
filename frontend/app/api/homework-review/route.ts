@@ -107,7 +107,6 @@ export async function POST(request: NextRequest) {
           railwayFormData.append("authorization", (formData.get("authorization") as string) || "");
           railwayFormData.append("cookie", (formData.get("cookie") as string) || "");
           railwayFormData.append("instance_nid", (formData.get("instance_nid") as string) || "");
-          railwayFormData.append("task_id", (formData.get("task_id") as string) || "");
           railwayFormData.append("attempts", (formData.get("attempts") as string) || "5");
           railwayFormData.append("max_workers", "3");
 

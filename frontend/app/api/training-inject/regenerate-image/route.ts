@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-    editConfiguration,
+    editConfigurationCoverOnly,
     editScriptStep,
     generateBackgroundImage,
     generateCourseCoverImageSource,
     parsePolymasUrl,
     queryScriptSteps,
+    queryTrainingTaskConfiguration,
     uploadCoverImageFromUrl,
 } from "@/lib/training-injector/api";
 import { LLMSettings } from "@/lib/training-injector/llm-extractor";
@@ -97,8 +98,21 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            const finalName = String(trainTaskName || "").trim() || "训练任务";
-            const finalDesc = String(trainDescription || "").trim() || "由系统自动更新封面图";
+            const currentConfig = await queryTrainingTaskConfiguration(
+                {
+                    trainTaskId: finalTrainTaskId,
+                    courseId: finalCourseId,
+                },
+                credentials
+            );
+            const finalName =
+                String(currentConfig?.trainTaskName || "").trim() ||
+                String(trainTaskName || "").trim() ||
+                "训练任务";
+            const finalDesc =
+                String(currentConfig?.description || "").trim() ||
+                String(trainDescription || "").trim() ||
+                "由系统自动更新封面图";
 
             const coverSource = await generateCourseCoverImageSource(
                 {
@@ -130,12 +144,10 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            const ok = await editConfiguration(
+            const ok = await editConfigurationCoverOnly(
                 {
                     trainTaskId: finalTrainTaskId,
                     courseId: finalCourseId,
-                    trainTaskName: finalName,
-                    description: finalDesc,
                     trainTaskCover: uploaded,
                 },
                 credentials
@@ -300,8 +312,21 @@ export async function POST(request: NextRequest) {
             const stream = new ReadableStream({
                 async start(controller) {
                     try {
-                        const finalName = String(trainTaskName || "").trim() || "训练任务";
-                        const finalDesc = String(trainDescription || "").trim() || "由系统自动更新图片";
+                        const currentConfig = await queryTrainingTaskConfiguration(
+                            {
+                                trainTaskId: finalTrainTaskId,
+                                courseId: finalCourseId,
+                            },
+                            credentials
+                        );
+                        const finalName =
+                            String(currentConfig?.trainTaskName || "").trim() ||
+                            String(trainTaskName || "").trim() ||
+                            "训练任务";
+                        const finalDesc =
+                            String(currentConfig?.description || "").trim() ||
+                            String(trainDescription || "").trim() ||
+                            "由系统自动更新图片";
 
                         const steps = await queryScriptSteps(finalTrainTaskId, credentials);
                         const scriptSteps = steps.filter((s) => s.stepDetailDTO?.nodeType === "SCRIPT_NODE");
@@ -330,12 +355,10 @@ export async function POST(request: NextRequest) {
                                 ? { fileId: coverSource.fileId, fileUrl: coverSource.fileUrl }
                                 : await uploadCoverImageFromUrl(coverSource.fileUrl, credentials);
                             if (uploaded) {
-                                const coverOk = await editConfiguration(
+                                const coverOk = await editConfigurationCoverOnly(
                                     {
                                         trainTaskId: finalTrainTaskId,
                                         courseId: finalCourseId,
-                                        trainTaskName: finalName,
-                                        description: finalDesc,
                                         trainTaskCover: uploaded,
                                     },
                                     credentials

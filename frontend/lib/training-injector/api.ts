@@ -1455,6 +1455,100 @@ export async function queryScriptFlows(
     return result.success ? (result.data || []) : [];
 }
 
+export interface TrainingTaskConfiguration {
+    trainTaskName?: string;
+    description?: string;
+    trainTaskCover?: BgImageResult | null;
+    raw?: unknown;
+}
+
+function parseMaybeJsonObject(value: unknown): Record<string, unknown> | null {
+    if (!value) return null;
+    if (typeof value === "object") return value as Record<string, unknown>;
+    if (typeof value !== "string") return null;
+    const text = value.trim();
+    if (!text.startsWith("{")) return null;
+    try {
+        const parsed = JSON.parse(text);
+        return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+    } catch {
+        return null;
+    }
+}
+
+function readFirstTextField(source: Record<string, unknown>, keys: string[]): string {
+    for (const key of keys) {
+        const value = source[key];
+        if (typeof value === "string" && value.trim()) {
+            return value.trim();
+        }
+    }
+    return "";
+}
+
+function extractTrainingTaskConfiguration(data: unknown): TrainingTaskConfiguration | null {
+    const root = Array.isArray(data) ? data[0] : data;
+    if (!root || typeof root !== "object") return null;
+
+    const rootObject = root as Record<string, unknown>;
+    const candidates: Record<string, unknown>[] = [rootObject];
+    for (const key of ["trainTaskDTO", "trainTask", "configuration", "detail", "baseInfo", "extConfig"]) {
+        const parsed = parseMaybeJsonObject(rootObject[key]);
+        if (parsed) candidates.push(parsed);
+    }
+
+    let trainTaskName = "";
+    let description = "";
+    let trainTaskCover: BgImageResult | null = null;
+    for (const candidate of candidates) {
+        trainTaskName ||= readFirstTextField(candidate, ["trainTaskName", "name", "title", "taskName"]);
+        description ||= readFirstTextField(candidate, ["description", "trainDescription", "desc", "taskDescription"]);
+        if (!trainTaskCover && candidate.trainTaskCover && typeof candidate.trainTaskCover === "object") {
+            trainTaskCover = candidate.trainTaskCover as BgImageResult;
+        }
+    }
+
+    if (!trainTaskName && !description && !trainTaskCover) return null;
+    return {
+        trainTaskName,
+        description,
+        trainTaskCover,
+        raw: data,
+    };
+}
+
+/** 查询智慧树系统当前能力训练基础配置，用于只读名称/描述等上下文 */
+export async function queryTrainingTaskConfiguration(
+    params: {
+        trainTaskId: string;
+        courseId?: string;
+    },
+    credentials: PolymasCredentials
+): Promise<TrainingTaskConfiguration | null> {
+    const payload: Record<string, unknown> = {
+        trainTaskId: params.trainTaskId,
+        trainSubType: "ability",
+    };
+    if (params.courseId) payload.courseId = params.courseId;
+
+    const endpointCandidates = [
+        "queryConfiguration",
+        "getConfiguration",
+        "queryTrainTaskConfiguration",
+        "queryTrainTaskDetail",
+    ];
+
+    for (const endpoint of endpointCandidates) {
+        const result = await directRequest<unknown>(endpoint, payload, credentials);
+        if (!result.success) continue;
+        const extracted = extractTrainingTaskConfiguration(result.data);
+        if (extracted) return extracted;
+    }
+
+    console.warn("[queryTrainingTaskConfiguration] 未能读取当前训练任务基础配置，将使用调用方兜底上下文。");
+    return null;
+}
+
 // ─── 创建接口 ────────────────────────────────────────────────────────
 
 /** 生成 nanoid 风格的随机 ID（21位） */
@@ -1806,6 +1900,32 @@ export async function editConfiguration(
     const result = await directRequest(
         "editConfiguration",
         payload,
+        credentials
+    );
+    return result.success;
+}
+
+/** 只更新训练任务封面图，不改任务名称、描述等基础信息 */
+export async function editConfigurationCoverOnly(
+    params: {
+        trainTaskId: string;
+        courseId: string;
+        trainTaskCover: BgImageResult;
+    },
+    credentials: PolymasCredentials
+): Promise<boolean> {
+    if (!params.trainTaskCover?.fileId) {
+        return false;
+    }
+
+    const result = await directRequest(
+        "editConfiguration",
+        {
+            trainTaskId: params.trainTaskId,
+            courseId: params.courseId,
+            trainSubType: "ability",
+            trainTaskCover: params.trainTaskCover,
+        },
         credentials
     );
     return result.success;

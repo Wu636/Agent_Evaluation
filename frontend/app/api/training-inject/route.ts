@@ -24,6 +24,7 @@ import {
     generateCourseCoverImageSource,
     generateAndSyncDigitalHumanAvatar,
     uploadCoverImageFromUrl,
+    queryTrainingTaskConfiguration,
     parsePolymasUrl,
 } from "@/lib/training-injector/api";
 import { InjectProgressEvent, ParsedFlowConfig, ParsedFlowEdge, PolymasCredentials, PolymasScriptStep } from "@/lib/training-injector/types";
@@ -58,6 +59,76 @@ interface ResolvedDigitalHumanConfig {
 
 function cleanDigitalHumanValue(value: unknown): string {
     return String(value || "").trim();
+}
+
+function cleanLooseTaskConfigValue(value: string): string {
+    return String(value || "")
+        .replace(/^[-*+•]\s*/, "")
+        .replace(/^#{1,6}\s*/, "")
+        .replace(/\*\*/g, "")
+        .replace(/^["'“”`]+|["'“”`]+$/g, "")
+        .trim();
+}
+
+function readLooseTaskConfigLineValue(line: string, labels: string[]): string | null {
+    const normalized = cleanLooseTaskConfigValue(line);
+    for (const label of labels) {
+        const pattern = new RegExp(`^${label}\\s*[：:]\\s*(.+)$`);
+        const match = normalized.match(pattern);
+        if (match?.[1]) return cleanLooseTaskConfigValue(match[1]);
+    }
+    return null;
+}
+
+function extractLooseTaskConfig(markdown: string): { trainTaskName: string; description: string } | null {
+    const lines = String(markdown || "").split("\n");
+    const nameLabels = ["任务名称", "训练任务名称", "能力训练名称"];
+    const descriptionLabels = ["任务描述", "任务目标", "训练任务描述", "能力训练描述", "实训目标"];
+    const stopLabels = ["智能体角色", "目标受众", "训练阶段", "模块规划", "评价标准", "评分标准", "非线性跳转关系"];
+    let trainTaskName = "";
+    let description = "";
+    let collectingDescription = false;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("```")) continue;
+
+        const nameValue = readLooseTaskConfigLineValue(trimmed, nameLabels);
+        if (nameValue !== null) {
+            trainTaskName = nameValue;
+            collectingDescription = false;
+            continue;
+        }
+
+        const descriptionValue = readLooseTaskConfigLineValue(trimmed, descriptionLabels);
+        if (descriptionValue !== null) {
+            description = descriptionValue;
+            collectingDescription = true;
+            continue;
+        }
+
+        const cleaned = cleanLooseTaskConfigValue(trimmed);
+        if (collectingDescription) {
+            const isNewField = /^[\u4e00-\u9fa5A-Za-z0-9（）()\/\s_-]{1,30}\s*[：:]/.test(cleaned);
+            const isStopLine = stopLabels.some((label) => cleaned.includes(label)) || /^#{2,6}\s*\S/.test(trimmed);
+            if (isNewField || isStopLine) {
+                collectingDescription = false;
+                continue;
+            }
+            if (cleaned) {
+                description = description ? `${description}\n${cleaned}` : cleaned;
+            }
+        }
+    }
+
+    if (!trainTaskName) {
+        const titleMatch = String(markdown || "").match(/^#\s+(.+?)(?:\s*-\s*训练剧本配置)?\s*$/m);
+        if (titleMatch?.[1]) {
+            trainTaskName = cleanLooseTaskConfigValue(titleMatch[1]);
+        }
+    }
+
+    return trainTaskName || description ? { trainTaskName, description } : null;
 }
 
 function buildDigitalHumanExactKey(nameKey: string, voiceNid: string, avatarNid: string): string {
@@ -401,6 +472,25 @@ export async function POST(request: NextRequest) {
                         }
                     }
 
+                    const looseTaskConfig = extractLooseTaskConfig(scriptMarkdown);
+                    if (looseTaskConfig) {
+                        taskConfig = {
+                            trainTaskName:
+                                String(taskConfig?.trainTaskName || "").trim() ||
+                                looseTaskConfig.trainTaskName,
+                            description:
+                                String(taskConfig?.description || "").trim() ||
+                                looseTaskConfig.description,
+                        };
+                        send({
+                            type: "progress",
+                            phase: "script",
+                            message: `基础配置解析结果：${taskConfig.trainTaskName || "(未找到名称)"} / 描述${taskConfig.description ? "已提取" : "未提取"}`,
+                            current: 0,
+                            total: 1,
+                        });
+                    }
+
                     if (steps.length === 0) {
                         send({ type: "error", message: "训练剧本中未找到任何阶段，提取失败" });
                         controller.close();
@@ -462,22 +552,72 @@ export async function POST(request: NextRequest) {
                         send({ type: "progress", phase: "script", message: "缺少课程ID或任务名称，跳过课程封面图注入", current: 0, total: steps.length });
                     }
 
-                    // 3. 更新基础配置（如果提供了 courseId 并且提取到了任务配置）
-                    if (finalCourseId && taskConfig?.trainTaskName && taskConfig?.description) {
-                        send({ type: "progress", phase: "script", message: "正在更新任务基础配置（名称、描述）...", current: 0, total: steps.length });
-                        const ok = await editConfiguration(
-                            {
-                                trainTaskId: finalTrainTaskId,
-                                courseId: finalCourseId,
-                                trainTaskName: taskConfig.trainTaskName,
-                                description: taskConfig.description,
-                                trainTaskCover,
-                            },
-                            credentials
-                        );
-                        if (!ok) {
-                            console.warn("[inject-route] 更新任务基础配置失败（前端不展示该提示）");
+                    // 3. 主注入路径完整更新基础配置：名称、描述、入口音色、封面图
+                    if (finalCourseId && (taskConfig?.trainTaskName || taskConfig?.description || trainTaskCover)) {
+                        send({ type: "progress", phase: "script", message: "正在更新任务基础配置（名称、描述、入口音色）...", current: 0, total: steps.length });
+                        let currentConfig: Awaited<ReturnType<typeof queryTrainingTaskConfiguration>> | null = null;
+                        if (!taskConfig?.trainTaskName || !taskConfig?.description || !trainTaskCover?.fileId) {
+                            currentConfig = await queryTrainingTaskConfiguration(
+                                {
+                                    trainTaskId: finalTrainTaskId,
+                                    courseId: finalCourseId,
+                                },
+                                credentials
+                            );
                         }
+                        const resolvedTrainTaskName =
+                            String(taskConfig?.trainTaskName || "").trim() ||
+                            String(currentConfig?.trainTaskName || "").trim();
+                        const resolvedDescription =
+                            String(taskConfig?.description || "").trim() ||
+                            String(currentConfig?.description || "").trim();
+                        const resolvedTrainTaskCover = trainTaskCover || currentConfig?.trainTaskCover || null;
+
+                        if (resolvedTrainTaskName && resolvedDescription && resolvedTrainTaskCover?.fileId) {
+                            const ok = await editConfiguration(
+                                {
+                                    trainTaskId: finalTrainTaskId,
+                                    courseId: finalCourseId,
+                                    trainTaskName: resolvedTrainTaskName,
+                                    description: resolvedDescription,
+                                    trainTaskCover: resolvedTrainTaskCover,
+                                },
+                                credentials
+                            );
+                            if (!ok) {
+                                console.warn("[inject-route] 更新任务基础配置失败（前端不展示该提示）");
+                                send({
+                                    type: "progress",
+                                    phase: "script",
+                                    message: "任务基础配置写入失败，请检查 editConfiguration 接口返回",
+                                    current: 0,
+                                    total: steps.length,
+                                });
+                            } else {
+                                send({
+                                    type: "progress",
+                                    phase: "script",
+                                    message: `任务基础配置已写入：${resolvedTrainTaskName} / 描述${resolvedDescription ? "已写入" : "为空"}`,
+                                    current: 0,
+                                    total: steps.length,
+                                });
+                            }
+                        } else {
+                            const missingParts = [
+                                resolvedTrainTaskName ? "" : "任务名称",
+                                resolvedDescription ? "" : "任务描述",
+                                resolvedTrainTaskCover?.fileId ? "" : "当前封面图",
+                            ].filter(Boolean).join("、");
+                            send({
+                                type: "progress",
+                                phase: "script",
+                                message: `基础配置缺少${missingParts}，已跳过名称/描述写入，避免触发平台配置接口错误`,
+                                current: 0,
+                                total: steps.length,
+                            });
+                        }
+                    } else if (finalCourseId) {
+                        send({ type: "progress", phase: "script", message: "未提取到任务名称/描述且无封面图，已跳过任务基础配置更新", current: 0, total: steps.length });
                     }
 
                     // 提前检测背景图能力

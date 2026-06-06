@@ -1870,9 +1870,16 @@ export async function editConfiguration(
     },
     credentials: PolymasCredentials
 ): Promise<boolean> {
+    if (!params.trainTaskCover?.fileId) {
+        console.error("[editConfiguration] 缺少 trainTaskCover.fileId，平台接口会报错，已跳过基础配置更新。", {
+            trainTaskId: params.trainTaskId,
+            trainTaskName: params.trainTaskName,
+        });
+        return false;
+    }
+
     const payload: Record<string, unknown> = {
         trainTaskId: params.trainTaskId,
-        courseId: params.courseId,
         trainTaskName: params.trainTaskName,
         description: params.description,
         trainType: "all",
@@ -1893,15 +1900,21 @@ export async function editConfiguration(
         communicateMethod: null,
     };
 
-    if (params.trainTaskCover?.fileId) {
-        payload.trainTaskCover = params.trainTaskCover;
-    }
+    payload.trainTaskCover = params.trainTaskCover;
 
     const result = await directRequest(
         "editConfiguration",
         payload,
         credentials
     );
+    if (!result.success) {
+        console.error("[editConfiguration] 更新基础配置失败:", result.error, {
+            trainTaskId: params.trainTaskId,
+            trainTaskName: params.trainTaskName,
+            descriptionLength: params.description.length,
+            hasCover: !!params.trainTaskCover?.fileId,
+        });
+    }
     return result.success;
 }
 

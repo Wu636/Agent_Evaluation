@@ -1207,6 +1207,7 @@ export function InjectConfigModal({
                     imageProviderPriority: effectiveImageProviderPriority,
                     injectCoverImage: shouldInjectCoverInMain,
                     injectBackgroundImage: shouldInjectBgInMain,
+                    deferBaseConfigurationUntilCoverReady: shouldRunPostImageBatch && shouldGenerateCoverForThisRun,
                     digitalHumanAvatarMode,
                     digitalHumanAvatarStylePrompt: digitalHumanAvatarStylePrompt.trim() || undefined,
                     scriptMarkdown: injectScript ? effectiveScriptMd : undefined,
@@ -1351,6 +1352,7 @@ export function InjectConfigModal({
                         await callRegenerateApi({
                             ...baseRegenPayload,
                             targetType: "cover",
+                            updateFullConfiguration: true,
                             imageProviderPriority: effectiveImageProviderPriority,
                         });
                         return true;
@@ -1366,6 +1368,7 @@ export function InjectConfigModal({
                             await callRegenerateApi({
                                 ...baseRegenPayload,
                                 targetType: "cover",
+                                updateFullConfiguration: true,
                                 imageProviderPriority: effectiveSwitchedImageProviderPriority,
                             });
                             return true;

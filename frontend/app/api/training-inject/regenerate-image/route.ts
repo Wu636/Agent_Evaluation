@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+    editConfiguration,
     editConfigurationCoverOnly,
     editScriptStep,
     generateBackgroundImage,
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
             imageModel,
             imageProviderPriority,
             targetType,
+            updateFullConfiguration = false,
             stepId,
             stepSnapshot,
             trainTaskName,
@@ -44,6 +46,7 @@ export async function POST(request: NextRequest) {
             imageModel?: string;
             imageProviderPriority?: string;
             targetType: "cover" | "background" | "all";
+            updateFullConfiguration?: boolean;
             stepId?: string;
             stepSnapshot?: {
                 stepName?: string;
@@ -105,13 +108,15 @@ export async function POST(request: NextRequest) {
                 },
                 credentials
             );
+            const requestedName = String(trainTaskName || "").trim();
+            const requestedDesc = String(trainDescription || "").trim();
+            const currentName = String(currentConfig?.trainTaskName || "").trim();
+            const currentDesc = String(currentConfig?.description || "").trim();
             const finalName =
-                String(currentConfig?.trainTaskName || "").trim() ||
-                String(trainTaskName || "").trim() ||
+                (updateFullConfiguration ? requestedName || currentName : currentName || requestedName) ||
                 "训练任务";
             const finalDesc =
-                String(currentConfig?.description || "").trim() ||
-                String(trainDescription || "").trim() ||
+                (updateFullConfiguration ? requestedDesc || currentDesc : currentDesc || requestedDesc) ||
                 "由系统自动更新封面图";
 
             const coverSource = await generateCourseCoverImageSource(
@@ -144,14 +149,25 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            const ok = await editConfigurationCoverOnly(
-                {
-                    trainTaskId: finalTrainTaskId,
-                    courseId: finalCourseId,
-                    trainTaskCover: uploaded,
-                },
-                credentials
-            );
+            const ok = updateFullConfiguration
+                ? await editConfiguration(
+                    {
+                        trainTaskId: finalTrainTaskId,
+                        courseId: finalCourseId,
+                        trainTaskName: requestedName || currentName || finalName,
+                        description: requestedDesc || currentDesc,
+                        trainTaskCover: uploaded,
+                    },
+                    credentials
+                )
+                : await editConfigurationCoverOnly(
+                    {
+                        trainTaskId: finalTrainTaskId,
+                        courseId: finalCourseId,
+                        trainTaskCover: uploaded,
+                    },
+                    credentials
+                );
 
             if (!ok) {
                 return NextResponse.json(
@@ -160,7 +176,12 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            return NextResponse.json({ success: true, message: "课程封面图已重新生成并更新" });
+            return NextResponse.json({
+                success: true,
+                message: updateFullConfiguration
+                    ? "课程封面图已生成，并已回写任务名称、描述和入场音色"
+                    : "课程封面图已重新生成并更新",
+            });
         }
 
         if (targetType === "background") {

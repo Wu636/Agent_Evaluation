@@ -368,6 +368,7 @@ export async function POST(request: NextRequest) {
                     imageProviderPriority,
                     injectCoverImage = true,
                     injectBackgroundImage = true,
+                    deferBaseConfigurationUntilCoverReady = false,
                     digitalHumanAvatarMode = "existing",
                     digitalHumanAvatarStylePrompt,
                     scriptMarkdown,
@@ -386,6 +387,7 @@ export async function POST(request: NextRequest) {
                     imageProviderPriority?: string;
                     injectCoverImage?: boolean;
                     injectBackgroundImage?: boolean;
+                    deferBaseConfigurationUntilCoverReady?: boolean;
                     digitalHumanAvatarMode?: "existing" | "ai";
                     digitalHumanAvatarStylePrompt?: string;
                     scriptMarkdown?: string;
@@ -608,10 +610,17 @@ export async function POST(request: NextRequest) {
                                 resolvedDescription ? "" : "任务描述",
                                 resolvedTrainTaskCover?.fileId ? "" : "当前封面图",
                             ].filter(Boolean).join("、");
+                            const isOnlyWaitingForDeferredCover =
+                                deferBaseConfigurationUntilCoverReady &&
+                                resolvedTrainTaskName &&
+                                resolvedDescription &&
+                                !resolvedTrainTaskCover?.fileId;
                             send({
                                 type: "progress",
                                 phase: "script",
-                                message: `基础配置缺少${missingParts}，已跳过名称/描述写入，避免触发平台配置接口错误`,
+                                message: isOnlyWaitingForDeferredCover
+                                    ? "基础配置已提取，等待课程封面图生成后回写名称、描述和入场音色"
+                                    : `基础配置缺少${missingParts}，已跳过名称/描述写入，避免触发平台配置接口错误`,
                                 current: 0,
                                 total: steps.length,
                             });

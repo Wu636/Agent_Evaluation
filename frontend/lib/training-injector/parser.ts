@@ -20,9 +20,23 @@ export interface SerializeTrainingScriptOptions {
     sourceMarkdown?: string;
 }
 
-const TASK_CONFIG_FIELD_LABELS = [
+const TASK_CONFIG_NAME_LABELS = [
     "任务名称",
+    "训练任务名称",
+    "能力训练名称",
+] as const;
+
+const TASK_CONFIG_DESCRIPTION_LABELS = [
     "任务描述",
+    "任务目标",
+    "训练任务描述",
+    "能力训练描述",
+    "实训目标",
+] as const;
+
+const TASK_CONFIG_FIELD_LABELS = [
+    ...TASK_CONFIG_NAME_LABELS,
+    ...TASK_CONFIG_DESCRIPTION_LABELS,
 ] as const;
 
 const SCRIPT_FIELD_LABELS = [
@@ -85,6 +99,14 @@ function isStandaloneScriptFieldHeading(line: string, label: string): boolean {
 
 function getTaskConfigFieldLineValue(line: string, label: string): string | null {
     return getFieldLineValue(line, label);
+}
+
+function findTaskConfigFieldLineValue(line: string, labels: readonly string[]): string | null {
+    for (const label of labels) {
+        const value = getTaskConfigFieldLineValue(line, label);
+        if (value !== null) return value;
+    }
+    return null;
 }
 
 function looksLikeBasicConfigFieldLine(line: string): boolean {
@@ -560,14 +582,14 @@ export function parseTaskConfig(markdown: string): ParsedTaskConfig | null {
         const trimmed = line.trim();
         if (!trimmed) continue;
 
-        const nameValue = getTaskConfigFieldLineValue(trimmed, "任务名称");
+        const nameValue = findTaskConfigFieldLineValue(trimmed, TASK_CONFIG_NAME_LABELS);
         if (nameValue !== null) {
             trainTaskName = normalizeValue(nameValue);
             activeField = "trainTaskName";
             continue;
         }
 
-        const descriptionValue = getTaskConfigFieldLineValue(trimmed, "任务描述");
+        const descriptionValue = findTaskConfigFieldLineValue(trimmed, TASK_CONFIG_DESCRIPTION_LABELS);
         if (descriptionValue !== null) {
             description = normalizeValue(descriptionValue);
             activeField = "description";
@@ -926,10 +948,10 @@ function upsertTaskConfigPrefix(prefix: string, taskConfig?: Partial<ParsedTaskC
             const currentLine = sectionLines[index];
             const trimmed = currentLine.trim();
 
-            if (getTaskConfigFieldLineValue(trimmed, "任务名称") !== null) {
+            if (findTaskConfigFieldLineValue(trimmed, TASK_CONFIG_NAME_LABELS) !== null) {
                 continue;
             }
-            if (getTaskConfigFieldLineValue(trimmed, "任务描述") !== null) {
+            if (findTaskConfigFieldLineValue(trimmed, TASK_CONFIG_DESCRIPTION_LABELS) !== null) {
                 while (
                     index + 1 < sectionLines.length &&
                     sectionLines[index + 1].trim() &&

@@ -26,8 +26,15 @@ import {
     uploadCoverImageFromUrl,
     queryTrainingTaskConfiguration,
     parsePolymasUrl,
+    listOwnerVoiceTrainings,
 } from "@/lib/training-injector/api";
 import { InjectProgressEvent, ParsedFlowConfig, ParsedFlowEdge, PolymasCredentials, PolymasScriptStep } from "@/lib/training-injector/types";
+import {
+    selectBestVoiceCandidate,
+    toVoiceCandidate,
+    toVoiceCandidates,
+    type VoiceCandidate,
+} from "@/lib/training-injector/voice-selection";
 
 export const maxDuration = 300;
 export const runtime = "nodejs";
@@ -733,6 +740,7 @@ export async function POST(request: NextRequest) {
                     const existingDigitalHumanByExactKey = new Map<string, ResolvedDigitalHumanConfig>();
                     const existingDigitalHumanByName = new Map<string, ResolvedDigitalHumanConfig>();
                     const reusableDigitalHumanConfigs: ResolvedDigitalHumanConfig[] = [];
+                    let availableVoiceCandidates: VoiceCandidate[] = [];
                     const generatedAvatarCache = new Map<string, { avatarNid: string; avatarUrl: string }>();
 
                     if (steps.length === 0) {
@@ -744,6 +752,37 @@ export async function POST(request: NextRequest) {
                                 : "训练剧本中未找到需要注入的阶段",
                         });
                     } else {
+                    send({
+                        type: "progress",
+                        phase: "script",
+                        message: "正在查询账号可配置音色...",
+                        current: 0,
+                        total: steps.length,
+                    });
+                    try {
+                        const ownerVoiceTrainings = await listOwnerVoiceTrainings(
+                            { voiceTemplateType: "ONLINE_DOUBAO" },
+                            credentials
+                        );
+                        availableVoiceCandidates = toVoiceCandidates(ownerVoiceTrainings, "voice-training");
+                        send({
+                            type: "progress",
+                            phase: "script",
+                            message: `已读取 ${ownerVoiceTrainings.length} 个可配置音色，其中 ${availableVoiceCandidates.length} 个可用于数字人创建`,
+                            current: 0,
+                            total: steps.length,
+                        });
+                    } catch (voiceListErr) {
+                        console.warn("[inject-route] 查询可配置音色异常:", voiceListErr);
+                        send({
+                            type: "progress",
+                            phase: "script",
+                            message: "查询账号可配置音色失败，将回退已有数字人的音色参数",
+                            current: 0,
+                            total: steps.length,
+                        });
+                    }
+
                     if (finalCourseId) {
                         send({
                             type: "progress",
@@ -765,6 +804,8 @@ export async function POST(request: NextRequest) {
                             for (const item of ownerDigitalHumans) {
                                 const config = toResolvedDigitalHumanConfig(item);
                                 if (!config) continue;
+                                const voiceCandidate = toVoiceCandidate(item, "digital-human");
+                                if (voiceCandidate) availableVoiceCandidates.push(voiceCandidate);
 
                                 const exactKey = buildDigitalHumanExactKey(
                                     config.nameKey,
@@ -884,6 +925,26 @@ export async function POST(request: NextRequest) {
                         let agentId = fallbackDigitalHuman?.voiceNid || requestedAgentId || "Tg3LpKo28D";
                         let avatarNid = fallbackDigitalHuman?.avatarNid || requestedAvatarNid || "hnuOVqMu8b";
                         let agentVoiceId = fallbackDigitalHuman?.agentVoiceId;
+                        let resolvedVoiceName = fallbackDigitalHuman?.voiceName;
+                        const selectedAccountVoice =
+                            !digitalHumanConfig
+                                ? selectBestVoiceCandidate(
+                                    availableVoiceCandidates,
+                                    {
+                                        preferredName: requestedAgentId,
+                                        preferredVoiceNid: requestedAgentId,
+                                        roleName: trainerName,
+                                        roleDescription: step.description,
+                                        avatarDescription: step.backgroundImage,
+                                        fallbackToFirst: availableVoiceCandidates.length > 0 && !fallbackDigitalHuman,
+                                    }
+                                )
+                                : null;
+                        if (selectedAccountVoice && (!exactExistingDigitalHuman || shouldGenerateDigitalHumanAvatar)) {
+                            agentId = selectedAccountVoice.voiceNid || agentId;
+                            agentVoiceId = selectedAccountVoice.voiceType || agentVoiceId;
+                            resolvedVoiceName = selectedAccountVoice.voiceName || resolvedVoiceName;
+                        }
 
                         if (!digitalHumanConfig && shouldGenerateDigitalHumanAvatar) {
                             let generatedAvatar = generatedAvatarCache.get(digitalHumanNameKey) || null;
@@ -987,7 +1048,7 @@ export async function POST(request: NextRequest) {
                                         avatarNid,
                                         voiceNid: agentId,
                                         agentVoiceId,
-                                        voiceName: fallbackDigitalHuman?.voiceName,
+                                        voiceName: resolvedVoiceName,
                                         source: "created",
                                     };
                                     customDigitalHumanCache.set(digitalHumanNameKey, digitalHumanConfig);

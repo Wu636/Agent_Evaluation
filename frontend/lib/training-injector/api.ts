@@ -378,6 +378,48 @@ export interface OwnerDigitalHuman {
     createTime?: string;
 }
 
+export interface OwnerVoiceTraining {
+    nid?: string;
+    voiceNid?: string;
+    voiceTemplateNid?: string;
+    templateNid?: string;
+    voiceId?: string;
+    id?: string;
+    bizId?: string;
+    voiceName?: string;
+    name?: string;
+    voiceTone?: string;
+    templateName?: string;
+    voiceTemplateName?: string;
+    displayName?: string;
+    title?: string;
+    bigModelVoiceParam?: string;
+    voiceType?: string;
+    type?: string;
+    modelVoiceParam?: string;
+    ttsParam?: string;
+    voiceCode?: string;
+    voiceParam?: string;
+    param?: string;
+    streamingParam?: string;
+    speaker?: string;
+    voiceIntroduce?: string;
+    introduce?: string;
+    description?: string;
+    voiceDescription?: string;
+    voiceDesc?: string;
+    desc?: string;
+    remark?: string;
+    language?: string;
+    locale?: string;
+    gender?: string;
+    speakerGender?: string;
+    sex?: string;
+    voiceAvatarUrl?: string;
+    voiceAudioUrl?: string;
+    voiceTemplateType?: string;
+}
+
 interface PolymasLoginUserInfo {
     userId?: string;
     userName?: string;
@@ -1639,6 +1681,30 @@ export async function listOwnerDigitalHumans(
 
     if (!result.success) {
         console.error("[listOwnerDigitalHumans] 查询数字人列表失败:", result.error);
+        return [];
+    }
+
+    return Array.isArray(result.data) ? result.data : [];
+}
+
+/** 查询当前账号可配置音色，优先用于数字人创建和入场音色配置 */
+export async function listOwnerVoiceTrainings(
+    params: {
+        voiceTemplateType?: string;
+    },
+    credentials: PolymasCredentials
+): Promise<OwnerVoiceTraining[]> {
+    const result = await directRequestTo<OwnerVoiceTraining[]>(
+        POLYMAS_AI_PROFILE_BASE,
+        "ai_voice_training/list",
+        {
+            voiceTemplateType: params.voiceTemplateType || "ONLINE_DOUBAO",
+        },
+        credentials
+    );
+
+    if (!result.success) {
+        console.error("[listOwnerVoiceTrainings] 查询可配置音色列表失败:", result.error);
         return [];
     }
 

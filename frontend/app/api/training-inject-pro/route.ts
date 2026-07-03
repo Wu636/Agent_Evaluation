@@ -12,6 +12,13 @@ import {
 } from "@/lib/training-generator-pro/types";
 import { parseProMarkdown } from "@/lib/training-injector-pro/parser";
 import { encodePromptRoleTags } from "@/lib/training-injector-pro/prompt-role-tags";
+import { generateAndSyncDigitalHumanAvatar } from "@/lib/training-injector/api";
+import type { PolymasCredentials } from "@/lib/training-injector/types";
+import {
+  selectBestVoiceCandidate,
+  toVoiceCandidates,
+  type VoiceCandidate,
+} from "@/lib/training-injector/voice-selection";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -85,11 +92,41 @@ interface PlatformApiEnvelope<T = unknown> {
 
 interface PlatformVoice {
   nid?: string;
+  voiceNid?: string;
+  voiceTemplateNid?: string;
+  templateNid?: string;
+  voiceId?: string;
+  id?: string;
+  bizId?: string;
   voiceTone?: string;
   voiceName?: string;
   name?: string;
+  templateName?: string;
+  voiceTemplateName?: string;
+  displayName?: string;
+  title?: string;
   voiceType?: string;
   type?: string;
+  bigModelVoiceParam?: string;
+  modelVoiceParam?: string;
+  ttsParam?: string;
+  voiceCode?: string;
+  voiceParam?: string;
+  param?: string;
+  streamingParam?: string;
+  speaker?: string;
+  voiceIntroduce?: string;
+  introduce?: string;
+  description?: string;
+  voiceDescription?: string;
+  voiceDesc?: string;
+  desc?: string;
+  remark?: string;
+  language?: string;
+  locale?: string;
+  gender?: string;
+  speakerGender?: string;
+  sex?: string;
 }
 
 interface PlatformAvatar {
@@ -470,6 +507,12 @@ class ProPlatformApi {
     return this.post<PlatformVoice[]>("/ai-profile/ai_voice/list", {});
   }
 
+  listVoiceTrainings(): Promise<PlatformVoice[]> {
+    return this.post<PlatformVoice[]>("/ai-profile/ai_voice_training/list", {
+      voiceTemplateType: "ONLINE_DOUBAO",
+    });
+  }
+
   listAvatars(): Promise<PlatformAvatar[]> {
     return this.post<PlatformAvatar[]>(
       "/ai-profile/ai_avatar/getOwnerAvatar",
@@ -613,40 +656,6 @@ function normalizeModelId(value: string): string {
     "Qwen3-235B": "qwen3-235b-a22b",
   };
   return modelMap[value] || value.toLowerCase().replace(/[\s.]+/g, "-");
-}
-
-function findVoice(
-  voices: PlatformVoice[],
-  voiceName: string,
-): PlatformVoice | null {
-  if (!voiceName) return null;
-  return (
-    voices.find((voice) => {
-      const candidates = [
-        voice.voiceTone,
-        voice.voiceName,
-        voice.name,
-        voice.voiceType,
-        voice.type,
-      ]
-        .map((item) => String(item || "").trim())
-        .filter(Boolean);
-      return candidates.some(
-        (candidate) =>
-          candidate === voiceName ||
-          candidate.includes(voiceName) ||
-          voiceName.includes(candidate),
-      );
-    }) || null
-  );
-}
-
-function getVoiceNid(voice: PlatformVoice | null): string {
-  return String(voice?.nid || "");
-}
-
-function getVoiceType(voice: PlatformVoice | null): string {
-  return String(voice?.voiceType || voice?.type || "");
 }
 
 function pickAvatarNid(
@@ -880,7 +889,7 @@ async function updateGlobalConfig(
   api: ProPlatformApi,
   trainTaskId: string,
   config: ProGlobalConfig,
-  voices: PlatformVoice[],
+  voices: VoiceCandidate[],
 ): Promise<void> {
   const communicateMethod =
     config.trainingMode === "voice"
@@ -892,9 +901,13 @@ async function updateGlobalConfig(
     config.totalDuration === "unlimited" || config.totalDuration === "auto"
       ? null
       : config.totalDuration;
-  const entranceVoice = findVoice(voices, config.entranceVoiceName);
-  const entranceVoiceNid =
-    getVoiceNid(entranceVoice) || String(voices[0]?.nid || "") || undefined;
+  const entranceVoice = selectBestVoiceCandidate(voices, {
+    preferredName: config.entranceVoiceName,
+    roleName: "入场旁白",
+    roleDescription: `${config.abilityName} ${config.description}`,
+    fallbackToFirst: true,
+  });
+  const entranceVoiceNid = entranceVoice?.voiceNid || undefined;
 
   await api.editTask(
     compactObject({
@@ -1706,16 +1719,21 @@ export async function POST(request: NextRequest) {
         sendEvent({
           type: "progress",
           phase: "members",
-          message: "查询音色和头像列表...",
+          message: "查询可配置音色和头像列表...",
           current: 0,
           total: members.length,
         });
-        const voices = await api.listVoices().catch(() => []);
+        const voiceTrainings = await api.listVoiceTrainings().catch(() => []);
+        const legacyVoices = await api.listVoices().catch(() => []);
+        const voiceCandidates = [
+          ...toVoiceCandidates(voiceTrainings, "voice-training"),
+          ...toVoiceCandidates(legacyVoices, "legacy-voice"),
+        ];
         const avatars = await api.listAvatars().catch(() => []);
         sendEvent({
           type: "progress",
           phase: "members",
-          message: `音色${voices.length}个, 头像${avatars.length}个`,
+          message: `可配置音色${voiceTrainings.length}个, 旧音色${legacyVoices.length}个, 头像${avatars.length}个`,
           current: 0,
           total: members.length,
         });
@@ -1727,7 +1745,7 @@ export async function POST(request: NextRequest) {
           current: 0,
           total: 1,
         });
-        await updateGlobalConfig(api, trainTaskId, globalConfig, voices);
+        await updateGlobalConfig(api, trainTaskId, globalConfig, voiceCandidates);
         sendEvent({
           type: "progress",
           phase: "global_config",
@@ -1795,6 +1813,13 @@ export async function POST(request: NextRequest) {
 
         const existingRoles =
           mode === "append" ? await api.listGlobalRoles().catch(() => []) : [];
+        const shouldGenerateDigitalHumanAvatar =
+          options.digitalHumanAvatarMode === "ai";
+        const avatarCredentials: PolymasCredentials = {
+          authorization: authorization || "",
+          cookie,
+          userNid: userNid || undefined,
+        };
         let reusableDigitalHumans: ReusableDigitalHuman[] = [];
         try {
           sendEvent({
@@ -1812,6 +1837,9 @@ export async function POST(request: NextRequest) {
           reusableDigitalHumans = existingDigitalHumans
             .map(toReusableDigitalHuman)
             .filter(Boolean) as ReusableDigitalHuman[];
+          voiceCandidates.push(
+            ...toVoiceCandidates(existingDigitalHumans, "digital-human"),
+          );
           sendEvent({
             type: "progress",
             phase: "members",
@@ -1886,8 +1914,73 @@ export async function POST(request: NextRequest) {
             role?.avatarNid ||
             reusableDigitalHuman?.avatarNid ||
             pickAvatarNid(avatars, index);
+          let generatedAvatarNid = "";
+
+          if (shouldGenerateDigitalHumanAvatar) {
+            sendEvent({
+              type: "progress",
+              phase: "members",
+              message: `  → 正在为「${member.memberName}」生成并上传 AI 头像...`,
+              current: index,
+              total: members.length,
+            });
+            try {
+              const generatedAvatar = await generateAndSyncDigitalHumanAvatar(
+                {
+                  trainName: globalConfig.abilityName || "能力训练 Pro",
+                  trainDescription:
+                    globalConfig.description || globalConfig.abilityName || "",
+                  trainerName: member.memberName,
+                  stageName: `${member.memberName} 数字人头像`,
+                  stageDescription:
+                    member.avatarDescription || member.roleDescription || "专业教学导师",
+                  courseId: target.courseId,
+                  libraryFolderId: target.libraryId,
+                  baseAvatarNid: avatarNid || undefined,
+                  avatarStylePrompt:
+                    options.digitalHumanAvatarStylePrompt ||
+                    member.avatarDescription ||
+                    undefined,
+                  imageModel: options.imageModel,
+                  imageProviderPriority: ["openai"],
+                  userNid: userNid || undefined,
+                },
+                avatarCredentials,
+              );
+              if (generatedAvatar?.avatarNid) {
+                generatedAvatarNid = generatedAvatar.avatarNid;
+                avatarNid = generatedAvatar.avatarNid;
+                sendEvent({
+                  type: "progress",
+                  phase: "members",
+                  message: `  → AI 头像已生成、上传并同步: ${member.memberName}(${generatedAvatar.avatarNid})`,
+                  current: index,
+                  total: members.length,
+                });
+              } else {
+                sendEvent({
+                  type: "progress",
+                  phase: "members",
+                  message: `  → AI 头像生成或同步失败，回退账号已有头像: ${member.memberName}`,
+                  current: index,
+                  total: members.length,
+                });
+              }
+            } catch (error) {
+              sendEvent({
+                type: "progress",
+                phase: "members",
+                message: `  → AI 头像生成异常，回退账号已有头像: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+                current: index,
+                total: members.length,
+              });
+            }
+          }
 
           if (
+            !generatedAvatarNid &&
             reusableDigitalHuman &&
             role?.customDigitalHuman !== reusableDigitalHuman.customNid
           ) {
@@ -1927,7 +2020,12 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          if (!role?.avatarNid && avatarNid) {
+          if (
+            avatarNid &&
+            (generatedAvatarNid
+              ? role?.avatarNid !== generatedAvatarNid
+              : !role?.avatarNid)
+          ) {
             sendEvent({
               type: "progress",
               phase: "members",
@@ -1959,12 +2057,24 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          const voice = findVoice(voices, member.voiceName);
-          const voiceNid = getVoiceNid(voice);
+          const selectedVoice = selectBestVoiceCandidate(voiceCandidates, {
+            preferredName: member.voiceName,
+            roleName: member.memberName,
+            roleDescription: member.roleDescription,
+            avatarDescription: member.avatarDescription,
+            fallbackToFirst: !reusableDigitalHuman && voiceCandidates.length > 0,
+          });
+          const fallbackVoice = reusableDigitalHuman?.voiceNid
+            ? reusableDigitalHuman
+            : null;
+          const voiceNid =
+            selectedVoice?.voiceNid ||
+            fallbackVoice?.voiceNid ||
+            voiceCandidates[0]?.voiceNid ||
+            "";
           if (
-            !reusableDigitalHuman &&
-            !role?.customDigitalHuman &&
-            member.voiceName &&
+            (Boolean(generatedAvatarNid) ||
+              (!reusableDigitalHuman && !role?.customDigitalHuman)) &&
             voiceNid &&
             avatarNid
           ) {
@@ -1990,7 +2100,10 @@ export async function POST(request: NextRequest) {
                   nid: roleNid,
                   avatarNid,
                   voiceNid,
-                  voiceType: getVoiceType(voice) || role?.voiceType,
+                  voiceType:
+                    selectedVoice?.voiceType ||
+                    fallbackVoice?.voiceType ||
+                    role?.voiceType,
                   customDigitalHuman,
                 },
               );

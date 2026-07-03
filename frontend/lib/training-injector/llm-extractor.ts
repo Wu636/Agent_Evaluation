@@ -7,6 +7,7 @@
 
 import { ParsedStep, ParsedScoreItem, ParsedFlowConfig } from "./types";
 import { MODEL_NAME_MAPPING } from "@/lib/config";
+import { buildTemperatureCompatiblePayload } from "@/lib/llm/utils";
 
 export interface LLMSettings {
     apiKey: string;
@@ -43,7 +44,7 @@ async function callLLM(
 
     console.log("[llm-extractor] Calling LLM:", { endpoint, model, promptLength: prompt.length });
 
-    const requestBody = JSON.stringify({
+    const requestBody = JSON.stringify(buildTemperatureCompatiblePayload({
         model,
         messages: [
             {
@@ -53,9 +54,8 @@ async function callLLM(
             },
             { role: "user", content: prompt },
         ],
-        temperature: 0,
         max_tokens: 16000,
-    });
+    }, model, 0));
 
     let lastError: Error | null = null;
 

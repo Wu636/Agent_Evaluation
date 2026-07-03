@@ -4,7 +4,7 @@
 
 import { ApiConfig } from "../llm/types";
 import { jsonrepair } from "jsonrepair";
-import { callLLM, callLLMStream } from "../llm/utils";
+import { buildTemperatureCompatiblePayload, callLLM, callLLMStream } from "../llm/utils";
 import { summarizeLlmHttpError } from "../llm/error-utils";
 import { buildScriptGeneratorPrompt, buildRubricGeneratorPrompt } from "./prompts";
 import {
@@ -299,9 +299,8 @@ export async function classifyTrainingScriptMode(
         response = await fetch(endpoint, {
             method: "POST",
             headers: buildLlmHeaders(apiKey),
-            body: JSON.stringify({
+            body: JSON.stringify(buildTemperatureCompatiblePayload({
                 model,
-                temperature: 0,
                 maxTokens: 8,
                 n: 1,
                 presence_penalty: 0.0,
@@ -312,7 +311,7 @@ export async function classifyTrainingScriptMode(
                         content: `请判断下方教师文档最适合哪一种训练剧本模式。\n\n<teacher_document>\n${teacherDocContent}\n</teacher_document>`,
                     },
                 ],
-            }),
+            }, model, 0)),
         });
     } catch (error) {
         throw formatLlmConnectivityError(baseUrl, error);
@@ -1006,9 +1005,8 @@ async function requestTrainingPlan(
     return fetch(endpoint, {
         method: "POST",
         headers: buildLlmHeaders(apiKey),
-        body: JSON.stringify({
+        body: JSON.stringify(buildTemperatureCompatiblePayload({
             model,
-            temperature: 0.1,
             maxTokens,
             n: 1,
             presence_penalty: 0.0,
@@ -1019,7 +1017,7 @@ async function requestTrainingPlan(
                     content: prompt,
                 },
             ],
-        }),
+        }, model, 0.1)),
     });
 }
 
@@ -1131,9 +1129,8 @@ async function repairTrainingPlanContent(
     const response = await fetch(endpoint, {
         method: "POST",
         headers: buildLlmHeaders(apiKey),
-        body: JSON.stringify({
+        body: JSON.stringify(buildTemperatureCompatiblePayload({
             model,
-            temperature: 0,
             maxTokens: 1400,
             n: 1,
             presence_penalty: 0.0,
@@ -1144,7 +1141,7 @@ async function repairTrainingPlanContent(
                     content: `请把下面的训练剧本规划草稿修复为严格 JSON。\n\n<plan_draft>\n${rawContent}\n</plan_draft>`,
                 },
             ],
-        }),
+        }, model, 0)),
     });
 
     if (!response.ok) {
@@ -1167,9 +1164,8 @@ async function autofillIncompleteTrainingPlan(
     const response = await fetch(endpoint, {
         method: "POST",
         headers: buildLlmHeaders(apiKey),
-        body: JSON.stringify({
+        body: JSON.stringify(buildTemperatureCompatiblePayload({
             model,
-            temperature: 0,
             maxTokens: 1800,
             n: 1,
             presence_penalty: 0.0,
@@ -1202,7 +1198,7 @@ async function autofillIncompleteTrainingPlan(
                     ].join("\n"),
                 },
             ],
-        }),
+        }, model, 0)),
     });
 
     if (!response.ok) {
@@ -1234,9 +1230,8 @@ async function targetedFillIncompleteModules(
     const response = await fetch(endpoint, {
         method: "POST",
         headers: buildLlmHeaders(apiKey),
-        body: JSON.stringify({
+        body: JSON.stringify(buildTemperatureCompatiblePayload({
             model,
-            temperature: 0.1,
             maxTokens: 1400,
             n: 1,
             presence_penalty: 0.0,
@@ -1281,7 +1276,7 @@ async function targetedFillIncompleteModules(
                     ].join("\n"),
                 },
             ],
-        }),
+        }, model, 0.1)),
     });
 
     if (!response.ok) {
@@ -1976,9 +1971,8 @@ export async function repairTrainingScriptStructure(
     const response = await fetch(endpoint, {
         method: "POST",
         headers: buildLlmHeaders(config.apiKey),
-        body: JSON.stringify({
+        body: JSON.stringify(buildTemperatureCompatiblePayload({
             model: config.model,
-            temperature: 0.1,
             maxTokens: 3200,
             n: 1,
             presence_penalty: 0.0,
@@ -2017,7 +2011,7 @@ export async function repairTrainingScriptStructure(
                     ].join("\n"),
                 },
             ],
-        }),
+        }, config.model, 0.1)),
     });
 
     if (!response.ok) {

@@ -5,7 +5,7 @@
  */
 
 import { jsonrepair } from "jsonrepair";
-import { ParsedStep, ParsedScoreItem, ParsedFlowConfig, ParsedFlowEdge } from "./types";
+import type { ParsedStep, ParsedScoreItem, ParsedFlowConfig, ParsedFlowEdge } from "./types";
 
 // ─── 基础配置提取 ─────────────────────────────────────────────────────
 
@@ -219,6 +219,65 @@ function looksLikeTrainingScriptContent(content: string): boolean {
     );
 }
 
+function isStageBoundaryComment(line: string): boolean {
+    return /^<!--\s*STAGE_(?:START|END)\s*:?\s*[0-9一二三四五六七八九十]*\s*-->\s*$/i.test(line);
+}
+
+function parseStageBoundaryComment(line: string): {
+    type: "start" | "end";
+    stageNumber: number | null;
+} | null {
+    const match = String(line || "").trim().match(
+        /^<!--\s*STAGE_(START|END)\s*:?\s*([0-9一二三四五六七八九十]*)\s*-->\s*$/i
+    );
+    if (!match) return null;
+
+    return {
+        type: match[1].toLowerCase() === "start" ? "start" : "end",
+        stageNumber: match[2] ? parseStageOrdinal(match[2]) : null,
+    };
+}
+
+function isStructuralBoundaryLine(line: string): boolean {
+    const stripped = String(line || "").trim();
+    if (!stripped) return false;
+
+    return Boolean(matchStageHeading(stripped)) ||
+        /^<!--\s*STAGE_(?:START|END)\b/i.test(stripped) ||
+        stripped === "<!-- TRAINING_SCRIPT_COMPLETE -->" ||
+        /^#{1,6}\s*(?:🔀\s*)?(?:非线性|分支|图结构|流程图|多线路)[\s\S]{0,32}(?:跳转|流程|连线|关系)(?:\s|$|[（(])/i.test(stripped) ||
+        /^#{1,6}\s*(?:🔄\s*)?阶段跳转关系\b/i.test(stripped) ||
+        /^#{1,6}\s*(?:📖\s*)?配置说明\b/i.test(stripped);
+}
+
+function closeDanglingCodeBlocksBeforeStructuralBoundaries(markdown: string): string {
+    const lines = String(markdown || "").split("\n");
+    const repairedLines: string[] = [];
+    let inCodeBlock = false;
+
+    for (const line of lines) {
+        const stripped = line.trim();
+        const isFence = stripped.startsWith("```");
+
+        if (inCodeBlock && !isFence && isStructuralBoundaryLine(stripped)) {
+            repairedLines.push("```");
+            inCodeBlock = false;
+        }
+
+        repairedLines.push(line);
+
+        if (isFence) {
+            inCodeBlock = !inCodeBlock;
+        }
+    }
+
+    if (inCodeBlock) {
+        repairedLines.push("```");
+    }
+
+    return repairedLines.join("\n");
+}
+
 export function normalizeTrainingScriptSource(markdown: string): string {
     let raw = String(markdown || "");
     const initialLines = raw.split("\n");
@@ -294,8 +353,18 @@ export function matchStageHeading(line: string): StageHeadingMatch | null {
     if (!stripped) return null;
 
     const patterns = [
+        /^(?:[-*+•]\s*)?#{2,6}\s*阶段\s*([0-9一二三四五六七八九十]+)\s*[：:\-—–、.．）)]\s*(.+)$/i,
+        /^(?:[-*+•]\s*)?#{2,6}\s*第\s*([0-9一二三四五六七八九十]+)\s*阶段\s*[：:\-—–、.．）)]\s*(.+)$/i,
+        /^(?:[-*+•]\s*)?#{2,6}\s*阶段\s*([0-9一二三四五六七八九十]+)\s+(.+)$/i,
+        /^(?:[-*+•]\s*)?#{2,6}\s*第\s*([0-9一二三四五六七八九十]+)\s*阶段\s+(.+)$/i,
+        /^(?:[-*+•]\s*)?#{2,6}\s*阶段\s*([0-9]+)\s*(\S.+)$/i,
+        /^(?:[-*+•]\s*)?#{2,6}\s*第\s*([0-9]+)\s*阶段\s*(\S.+)$/i,
         /^(?:[-*+•]\s*)?#{2,6}\s*阶段\s*([0-9一二三四五六七八九十]+)(?:\s*[：:\-]\s*(.+))?$/i,
         /^(?:[-*+•]\s*)?#{2,6}\s*第\s*([0-9一二三四五六七八九十]+)\s*阶段(?:\s*[：:\-]\s*(.+))?$/i,
+        /^(?:[-*+•]\s*)?阶段\s*([0-9一二三四五六七八九十]+)\s*[：:\-—–、.．）)]\s*(.+)$/i,
+        /^(?:[-*+•]\s*)?第\s*([0-9一二三四五六七八九十]+)\s*阶段\s*[：:\-—–、.．）)]\s*(.+)$/i,
+        /^(?:[-*+•]\s*)?阶段\s*([0-9一二三四五六七八九十]+)\s+(.+)$/i,
+        /^(?:[-*+•]\s*)?第\s*([0-9一二三四五六七八九十]+)\s*阶段\s+(.+)$/i,
         /^(?:[-*+•]\s*)?阶段\s*([0-9一二三四五六七八九十]+)\s*[：:\-]\s*(.+)$/i,
         /^(?:[-*+•]\s*)?第\s*([0-9一二三四五六七八九十]+)\s*阶段\s*[：:\-]\s*(.+)$/i,
     ];
@@ -320,13 +389,23 @@ export function matchStageHeading(line: string): StageHeadingMatch | null {
 }
 
 export function repairTrainingScriptForParsing(markdown: string): string {
-    const normalized = normalizeTrainingScriptSource(markdown);
+    // Repair raw boundaries first. Otherwise normalization can select one malformed
+    // fenced block and discard later stages before we get a chance to close it.
+    const boundaryRepaired = closeDanglingCodeBlocksBeforeStructuralBoundaries(markdown);
+    const normalized = closeDanglingCodeBlocksBeforeStructuralBoundaries(
+        normalizeTrainingScriptSource(boundaryRepaired)
+    );
     const lines = normalized.split("\n");
     const repairedLines: string[] = [];
     let inCodeBlock = false;
 
     for (const line of lines) {
         const trimmed = line.trim();
+        if (isStageBoundaryComment(trimmed)) {
+            repairedLines.push(line);
+            continue;
+        }
+
         if (trimmed.startsWith("```")) {
             inCodeBlock = !inCodeBlock;
             repairedLines.push(line);
@@ -348,8 +427,30 @@ export function repairTrainingScriptForParsing(markdown: string): string {
 }
 
 function collectStageBlockRanges(lines: string[]): Array<{ start: number; end: number }> {
+    const explicitStageStarts = lines
+        .map((line, index) => ({ boundary: parseStageBoundaryComment(line), index }))
+        .filter((entry) => entry.boundary?.type === "start");
+
+    if (explicitStageStarts.length > 0) {
+        return explicitStageStarts.map((entry, index) => {
+            const nextStageStart = explicitStageStarts[index + 1]?.index ?? lines.length;
+            const matchingEndIndex = lines.findIndex((line, lineIndex) => {
+                if (lineIndex <= entry.index || lineIndex >= nextStageStart) return false;
+                const boundary = parseStageBoundaryComment(line);
+                if (boundary?.type !== "end") return false;
+                return boundary.stageNumber === null ||
+                    entry.boundary?.stageNumber === null ||
+                    boundary.stageNumber === entry.boundary?.stageNumber;
+            });
+
+            return {
+                start: entry.index,
+                end: matchingEndIndex >= 0 ? matchingEndIndex + 1 : nextStageStart,
+            };
+        });
+    }
+
     const stageStarts: number[] = [];
-    const sectionHeadings: number[] = [];
     let inCodeBlock = false;
 
     lines.forEach((line, index) => {
@@ -362,20 +463,13 @@ function collectStageBlockRanges(lines: string[]): Array<{ start: number; end: n
 
         if (matchStageHeading(trimmed)) {
             stageStarts.push(index);
-            return;
-        }
-
-        if (/^##+\s+\S/.test(trimmed) && !isScriptFieldLine(trimmed)) {
-            sectionHeadings.push(index);
         }
     });
 
     return stageStarts.map((start, index) => {
-        const nextStageStart = stageStarts[index + 1];
-        const nextSectionHeading = sectionHeadings.find((headingIndex) => headingIndex > start);
         return {
             start,
-            end: nextStageStart ?? nextSectionHeading ?? lines.length,
+            end: stageStarts[index + 1] ?? lines.length,
         };
     });
 }
@@ -399,11 +493,11 @@ function parseStageBlock(stageMarkdown: string): ParsedStep {
         if (stripped.startsWith("```")) {
             if (inCodeBlock) {
                 const content = currentCodeBlock.join("\n").trim();
-                if (codeBlockType === "prologue") {
+                if (content && codeBlockType === "prologue") {
                     currentStep.prologue = content;
-                } else if (codeBlockType === "llmPrompt") {
+                } else if (content && codeBlockType === "llmPrompt") {
                     currentStep.llmPrompt = content;
-                } else if (codeBlockType === "transitionPrompt") {
+                } else if (content && codeBlockType === "transitionPrompt") {
                     currentStep.transitionPrompt = content;
                 }
                 inCodeBlock = false;
@@ -552,11 +646,11 @@ function parseStageBlock(stageMarkdown: string): ParsedStep {
 
     if (inCodeBlock && currentCodeBlock.length > 0) {
         const content = currentCodeBlock.join("\n").trim();
-        if (codeBlockType === "prologue") {
+        if (content && codeBlockType === "prologue") {
             currentStep.prologue = content;
-        } else if (codeBlockType === "llmPrompt") {
+        } else if (content && codeBlockType === "llmPrompt") {
             currentStep.llmPrompt = content;
-        } else if (codeBlockType === "transitionPrompt") {
+        } else if (content && codeBlockType === "transitionPrompt") {
             currentStep.transitionPrompt = content;
         }
     }
@@ -662,7 +756,7 @@ export function normalizeValue(raw: string): string {
  * 对应 Python: parse_markdown()
  */
 export function parseTrainingScript(markdown: string): ParsedStep[] {
-    const normalized = normalizeTrainingScriptSource(markdown);
+    const normalized = repairTrainingScriptForParsing(markdown);
     const lines = normalized.split("\n");
     const stageRanges = collectStageBlockRanges(lines);
 

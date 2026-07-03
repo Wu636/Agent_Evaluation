@@ -25,7 +25,7 @@ import {
     hasUnclosedTrainingScriptFence,
     TRAINING_SCRIPT_COMPLETE_MARKER,
 } from "@/lib/training-generator/script-tools";
-import { parseRubricMarkdown, parseTaskConfig, parseTrainingScript } from "@/lib/training-injector/parser";
+import { parseRubricMarkdown, parseTaskConfig, parseTrainingScript, repairTrainingScriptForParsing } from "@/lib/training-injector/parser";
 import { convertDocxToText } from "@/lib/converters/docx-converter";
 import { ScriptMode, TrainingScriptPlan } from "@/lib/training-generator/types";
 import WordExtractor from 'word-extractor';
@@ -406,7 +406,9 @@ export async function POST(request: NextRequest) {
 
                 const normalizeGeneratedScript = (content: string): string => {
                     const completed = normalizeTrainingScriptCompletion(applyScriptContinuationGuards(content));
-                    return normalizeTrainingScriptCompletion(ensureNonlinearFlowConfigMarkdown(completed, modulePlan));
+                    return repairTrainingScriptForParsing(
+                        normalizeTrainingScriptCompletion(ensureNonlinearFlowConfigMarkdown(completed, modulePlan))
+                    );
                 };
 
                 const mergeScriptContinuationContent = (previousContent: string, continuationContent: string): string => {

@@ -4,6 +4,7 @@ import { MODEL_NAME_MAPPING } from "@/lib/config";
 import { formatDialogueForLLM } from "@/lib/llm/evaluator";
 import { summarizeLlmHttpError } from "@/lib/llm/error-utils";
 import { ApiConfig, DialogueData, EvaluationReport, IssueItem } from "@/lib/llm/types";
+import { buildTemperatureCompatiblePayload } from "@/lib/llm/utils";
 import { evaluateWithTemplate } from "@/lib/llm/template-evaluator";
 import { parseTxtDialogue } from "@/lib/txt-converter";
 import { parseTaskConfig, parseTrainingScript } from "@/lib/training-injector/parser";
@@ -329,9 +330,8 @@ async function callPlannerJson(
     const response = await fetch(endpoint, {
         method: "POST",
         headers: buildLlmHeaders(config.apiKey),
-        body: JSON.stringify({
+        body: JSON.stringify(buildTemperatureCompatiblePayload({
             model: MODEL_NAME_MAPPING[config.model] || config.model,
-            temperature: 0.1,
             maxTokens: 3200,
             n: 1,
             presence_penalty: 0.0,
@@ -339,7 +339,7 @@ async function callPlannerJson(
                 { role: "system", content: OPTIMIZATION_SYSTEM_PROMPT },
                 { role: "user", content: prompt },
             ],
-        }),
+        }, MODEL_NAME_MAPPING[config.model] || config.model, 0.1)),
     });
 
     if (!response.ok) {

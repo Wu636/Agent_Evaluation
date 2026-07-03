@@ -1,4 +1,4 @@
-import { isScriptFieldLine, matchStageHeading, normalizeTrainingScriptSource, parseTaskConfig, parseTrainingScript, parseTrainingScriptFlowConfig } from "@/lib/training-injector/parser";
+import { isScriptFieldLine, matchStageHeading, normalizeTrainingScriptSource, parseTaskConfig, parseTrainingScript, parseTrainingScriptFlowConfig, repairTrainingScriptForParsing } from "@/lib/training-injector/parser";
 import { ScriptFlowEdge, TRAINING_FLOW_END_NODE_ID, TrainingScriptPlan } from "./types";
 import { detectMultiRoleTextSignal } from "./plan-validation";
 
@@ -57,6 +57,21 @@ function hasOddFenceCount(markdown: string): boolean {
     return fenceCount % 2 === 1;
 }
 
+function parseStageBoundaryComment(line: string): {
+    type: "start" | "end";
+    stageNumber: number | null;
+} | null {
+    const match = String(line || "").trim().match(
+        /^<!--\s*STAGE_(START|END)\s*:?\s*([0-9一二三四五六七八九十]*)\s*-->\s*$/i
+    );
+    if (!match) return null;
+
+    return {
+        type: match[1].toLowerCase() === "start" ? "start" : "end",
+        stageNumber: match[2] ? extractStageNumberFromHeading(`### 阶段${match[2]}: 临时标题`) : null,
+    };
+}
+
 export function hasTrainingScriptCompleteMarker(markdown: string): boolean {
     const raw = String(markdown || "");
     const normalized = normalizeTrainingScriptSource(raw);
@@ -92,24 +107,31 @@ export function extractStageNumberFromHeading(heading: string): number | null {
 }
 
 export function extractScriptStructure(markdown: string): ScriptStructure {
-    const lines = normalizeTrainingScriptSource(markdown).split("\n");
+    const lines = repairTrainingScriptForParsing(markdown).split("\n");
     const stageStarts: number[] = [];
     const topLevelHeadings: number[] = [];
+    const explicitStageStarts = lines
+        .map((line, index) => ({ boundary: parseStageBoundaryComment(line), index }))
+        .filter((entry) => entry.boundary?.type === "start");
     let inCodeBlock = false;
 
-    lines.forEach((line, index) => {
-        const trimmed = line.trim();
-        if (trimmed.startsWith("```")) {
-            inCodeBlock = !inCodeBlock;
-            return;
-        }
-        if (inCodeBlock) return;
-        if (matchStageHeading(trimmed)) {
-            stageStarts.push(index);
-        } else if (/^##+\s+/.test(trimmed) && !isScriptFieldLine(trimmed)) {
-            topLevelHeadings.push(index);
-        }
-    });
+    if (explicitStageStarts.length > 0) {
+        stageStarts.push(...explicitStageStarts.map((entry) => entry.index));
+    } else {
+        lines.forEach((line, index) => {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("```")) {
+                inCodeBlock = !inCodeBlock;
+                return;
+            }
+            if (inCodeBlock) return;
+            if (matchStageHeading(trimmed)) {
+                stageStarts.push(index);
+            } else if (/^##+\s+/.test(trimmed) && !isScriptFieldLine(trimmed)) {
+                topLevelHeadings.push(index);
+            }
+        });
+    }
 
     if (stageStarts.length === 0) {
         return {
@@ -126,10 +148,23 @@ export function extractScriptStructure(markdown: string): ScriptStructure {
 
     stageStarts.forEach((start, index) => {
         const nextStageStart = stageStarts[index + 1];
-        const nextTopLevel = topLevelHeadings.find((headingIndex) => headingIndex > start);
-        const end = nextStageStart ?? nextTopLevel ?? lines.length;
+        const startBoundary = parseStageBoundaryComment(lines[start]);
+        const matchingEnd = startBoundary
+            ? lines.findIndex((line, lineIndex) => {
+                if (lineIndex <= start || lineIndex >= (nextStageStart ?? lines.length)) return false;
+                const boundary = parseStageBoundaryComment(line);
+                if (boundary?.type !== "end") return false;
+                return boundary.stageNumber === null ||
+                    startBoundary.stageNumber === null ||
+                    boundary.stageNumber === startBoundary.stageNumber;
+            })
+            : -1;
+        const nextTopLevel = startBoundary
+            ? undefined
+            : topLevelHeadings.find((headingIndex) => headingIndex > start);
+        const end = matchingEnd >= 0 ? matchingEnd + 1 : nextStageStart ?? nextTopLevel ?? lines.length;
         const stageLines = lines.slice(start, end);
-        const heading = stageLines[0]?.trim() || `### 阶段${index + 1}`;
+        const heading = stageLines.find((line) => matchStageHeading(line.trim()))?.trim() || stageLines[0]?.trim() || `### 阶段${index + 1}`;
         const stepName = matchStageHeading(heading)?.stepName || heading.split(/[:：]/).slice(1).join(":").trim() || `阶段${index + 1}`;
         stageEnds.push(end);
         stages.push({
@@ -345,9 +380,10 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
     structure.stages.forEach((stage, index) => {
         const stageNumber = extractStageNumberFromHeading(stage.heading);
         if (stageNumber === null) {
+            const expectedTitle = modulePlan?.modules?.[index]?.title?.trim() || "阶段名称";
             issues.push({
                 level: "error",
-                message: `阶段 ${index + 1} 的标题不是标准格式，需使用“### 阶段N: 名称”。`,
+                message: `阶段 ${index + 1} 的标题不是标准格式，请把该阶段标题改成独立一行，例如：### 阶段${index + 1}: ${expectedTitle}`,
                 stageIndex: index,
                 field: "stepName",
             });
@@ -474,9 +510,18 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
     }
 
     if (modulePlan && modulePlan.modules.length !== parsedSteps.length) {
+        const expectedCount = modulePlan.modules.length;
+        const actualCount = parsedSteps.length;
+        const missingStageNumber = actualCount < expectedCount ? actualCount + 1 : null;
+        const missingStageTitle = missingStageNumber
+            ? modulePlan.modules[missingStageNumber - 1]?.title?.trim() || "阶段名称"
+            : "";
         issues.push({
             level: "warning",
-            message: `模块规划共 ${modulePlan.modules.length} 个模块，但当前剧本解析出 ${parsedSteps.length} 个阶段。`,
+            message: missingStageNumber
+                ? `模块规划共 ${expectedCount} 个模块，但当前剧本解析出 ${actualCount} 个阶段。请优先检查阶段 ${missingStageNumber} 的标题是否为独立一行标准格式，例如：### 阶段${missingStageNumber}: ${missingStageTitle}`
+                : `模块规划共 ${expectedCount} 个模块，但当前剧本解析出 ${actualCount} 个阶段。请检查是否存在重复阶段标题，标准格式示例：### 阶段1: 阶段名称`,
+            stageIndex: missingStageNumber ? missingStageNumber - 1 : undefined,
             field: "stageCount",
         });
     }

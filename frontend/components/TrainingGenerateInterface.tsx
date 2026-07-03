@@ -49,8 +49,15 @@ import {
 } from "@/lib/training-generator/client";
 import { DEFAULT_RUBRIC_TEMPLATE, DEFAULT_SCRIPT_TEMPLATE, TEMPLATE_VERSION, getBuiltInScriptTemplate } from "@/lib/training-generator/prompts";
 import { findMultiRoleModuleIssue } from "@/lib/training-generator/plan-validation";
-import { diagnoseTrainingScript, extractScriptStructure, replaceStageInScript } from "@/lib/training-generator/script-tools";
+import {
+    diagnoseTrainingScript,
+    extractScriptStructure,
+    replaceStageInScript,
+    TRAINING_SCRIPT_COMPLETE_MARKER,
+    type ScriptDiagnosticIssue,
+} from "@/lib/training-generator/script-tools";
 import { parseTrainingScript, repairTrainingScriptForParsing } from "@/lib/training-injector/parser";
+import { isProPromptTemplate } from "@/lib/training-generator-pro/prompts";
 import { SettingsModal } from "./SettingsModal";
 import { InjectConfigModal } from "./InjectConfigModal";
 import { TrainingOptimizationModal } from "./TrainingOptimizationModal";
@@ -118,6 +125,133 @@ const EMPTY_MODULE_PLAN_CACHE: CachedModulePlanState = {
     planAutofillModuleFields: {},
     updatedAt: 0,
 };
+
+const CHINESE_STAGE_NUMBERS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function toChineseStageNumber(stageNumber: number): string {
+    if (stageNumber < 10) return CHINESE_STAGE_NUMBERS[stageNumber] || String(stageNumber);
+    if (stageNumber === 10) return "十";
+    if (stageNumber < 20) return `十${CHINESE_STAGE_NUMBERS[stageNumber % 10] || ""}`;
+    const tens = Math.floor(stageNumber / 10);
+    const ones = stageNumber % 10;
+    return `${CHINESE_STAGE_NUMBERS[tens] || tens}十${ones ? CHINESE_STAGE_NUMBERS[ones] : ""}`;
+}
+
+function getStageNumberLabels(stageNumber: number): string[] {
+    return Array.from(new Set([String(stageNumber), toChineseStageNumber(stageNumber)].filter(Boolean)));
+}
+
+function stripMarkdownHeadingPrefix(line: string): string {
+    return String(line || "").trim().replace(/^(?:[-*+•]\s*)?#{0,6}\s*/u, "").trim();
+}
+
+function looksLikeScriptFieldLine(line: string): boolean {
+    const stripped = stripMarkdownHeadingPrefix(line);
+    return /^(?:\*\*)?(?:虚拟训练官名字|模型|声音|形象|阶段描述|开场白|提示词|状态机逻辑|互动轮次|背景图|flowCondition|transitionPrompt|interactiveRounds|llmPrompt|prologue)(?:\*\*)?\s*[：:]/iu.test(stripped);
+}
+
+function lineLooksLikeStageHeading(line: string, stageNumber: number): boolean {
+    const stripped = stripMarkdownHeadingPrefix(line);
+    if (!stripped || stripped.length > 180) return false;
+    const labels = getStageNumberLabels(stageNumber).map(escapeRegExp).join("|");
+    return new RegExp(`^(?:第\\s*(?:${labels})\\s*阶段|阶段\\s*(?:${labels})|(?:${labels})\\s*阶段)`, "u").test(stripped);
+}
+
+function extractLooseStageTitle(line: string, stageNumber: number, fallbackTitle: string): string {
+    const labels = getStageNumberLabels(stageNumber).map(escapeRegExp).join("|");
+    const separator = `[\\s：:\\-—–、.．）)]*`;
+    let title = stripMarkdownHeadingPrefix(line)
+        .replace(new RegExp(`^第\\s*(?:${labels})\\s*阶段${separator}`, "u"), "")
+        .replace(new RegExp(`^阶段\\s*(?:${labels})${separator}`, "u"), "")
+        .replace(new RegExp(`^(?:${labels})\\s*阶段${separator}`, "u"), "")
+        .replace(/^[：:\-—–、.．）)\s]+/u, "")
+        .trim();
+
+    if (looksLikeScriptFieldLine(title)) {
+        title = "";
+    }
+
+    return title || fallbackTitle || "阶段名称";
+}
+
+function getExpectedStageTitle(modulePlan: TrainingScriptPlan | null, stageNumber: number): string {
+    return modulePlan?.modules?.[stageNumber - 1]?.title?.trim() || "阶段名称";
+}
+
+function findStageOffsetInScript(content: string, stageNumber?: number): number {
+    if (!stageNumber || !content) return 0;
+
+    const lines = content.split("\n");
+    let offset = 0;
+    const boundaryPattern = new RegExp(`^\\s*<!--\\s*STAGE_START\\s*:?\\s*${stageNumber}\\s*-->\\s*$`, "iu");
+
+    for (const line of lines) {
+        if (boundaryPattern.test(line) || lineLooksLikeStageHeading(line, stageNumber)) {
+            return offset;
+        }
+        offset += line.length + 1;
+    }
+
+    if (stageNumber > 1) {
+        return findStageOffsetInScript(content, stageNumber - 1);
+    }
+
+    return 0;
+}
+
+function normalizeStageHeadingAtStage(content: string, stageNumber: number, fallbackTitle: string): {
+    changed: boolean;
+    markdown: string;
+} {
+    const lines = content.split("\n");
+    const boundaryPattern = new RegExp(`^\\s*<!--\\s*STAGE_START\\s*:?\\s*${stageNumber}\\s*-->\\s*$`, "iu");
+
+    for (let index = 0; index < lines.length; index++) {
+        if (!boundaryPattern.test(lines[index])) continue;
+
+        for (let cursor = index + 1; cursor < Math.min(lines.length, index + 8); cursor++) {
+            const line = lines[cursor];
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            if (/^<!--\s*STAGE_(?:START|END)/iu.test(trimmed)) break;
+
+            if (lineLooksLikeStageHeading(line, stageNumber) || /^#{1,6}\s+\S/u.test(trimmed)) {
+                const title = extractLooseStageTitle(line, stageNumber, fallbackTitle);
+                const normalizedHeading = `### 阶段${stageNumber}: ${title}`;
+                const changed = lines[cursor] !== normalizedHeading;
+                lines[cursor] = normalizedHeading;
+                return { changed, markdown: lines.join("\n") };
+            }
+
+            if (looksLikeScriptFieldLine(line) || trimmed.startsWith("```")) {
+                lines.splice(cursor, 0, `### 阶段${stageNumber}: ${fallbackTitle || "阶段名称"}`);
+                return { changed: true, markdown: lines.join("\n") };
+            }
+
+            const title = stripMarkdownHeadingPrefix(line) || fallbackTitle || "阶段名称";
+            lines[cursor] = `### 阶段${stageNumber}: ${title}`;
+            return { changed: true, markdown: lines.join("\n") };
+        }
+
+        lines.splice(index + 1, 0, `### 阶段${stageNumber}: ${fallbackTitle || "阶段名称"}`);
+        return { changed: true, markdown: lines.join("\n") };
+    }
+
+    for (let index = 0; index < lines.length; index++) {
+        if (!lineLooksLikeStageHeading(lines[index], stageNumber)) continue;
+        const title = extractLooseStageTitle(lines[index], stageNumber, fallbackTitle);
+        const normalizedHeading = `### 阶段${stageNumber}: ${title}`;
+        const changed = lines[index] !== normalizedHeading;
+        lines[index] = normalizedHeading;
+        return { changed, markdown: lines.join("\n") };
+    }
+
+    return { changed: false, markdown: content };
+}
 
 function loadOptimizationSnapshots(): OptimizationSnapshot[] {
     if (typeof window === "undefined") return [];
@@ -497,6 +631,8 @@ export function TrainingGenerateInterface() {
     const [currentGeneratingPhase, setCurrentGeneratingPhase] = useState<"script" | "rubric" | null>(null);
     const [statusMessage, setStatusMessage] = useState("");
     const abortRef = useRef<AbortController | null>(null);
+    const generatingScriptRef = useRef("");
+    const generatingRubricRef = useRef("");
 
     // --- 结果（从 localStorage 恢复）---
     const loadCached = () => {
@@ -517,6 +653,9 @@ export function TrainingGenerateInterface() {
         type: "success" | "error";
         message: string;
     } | null>(null);
+    const [isScriptSourceEditing, setIsScriptSourceEditing] = useState(false);
+    const [scriptEditDraft, setScriptEditDraft] = useState("");
+    const [scriptEditFocusOffset, setScriptEditFocusOffset] = useState<number | null>(null);
     const [optimizationSnapshots, setOptimizationSnapshots] = useState<OptimizationSnapshot[]>(() => loadOptimizationSnapshots());
     const [lastOptimizationResult, setLastOptimizationResult] = useState<OptimizationLoopResult | null>(null);
 
@@ -634,6 +773,7 @@ export function TrainingGenerateInterface() {
     });
     const moduleCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const resultPaneRef = useRef<HTMLDivElement | null>(null);
+    const scriptEditTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
     // --- Prompt 模板（数据库 + localStorage fallback） ---
     const PROMPT_SETTINGS_KEY = "training-prompt-settings";
@@ -815,6 +955,23 @@ export function TrainingGenerateInterface() {
         return () => window.clearTimeout(timeout);
     }, [focusedStageIndex, activeTab, phase]);
 
+    useEffect(() => {
+        if (!isScriptSourceEditing || scriptEditFocusOffset === null || typeof window === "undefined") return;
+        const textarea = scriptEditTextareaRef.current;
+        if (!textarea) return;
+
+        const frame = window.requestAnimationFrame(() => {
+            const position = Math.max(0, Math.min(scriptEditFocusOffset, textarea.value.length));
+            const lineIndex = textarea.value.slice(0, position).split("\n").length - 1;
+            textarea.focus();
+            textarea.setSelectionRange(position, position);
+            textarea.scrollTop = Math.max(0, lineIndex * 24 - textarea.clientHeight * 0.3);
+            setScriptEditFocusOffset(null);
+        });
+
+        return () => window.cancelAnimationFrame(frame);
+    }, [isScriptSourceEditing, scriptEditFocusOffset]);
+
     const syncDominantMode = useCallback((nextMode: Exclude<ScriptMode, "auto">) => {
         setScriptMode(nextMode);
         if (isBuiltInTemplateId(selectedScriptTemplateId)) {
@@ -829,7 +986,7 @@ export function TrainingGenerateInterface() {
             const res = await fetch("/api/prompt-templates");
             if (res.ok) {
                 const data = await res.json();
-                setDbTemplates(data.templates || []);
+                setDbTemplates((data.templates || []).filter((template: PromptTemplate) => !isProPromptTemplate(template.tags)));
             }
         } catch {
             // 静默失败（Supabase 未配置时）
@@ -1146,6 +1303,24 @@ export function TrainingGenerateInterface() {
         }
     }, []);
 
+    const repairInterruptedScriptContent = useCallback((source: string, actionLabel: string): string => {
+        const current = String(source || "").trim();
+        if (!current) return source;
+
+        const repaired = repairTrainingScriptForParsing(current);
+        const parsedSteps = parseTrainingScript(repaired);
+        setScriptContent(repaired);
+        generatingScriptRef.current = repaired;
+        setActiveTab("script");
+        setRepairFeedback({
+            type: parsedSteps.length > 0 ? "success" : "error",
+            message: parsedSteps.length > 0
+                ? `${actionLabel}，已先自动修复剧本结构并识别到 ${parsedSteps.length} 个训练阶段。`
+                : `${actionLabel}，已尝试自动修复剧本结构，但仍未识别到训练阶段。`,
+        });
+        return repaired;
+    }, []);
+
     // --- 开始生成 ---
     const handleGenerate = useCallback(async () => {
         if (!canGenerate) return;
@@ -1162,10 +1337,14 @@ export function TrainingGenerateInterface() {
         if (generateScript) setScriptContent("");
         if (generateRubric) setRubricContent("");
         setErrorMessage("");
+        setRepairFeedback(null);
         if (generateScript) setTaskName(""); // 仅生成剧本时才重置任务名
         if (generateScript) clearOptimizationHistory();
+        setIsScriptSourceEditing(false);
         setStatusMessage("准备中...");
         setCurrentGeneratingPhase(null);
+        generatingScriptRef.current = "";
+        generatingRubricRef.current = "";
 
         const controller = new AbortController();
         abortRef.current = controller;
@@ -1196,9 +1375,11 @@ export function TrainingGenerateInterface() {
                         case "chunk":
                             if (event.phase === "script") {
                                 tempScript += event.content;
+                                generatingScriptRef.current = tempScript;
                                 setScriptContent(tempScript);
                             } else {
                                 tempRubric += event.content;
+                                generatingRubricRef.current = tempRubric;
                                 setRubricContent(tempRubric);
                             }
                             break;
@@ -1206,9 +1387,11 @@ export function TrainingGenerateInterface() {
                         case "phase_complete":
                             if (event.phase === "script") {
                                 tempScript = event.fullContent;
+                                generatingScriptRef.current = event.fullContent;
                                 setScriptContent(event.fullContent);
                             } else {
                                 tempRubric = event.fullContent;
+                                generatingRubricRef.current = event.fullContent;
                                 setRubricContent(event.fullContent);
                             }
                             break;
@@ -1234,6 +1417,12 @@ export function TrainingGenerateInterface() {
             });
         } catch (err) {
             if (err instanceof DOMException && err.name === "AbortError") {
+                if (generateScript && (tempScript || generatingScriptRef.current)) {
+                    tempScript = repairInterruptedScriptContent(
+                        tempScript || generatingScriptRef.current,
+                        "已取消生成"
+                    );
+                }
                 setPhase(tempScript || tempRubric ? "completed" : "idle");
                 setStatusMessage("");
             } else {
@@ -1255,11 +1444,15 @@ export function TrainingGenerateInterface() {
         scriptMode,
         scriptTemplate,
         clearOptimizationHistory,
+        repairInterruptedScriptContent,
     ]);
 
     const handleCancel = useCallback(() => {
+        if (generateScript && generatingScriptRef.current.trim()) {
+            repairInterruptedScriptContent(generatingScriptRef.current, "已取消生成");
+        }
         abortRef.current?.abort();
-    }, []);
+    }, [generateScript, repairInterruptedScriptContent]);
 
     // --- 重新生成逻辑 ---
     const [regenContext, setRegenContext] = useState("");
@@ -1398,6 +1591,8 @@ export function TrainingGenerateInterface() {
         setErrorMessage("");
         setTaskName("");
         setStatusMessage("");
+        setIsScriptSourceEditing(false);
+        setScriptEditDraft("");
         clearOptimizationHistory();
         localStorage.removeItem(RESULT_CACHE_KEY);
     }, [clearOptimizationHistory]);
@@ -1480,6 +1675,18 @@ export function TrainingGenerateInterface() {
                     : "未进行智能规划：当前将使用你选中的模板。";
     const scriptDiagnostics = scriptContent ? diagnoseTrainingScript(scriptContent, modulePlan) : null;
     const scriptStructure = scriptContent ? extractScriptStructure(scriptContent) : { prefix: "", stages: [], suffix: "" };
+    const hasRepairableScriptStructureIssue = Boolean(
+        scriptDiagnostics && (
+            scriptDiagnostics.stageCount === 0 ||
+            scriptDiagnostics.issues.some((issue) =>
+                issue.field === "markdownFence" ||
+                issue.field === "stageCount" ||
+                issue.field === "stepName" ||
+                issue.field === "completionMarker"
+            ) ||
+            Boolean(modulePlan?.modules?.length && scriptDiagnostics.stageCount !== modulePlan.modules.length)
+        )
+    );
 
     const handleRepairScriptParsing = useCallback(() => {
         if (!scriptContent) return;
@@ -1487,25 +1694,151 @@ export function TrainingGenerateInterface() {
         setRepairFeedback(null);
         const repairedMarkdown = repairTrainingScriptForParsing(scriptContent);
         const parsedSteps = parseTrainingScript(repairedMarkdown);
+        const expectedStageCount = modulePlan?.modules?.length || 0;
 
         if (parsedSteps.length === 0) {
             setRepairFeedback({
                 type: "error",
-                message: "重新解析后仍未识别出任何训练阶段。请检查阶段标题是否类似“### 阶段1: 名称”，或确认模型输出里是否夹带了额外说明文字。",
+                message: "自动修复后仍未识别出任何训练阶段。请检查阶段标题是否类似“### 阶段1: 名称”，或确认模型输出里是否夹带了额外说明文字。",
+            });
+            setStatusMessage("");
+            return;
+        }
+
+        if (expectedStageCount > 0 && parsedSteps.length !== expectedStageCount) {
+            setScriptContent(repairedMarkdown);
+            setScriptEditDraft(repairedMarkdown);
+            setRepairFeedback({
+                type: "error",
+                message: `已完成结构修复，但仍只识别到 ${parsedSteps.length}/${expectedStageCount} 个训练阶段。请点击问题框定位到缺失阶段继续检查。`,
             });
             setStatusMessage("");
             return;
         }
 
         setScriptContent(repairedMarkdown);
+        setScriptEditDraft(repairedMarkdown);
+        setIsScriptSourceEditing(false);
         setActiveTab("script");
         setPhase("completed");
         setErrorMessage("");
         setRepairFeedback({
             type: "success",
-            message: `已重新解析当前剧本，并识别到 ${parsedSteps.length} 个训练阶段。`,
+            message: `已自动修复并重新解析当前剧本，识别到 ${parsedSteps.length} 个训练阶段。`,
         });
         setStatusMessage("");
+    }, [modulePlan, scriptContent]);
+
+    const tryAutoFixDiagnosticIssue = useCallback((issue: ScriptDiagnosticIssue): boolean => {
+        if (!scriptContent) return false;
+        if (!["stepName", "stageCount", "markdownFence", "completionMarker"].includes(issue.field || "")) {
+            return false;
+        }
+
+        const currentStageCount = parseTrainingScript(scriptContent).length;
+        const inferredStageNumber = issue.stageIndex !== undefined
+            ? issue.stageIndex + 1
+            : issue.field === "stageCount" && modulePlan && currentStageCount < modulePlan.modules.length
+                ? currentStageCount + 1
+                : undefined;
+
+        let nextMarkdown = scriptContent;
+        let titleRepaired = false;
+        if (inferredStageNumber && (issue.field === "stepName" || issue.field === "stageCount")) {
+            const normalizedStage = normalizeStageHeadingAtStage(
+                nextMarkdown,
+                inferredStageNumber,
+                getExpectedStageTitle(modulePlan, inferredStageNumber)
+            );
+            nextMarkdown = normalizedStage.markdown;
+            titleRepaired = normalizedStage.changed;
+        }
+
+        nextMarkdown = repairTrainingScriptForParsing(nextMarkdown);
+        let parsedSteps = parseTrainingScript(nextMarkdown);
+
+        if (issue.field === "completionMarker" && parsedSteps.length > 0) {
+            const lastLine = nextMarkdown.trim().split("\n").at(-1)?.trim();
+            if (lastLine !== TRAINING_SCRIPT_COMPLETE_MARKER) {
+                nextMarkdown = `${nextMarkdown.trim()}\n\n${TRAINING_SCRIPT_COMPLETE_MARKER}`;
+            }
+        }
+
+        nextMarkdown = nextMarkdown.trim();
+        parsedSteps = parseTrainingScript(nextMarkdown);
+        const expectedStageCount = modulePlan?.modules?.length || 0;
+        const stageCountWasRepaired = issue.field !== "stageCount" ||
+            (parsedSteps.length > currentStageCount &&
+                (expectedStageCount === 0 || parsedSteps.length === expectedStageCount));
+        if (!nextMarkdown || parsedSteps.length === 0 || nextMarkdown === scriptContent.trim()) {
+            return false;
+        }
+        if (!stageCountWasRepaired) {
+            return false;
+        }
+
+        setScriptContent(nextMarkdown);
+        generatingScriptRef.current = nextMarkdown;
+        setScriptEditDraft(nextMarkdown);
+        setScriptEditFocusOffset(null);
+        setIsScriptSourceEditing(false);
+        setActiveTab("script");
+        setPhase("completed");
+        setErrorMessage("");
+        setRepairFeedback({
+            type: "success",
+            message: titleRepaired && inferredStageNumber
+                ? `已自动规范阶段 ${inferredStageNumber} 的标题，并重新解析出 ${parsedSteps.length} 个训练阶段。`
+                : issue.field === "completionMarker"
+                    ? `已补齐训练剧本结束标志，并重新解析出 ${parsedSteps.length} 个训练阶段。`
+                    : `已自动修复当前结构问题，并重新解析出 ${parsedSteps.length} 个训练阶段。`,
+        });
+        setStatusMessage("");
+        return true;
+    }, [modulePlan, scriptContent]);
+
+    const handleStartScriptSourceEdit = useCallback((stageIndex?: number) => {
+        if (!scriptContent) return;
+        setActiveTab("script");
+        setScriptEditDraft(scriptContent);
+        setScriptEditFocusOffset(findStageOffsetInScript(
+            scriptContent,
+            stageIndex !== undefined ? stageIndex + 1 : undefined
+        ));
+        setIsScriptSourceEditing(true);
+    }, [scriptContent]);
+
+    const handleScriptDiagnosticClick = useCallback((issue: ScriptDiagnosticIssue) => {
+        setRepairFeedback(null);
+        if (tryAutoFixDiagnosticIssue(issue)) return;
+        handleStartScriptSourceEdit(issue.stageIndex);
+    }, [handleStartScriptSourceEdit, tryAutoFixDiagnosticIssue]);
+
+    const handleSaveScriptSourceEdit = useCallback(() => {
+        const nextContent = scriptEditDraft.trim();
+        if (!nextContent) {
+            setRepairFeedback({
+                type: "error",
+                message: "训练剧本内容不能为空，请保留至少一个标准阶段标题。",
+            });
+            return;
+        }
+
+        setScriptContent(nextContent);
+        generatingScriptRef.current = nextContent;
+        setScriptEditFocusOffset(null);
+        setIsScriptSourceEditing(false);
+        setRepairFeedback({
+            type: "success",
+            message: "已保存手动修改，系统已重新进行结构诊断。",
+        });
+        setStatusMessage("");
+    }, [scriptEditDraft]);
+
+    const handleCancelScriptSourceEdit = useCallback(() => {
+        setScriptEditDraft(scriptContent);
+        setScriptEditFocusOffset(null);
+        setIsScriptSourceEditing(false);
     }, [scriptContent]);
 
     const handleRegenerateModule = useCallback(async () => {
@@ -1604,24 +1937,11 @@ export function TrainingGenerateInterface() {
         setTaskName(snapshot.taskName);
         setActiveTab("script");
         setPhase("completed");
+        setIsScriptSourceEditing(false);
+        setScriptEditDraft(snapshot.scriptContent);
         setLastOptimizationResult(null);
         setStatusMessage(`已回退到 ${new Date(snapshot.createdAt).toLocaleString()} 的优化前版本`);
     }, [optimizationSnapshots]);
-
-    const focusModuleFromDiagnostic = useCallback((stageIndex?: number) => {
-        if (stageIndex === undefined) return;
-
-        setActiveTab("script");
-        setFocusedStageIndex(null);
-        window.requestAnimationFrame(() => setFocusedStageIndex(stageIndex));
-
-        if (!modulePlan) return;
-        const targetModule = modulePlan.modules[stageIndex];
-        if (!targetModule) return;
-        setShowPlanEditor(true);
-        setFocusedModuleId(targetModule.id);
-        setCollapsedModuleIds((prev) => prev.filter((id) => id !== targetModule.id));
-    }, [modulePlan]);
 
     return (
         <div className="max-w-6xl mx-auto px-4 py-8">
@@ -2663,16 +2983,24 @@ export function TrainingGenerateInterface() {
                             <div className="flex items-center justify-between gap-3 text-xs">
                                 <span className="text-slate-500">结构诊断</span>
                                 <div className="flex items-center gap-2">
-                                    {scriptDiagnostics.stageCount === 0 && (
+                                    {hasRepairableScriptStructureIssue && (
                                         <button
                                             type="button"
                                             onClick={handleRepairScriptParsing}
                                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors"
                                         >
                                             <RefreshCw className="w-3.5 h-3.5" />
-                                            重新解析
+                                            自动修复结构
                                         </button>
                                     )}
+                                    <button
+                                        type="button"
+                                        onClick={() => handleStartScriptSourceEdit()}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+                                    >
+                                        <Type className="w-3.5 h-3.5" />
+                                        编辑源码
+                                    </button>
                                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium ${scriptDiagnostics.canInject ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
                                         {scriptDiagnostics.canInject ? "可注入" : "存在阻塞问题"}
                                     </span>
@@ -2692,16 +3020,14 @@ export function TrainingGenerateInterface() {
                                                     return (
                                                 <div
                                                     key={`${issue.message}-${index}`}
-                                                    onClick={() => focusModuleFromDiagnostic(issue.stageIndex)}
-                                                    className={`px-2.5 py-2 rounded-lg text-xs ${issue.level === "error" ? "bg-rose-50 text-rose-700 border border-rose-100" : "bg-amber-50 text-amber-700 border border-amber-100"} ${issue.stageIndex !== undefined ? "cursor-pointer hover:shadow-sm" : ""}`}
+                                                    onClick={() => handleScriptDiagnosticClick(issue)}
+                                                    className={`px-2.5 py-2 rounded-lg text-xs cursor-pointer hover:shadow-sm ${issue.level === "error" ? "bg-rose-50 text-rose-700 border border-rose-100" : "bg-amber-50 text-amber-700 border border-amber-100"}`}
                                                 >
                                                     {message}
-                                                    {issue.stageIndex !== undefined && (
-                                                        <span className="ml-2 inline-flex items-center gap-1 text-[11px] opacity-80">
-                                                            <Crosshair className="w-3 h-3" />
-                                                            定位模块
-                                                        </span>
-                                                    )}
+                                                    <span className="ml-2 inline-flex items-center gap-1 text-[11px] opacity-80">
+                                                        <Crosshair className="w-3 h-3" />
+                                                        自动修复或定位编辑
+                                                    </span>
                                                 </div>
                                                     );
                                                 })()
@@ -2861,7 +3187,45 @@ export function TrainingGenerateInterface() {
                             </div>
                         )}
 
-                        {phase === "completed" && activeContent && (
+                        {phase === "completed" && activeTab === "script" && isScriptSourceEditing && (
+                            <div className="h-full flex flex-col gap-3">
+                                <div className="flex flex-col gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                        <p className="text-sm font-semibold text-slate-800">编辑训练剧本源码</p>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            标准阶段标题示例：<code className="px-1 py-0.5 rounded bg-white text-indigo-600">### 阶段5: 阶段名称</code>
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleCancelScriptSourceEdit}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                            取消编辑
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveScriptSourceEdit}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
+                                        >
+                                            <Save className="w-3.5 h-3.5" />
+                                            保存修改
+                                        </button>
+                                    </div>
+                                </div>
+                                <textarea
+                                    ref={scriptEditTextareaRef}
+                                    value={scriptEditDraft}
+                                    onChange={(event) => setScriptEditDraft(event.target.value)}
+                                    spellCheck={false}
+                                    className="min-h-[520px] flex-1 w-full resize-none rounded-xl border border-slate-200 bg-slate-950 p-4 font-mono text-xs leading-6 text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                                />
+                            </div>
+                        )}
+
+                        {phase === "completed" && activeContent && !(activeTab === "script" && isScriptSourceEditing) && (
                             <MarkdownRenderer content={activeContent} />
                         )}
 

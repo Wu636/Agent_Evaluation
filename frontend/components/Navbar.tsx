@@ -31,7 +31,14 @@ export function Navbar() {
                             <span>评测</span>
                         </button>
                         <NavLink href="/homework-review" icon={<ClipboardCheck className="w-4 h-4" />}>作业批阅</NavLink>
-                        <NavLink href="/training-generate" icon={<Wand2 className="w-4 h-4" />}>训练配置</NavLink>
+                        <NavDropdown
+                            label="能力训练"
+                            icon={<Wand2 className="w-4 h-4" />}
+                            items={[
+                                { href: '/training-generate', label: '基础版', icon: <Wand2 className="w-4 h-4" /> },
+                                { href: '/training-generate-pro', label: 'Pro 版', icon: <Sparkles className="w-4 h-4" /> },
+                            ]}
+                        />
                         <NavLink href="/explore" icon={<History className="w-4 h-4" />}>探索</NavLink>
                         <NavLink href="/history" icon={<History className="w-4 h-4" />}>历史记录</NavLink>
                         <button

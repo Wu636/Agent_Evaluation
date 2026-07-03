@@ -53,6 +53,33 @@ function normalizeChatCompletionEndpoint(baseUrl: string): string {
     return `${trimmed}/chat/completions`;
 }
 
+export function modelRequiresDefaultTemperature(model: string): boolean {
+    const normalized = String(model || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[_\s]+/g, "-");
+    if (!normalized) return false;
+
+    return /(^|[/:])gpt-?5(?:$|[.\-_:])/.test(normalized)
+        || /(^|[/:])o[134](?:$|[.\-_:])/.test(normalized);
+}
+
+export function buildTemperatureCompatiblePayload<T extends Record<string, unknown>>(
+    payload: T,
+    model: string,
+    temperature: number
+): T & { temperature?: number } {
+    if (modelRequiresDefaultTemperature(model)) {
+        const { temperature: _ignored, ...rest } = payload as T & { temperature?: unknown };
+        return rest as T & { temperature?: number };
+    }
+
+    return {
+        ...payload,
+        temperature,
+    };
+}
+
 function getStreamEndpoint(baseUrl: string): string {
     const normalized = normalizeChatCompletionEndpoint(baseUrl);
     if (!normalized) return normalized;
@@ -243,7 +270,7 @@ export async function callLLM(
 - 直接输出 JSON 对象，以 { 开头，以 } 结尾
 - 如果需要思考，在心里思考，不要写出来`;
 
-    const payload = {
+    const payload = buildTemperatureCompatiblePayload({
         maxTokens: 4000,
         messages: [
             {
@@ -258,8 +285,7 @@ export async function callLLM(
         model,
         n: 1,
         presencePenalty: 0.0,
-        temperature,
-    };
+    }, model, temperature);
 
     console.log(`[LLM调用] 模型: ${model}, API: ${baseUrl}`);
     const startTime = Date.now();
@@ -346,7 +372,7 @@ export async function* callLLMStream(
 - 直接输出 JSON 对象，以 { 开头，以 } 结尾
 - 如果需要思考，在心里思考，不要写出来`;
 
-    const payload = {
+    const payload = buildTemperatureCompatiblePayload({
         maxTokens: 16000,
         messages: [
             {
@@ -361,9 +387,8 @@ export async function* callLLMStream(
         model,
         n: 1,
         presencePenalty: 0.0,
-        temperature,
         stream: true, // 启用流式响应
-    };
+    }, model, temperature);
 
     console.log(`[LLM流式调用] 模型: ${model}, API: ${baseUrl}`);
     const startTime = Date.now();

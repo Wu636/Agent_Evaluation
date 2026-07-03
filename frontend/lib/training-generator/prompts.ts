@@ -9,7 +9,7 @@ import { ScriptMode } from "./types";
 import { TRAINING_SCRIPT_COMPLETE_MARKER } from "./script-tools";
 
 // 默认模板版本号——每次修改 DEFAULT_*_TEMPLATE 时递增，用于清除旧缓存
-export const TEMPLATE_VERSION = 10;
+export const TEMPLATE_VERSION = 11;
 
 function appendScriptCompletionMarkerInstruction(prompt: string): string {
     return [
@@ -23,6 +23,14 @@ function appendScriptCompletionMarkerInstruction(prompt: string): string {
         "- 有多个出口的阶段，阶段内提示词必须写出分支互斥判定：命中不同条件时分别仅输出对应 `condition`，不能只输出一个通用下一阶段关键词。",
         "- 不同分支的 `condition` 和 `transitionPrompt` 必须区分线路语境；同一阶段下多个出口不能共用同一个跳转关键词。",
         "- 线性结构不需要输出 `## 🔀 非线性跳转关系`。",
+        "",
+        "# 阶段边界标记要求",
+        "- 每个训练阶段必须使用独立一行的 HTML 注释作为边界标记，格式如下：",
+        "  - 阶段开始：`<!-- STAGE_START:N -->`，其中 N 是阶段编号",
+        "  - 阶段结束：`<!-- STAGE_END:N -->`，其中 N 是阶段编号",
+        "- 边界标记必须放在代码块之外；禁止放入 `transitionPrompt`、`开场白`、`提示词` 的正文或代码块中。",
+        "- 阶段标题仍必须使用 `### 阶段N: 阶段名称`；边界标记不能替代阶段标题。",
+        "- 示例：先输出 `<!-- STAGE_START:1 -->`，下一行输出 `### 阶段1: ...`，该阶段全部字段结束后输出 `<!-- STAGE_END:1 -->`，再开始下一阶段。",
         "",
         "# 完整性校验要求",
         `- 完整训练剧本生成结束后，最后一个非空行必须输出：\`${TRAINING_SCRIPT_COMPLETE_MARKER}\``,

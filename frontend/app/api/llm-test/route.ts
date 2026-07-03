@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MODEL_NAME_MAPPING } from "@/lib/config";
 import { summarizeLlmHttpError } from "@/lib/llm/error-utils";
+import { buildTemperatureCompatiblePayload } from "@/lib/llm/utils";
 
 export const runtime = "nodejs";
 
@@ -69,17 +70,16 @@ export async function POST(request: NextRequest) {
             const response = await fetch(endpoint, {
                 method: "POST",
                 headers,
-                body: JSON.stringify({
+                body: JSON.stringify(buildTemperatureCompatiblePayload({
                     maxTokens: 32,
                     n: 1,
                     presence_penalty: 0.0,
                     model,
-                    temperature: 0,
                     messages: [
                         { role: "system", content: "你是一个连通性测试助手，只回复 OK。" },
                         { role: "user", content: "你好" },
                     ],
-                }),
+                }, model, 0)),
                 signal: controller.signal,
             });
 

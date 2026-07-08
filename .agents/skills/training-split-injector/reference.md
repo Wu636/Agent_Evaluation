@@ -266,3 +266,89 @@ A: 起点 handle 为 `{startId}-source-bottom`，终点 handle 为 `{endId}-targ
 
 ### Q: 如何获取最新的 AUTHORIZATION 和 COOKIE？
 A: 在浏览器中登录 Polymas 平台，打开开发者工具（F12）→ Network 标签页，找到任意 API 请求，从 Request Headers 中复制 Authorization 和 Cookie 的完整值。注意 Cookie 很长，包含多个字段，需完整复制。
+
+---
+
+## 合并模式专属说明
+
+### 首末节点识别逻辑
+
+合并时需要识别每个源训练的"首节点"和"末节点"，用于创建跨源连线：
+
+```python
+# 首节点 = START 连向的节点
+first_ids = [fl["scriptStepEndId"] for fl in flows if fl["scriptStepStartId"] == start_id]
+
+# 末节点 = 连向 END 的节点
+last_ids = [fl["scriptStepStartId"] for fl in flows if fl["scriptStepEndId"] == end_id]
+```
+
+一个训练可能有多个首节点或末节点（分支结构），全部保留。
+
+### 串联合并连线逻辑
+
+```
+START → 源A首节点
+源A内部连线...
+源A末节点 → 源B首节点  （继承源A末节点→END的连线条件）
+源B内部连线...
+源B末节点 → 源C首节点  （继承源B末节点→END的连线条件）
+...
+末源末节点 → END
+```
+
+### 分支合并连线逻辑
+
+```
+START → 源A首节点
+源A内部连线...
+源A末节点 → 分支节点
+分支节点 → 源B首节点  （条件: NEXT_TO_源B名称）
+分支节点 → 源C首节点  （条件: NEXT_TO_源C名称）
+源B内部连线...
+源C内部连线...
+源B末节点 → END
+源C末节点 → END
+```
+
+### 分支节点模板
+
+branch 模式下自动创建的分支节点使用以下默认配置：
+
+```python
+BRANCH_NODE_TEMPLATE = {
+    "nodeType": "SCRIPT_NODE",
+    "stepName": "分支选择",        # 自动命名为"选择源B或源C"
+    "description": "请选择接下来要进行的训练",
+    "prologue": "你已经完成了当前阶段，接下来你想挑战哪个方向？",
+    "modelId": "Doubao-Seed-2.0-pro",
+    "llmPrompt": "...",           # 默认引导提示词
+    "trainerName": "训练引导官",
+    "interactiveRounds": 3,
+    "agentId": "Tg3LpKo28D",
+    # ... 其他默认配置
+}
+```
+
+可根据实际场景修改模板中的字段，特别是 `llmPrompt` 和 `prologue`。
+
+### 关卡续编号算法
+
+```python
+# 源A: 关卡1~3, 源B: 关卡1~2, 源C: 关卡1
+# 续编结果: 源A保持1~3, 源B重编为4~5, 源C重编为6
+
+next_level = 1
+for source in sources:
+    max_lv = source.max_level  # 检测源训练最大关卡号
+    rmap = {}
+    for old in range(1, max_lv + 1):
+        rmap[old] = next_level
+        next_level += 1
+    source.rmap = rmap
+```
+
+续编号同时替换：
+- 节点名称（`关卡1.1` → `关卡4.1`）
+- Header 名称（`关卡一：` → `关卡四：`）
+- 开场白中的关卡引用（`关卡一` → `关卡四`）

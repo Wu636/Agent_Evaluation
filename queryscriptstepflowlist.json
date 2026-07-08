@@ -1,0 +1,1521 @@
+{
+    "code": 200,
+    "msg": null,
+    "data": [
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "rGDnyj9jjzt74B4MOanQ",
+            "scriptStepStartId": "3JdrylJllPt9zq286xeK",
+            "scriptStepEndId": "g2dlgpYppMFBrOm0yxkb",
+            "scriptStepStartHandle": "3JdrylJllPt9zq286xeK-source-bottom",
+            "scriptStepEndHandle": "g2dlgpYppMFBrOm0yxkb-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "3JdrylJllPtNQvQ5GxeK",
+            "scriptStepStartId": "g2dlgpYppMFBrOm0yxkb",
+            "scriptStepEndId": "5OD4zJKJJ2S1y9PJjdmP",
+            "scriptStepStartHandle": "g2dlgpYppMFBrOm0yxkb-source-bottom",
+            "scriptStepEndHandle": "5OD4zJKJJ2S1y9PJjdmP-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "g2dlgpYppMFLeze3Zxkb",
+            "scriptStepStartId": "4Ya9P7y772f483nYmdPZ",
+            "scriptStepEndId": "4AxegnmnnPFrYKnW5aQV",
+            "scriptStepStartHandle": "4Ya9P7y772f483nYmdPZ-source-bottom",
+            "scriptStepEndHandle": "4AxegnmnnPFrYKnW5aQV-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "5OD4zJKJJ2SWk6knrdmP",
+            "scriptStepStartId": "5vamqgQggPHyqkL4ma4y",
+            "scriptStepEndId": "87dB02k22ZfJQ6y7MDZ2",
+            "scriptStepStartHandle": "5vamqgQggPHyqkL4ma4y-source-bottom",
+            "scriptStepEndHandle": "87dB02k22ZfJQ6y7MDZ2-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为\"场景化口语训练\"生成一段自然流畅的衔接语(不超过300字)，用于在本阶段结束后进入下一段。\n\n    【输入参数】\n    - 上一轮对话 ${previous_dialogue}\n    - 当前阶段名称 ${current_stage_name}\n    - 当前阶段描述 ${current_stage_description}\n    - 下一阶段名称 ${next_stage_name}\n    - 下一阶段描述 ${next_stage_description}\n    - 下一阶段原始开场白 ${next_stage_opening}（只用于参考，不要照读）\n    \n    【整体生成目标】\n    由于本次属于强制跳转，因此不能直接使用 next_stage_opening。你需要结合上一轮对话，生成一段自然、承上启下、不过度突兀的衔接语，引导学生进入下一阶段。",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "4Ya9P7y772fb696pjdPZ",
+            "scriptStepStartId": "87dB02k22ZfJQ6y7MDZ2",
+            "scriptStepEndId": "WwD673y332TBgz1E8xkJ",
+            "scriptStepStartHandle": "87dB02k22ZfJQ6y7MDZ2-source-bottom",
+            "scriptStepEndHandle": "WwD673y332TBgz1E8xkJ-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为\"场景化口语训练\"生成一段自然流畅的衔接语(不超过300字)，用于在本阶段结束后进入下一段。\n\n    【输入参数】\n    - 上一轮对话 ${previous_dialogue}\n    - 当前阶段名称 ${current_stage_name}\n    - 当前阶段描述 ${current_stage_description}\n    - 下一阶段名称 ${next_stage_name}\n    - 下一阶段描述 ${next_stage_description}\n    - 下一阶段原始开场白 ${next_stage_opening}（只用于参考，不要照读）\n    \n    【整体生成目标】\n    由于本次属于强制跳转，因此不能直接使用 next_stage_opening。你需要结合上一轮对话，生成一段自然、承上启下、不过度突兀的衔接语，引导学生进入下一阶段。",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "4AxegnmnnPFlMZMzRaQV",
+            "scriptStepStartId": "LRdRY9g99jiNqYGJAxjw",
+            "scriptStepEndId": "B6DNLrArrnFB2MEq4dJL",
+            "scriptStepStartHandle": "LRdRY9g99jiNqYGJAxjw-source-bottom",
+            "scriptStepEndHandle": "B6DNLrArrnFB2MEq4dJL-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "5vamqgQggPHKpbpBja4y",
+            "scriptStepStartId": "B6DNLrArrnFB2MEq4dJL",
+            "scriptStepEndId": "m0D0KNWNN7iXgBREYajn",
+            "scriptStepStartHandle": "B6DNLrArrnFB2MEq4dJL-source-bottom",
+            "scriptStepEndHandle": "m0D0KNWNN7iXgBREYajn-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "87dB02k22ZfLvnvP1DZ2",
+            "scriptStepStartId": "m0D0KNWNN7iXgBREYajn",
+            "scriptStepEndId": "VPDz2YwYYGtrV4NG9DjZ",
+            "scriptStepStartHandle": "m0D0KNWNN7iXgBREYajn-source-bottom",
+            "scriptStepEndHandle": "VPDz2YwYYGtrV4NG9DjZ-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "WwD673y332Tvr2r53xkJ",
+            "scriptStepStartId": "VPDz2YwYYGtrV4NG9DjZ",
+            "scriptStepEndId": "M6DLzrKrrRSP9wRX5dVr",
+            "scriptStepStartHandle": "VPDz2YwYYGtrV4NG9DjZ-source-bottom",
+            "scriptStepEndHandle": "M6DLzrKrrRSP9wRX5dVr-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "LRdRY9g99jiLyOyj0xjw",
+            "scriptStepStartId": "8eDVMQwQQrtloKEw3akN",
+            "scriptStepEndId": "zmaG3gKggkhX9jQZKalg",
+            "scriptStepStartHandle": "8eDVMQwQQrtloKEw3akN-source-bottom",
+            "scriptStepEndHandle": "zmaG3gKggkhX9jQZKalg-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "B6DNLrArrnFnele9rdJL",
+            "scriptStepStartId": "zmaG3gKggkhX9jQZKalg",
+            "scriptStepEndId": "LRdRY9g99jiN8KJM9xjw",
+            "scriptStepStartHandle": "zmaG3gKggkhX9jQZKalg-source-bottom",
+            "scriptStepEndHandle": "LRdRY9g99jiN8KJM9xjw-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "m0D0KNWNN7inrMreQajn",
+            "scriptStepStartId": "LRdRY9g99jiN8KJM9xjw",
+            "scriptStepEndId": "B6DNLrArrnFB84q6qdJL",
+            "scriptStepStartHandle": "LRdRY9g99jiN8KJM9xjw-source-bottom",
+            "scriptStepEndHandle": "B6DNLrArrnFB84q6qdJL-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "VPDz2YwYYGtpKMKnvDjZ",
+            "scriptStepStartId": "B6DNLrArrnFB84q6qdJL",
+            "scriptStepEndId": "m0D0KNWNN7iXOQE98ajn",
+            "scriptStepStartHandle": "B6DNLrArrnFB84q6qdJL-source-bottom",
+            "scriptStepEndHandle": "m0D0KNWNN7iXOQE98ajn-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "M6DLzrKrrRS02Q27ldVr",
+            "scriptStepStartId": "VPDz2YwYYGtrYRG9ADjZ",
+            "scriptStepEndId": "M6DLzrKrrRSPzNXlmdVr",
+            "scriptStepStartHandle": "VPDz2YwYYGtrYRG9ADjZ-source-bottom",
+            "scriptStepEndHandle": "M6DLzrKrrRSPzNXlmdVr-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "8eDVMQwQQrtAZ3ZnLakN",
+            "scriptStepStartId": "M6DLzrKrrRSPzNXlmdVr",
+            "scriptStepEndId": "8eDVMQwQQrtlq2wWnakN",
+            "scriptStepStartHandle": "M6DLzrKrrRSPzNXlmdVr-source-bottom",
+            "scriptStepEndHandle": "8eDVMQwQQrtlq2wWnakN-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "zmaG3gKggkhKVWVBWalg",
+            "scriptStepStartId": "8eDVMQwQQrtlq2wWnakN",
+            "scriptStepEndId": "zmaG3gKggkhXR8ZzOalg",
+            "scriptStepStartHandle": "8eDVMQwQQrtlq2wWnakN-source-bottom",
+            "scriptStepEndHandle": "zmaG3gKggkhXR8ZzOalg-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "MRaAgymyy2F2M6M72xpZ",
+            "scriptStepStartId": "zmaG3gKggkhXR8ZzOalg",
+            "scriptStepEndId": "MRaAgymyy2F5nVL0gxpZ",
+            "scriptStepStartHandle": "zmaG3gKggkhXR8ZzOalg-source-bottom",
+            "scriptStepEndHandle": "MRaAgymyy2F5nVL0gxpZ-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "mPxYJQ5QQAFNWkW6Rd0Y",
+            "scriptStepStartId": "mPxYJQ5QQAFo3zy9Xd0Y",
+            "scriptStepEndId": "QgDjBp1ppjiPgAlwAD51",
+            "scriptStepStartHandle": "mPxYJQ5QQAFo3zy9Xd0Y-source-bottom",
+            "scriptStepEndHandle": "QgDjBp1ppjiPgAlwAD51-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "QgDjBp1ppjinjbjzMD51",
+            "scriptStepStartId": "QgDjBp1ppjiPgAlwAD51",
+            "scriptStepEndId": "bmaKArerr1fEVMqmyxgY",
+            "scriptStepStartHandle": "QgDjBp1ppjiPgAlwAD51-source-bottom",
+            "scriptStepEndHandle": "bmaKArerr1fEVMqmyxgY-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "bmaKArerr1fk4L4zrxgY",
+            "scriptStepStartId": "bmaKArerr1fEVMqmyxgY",
+            "scriptStepEndId": "Z8DbqVYVVQHO17LoGa0X",
+            "scriptStepStartHandle": "bmaKArerr1fEVMqmyxgY-source-bottom",
+            "scriptStepEndHandle": "Z8DbqVYVVQHO17LoGa0X-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "Z8DbqVYVVQHWm4mY8a0X",
+            "scriptStepStartId": "Z8DbqVYVVQHO17LoGa0X",
+            "scriptStepEndId": "j2DpG9e998f2rzjPka1e",
+            "scriptStepStartHandle": "Z8DbqVYVVQHO17LoGa0X-source-bottom",
+            "scriptStepEndHandle": "j2DpG9e998f2rzjPka1e-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "j2DpG9e998fgwQwKRa1e",
+            "scriptStepStartId": "rGDnyj9jjztqzVE0BanQ",
+            "scriptStepEndId": "3JdrylJllPt98JgKNxeK",
+            "scriptStepStartHandle": "rGDnyj9jjztqzVE0BanQ-source-bottom",
+            "scriptStepEndHandle": "3JdrylJllPt98JgKNxeK-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "rGDnyj9jjzt74B4JOanQ",
+            "scriptStepStartId": "3JdrylJllPt98JgKNxeK",
+            "scriptStepEndId": "g2dlgpYppMFB0VylMxkb",
+            "scriptStepStartHandle": "3JdrylJllPt98JgKNxeK-source-bottom",
+            "scriptStepEndHandle": "g2dlgpYppMFB0VylMxkb-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "3JdrylJllPtNQvQrGxeK",
+            "scriptStepStartId": "g2dlgpYppMFB0VylMxkb",
+            "scriptStepEndId": "5OD4zJKJJ2S1JmrwldmP",
+            "scriptStepStartHandle": "g2dlgpYppMFB0VylMxkb-source-bottom",
+            "scriptStepEndHandle": "5OD4zJKJJ2S1JmrwldmP-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "g2dlgpYppMFLezenZxkb",
+            "scriptStepStartId": "5OD4zJKJJ2S1JmrwldmP",
+            "scriptStepEndId": "4Ya9P7y772f4YXwLAdPZ",
+            "scriptStepStartHandle": "5OD4zJKJJ2S1JmrwldmP-source-bottom",
+            "scriptStepEndHandle": "4Ya9P7y772f4YXwLAdPZ-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "5OD4zJKJJ2SWk6kVrdmP",
+            "scriptStepStartId": "4Ya9P7y772f4YXwLAdPZ",
+            "scriptStepEndId": "4AxegnmnnPFrWPpmJaQV",
+            "scriptStepStartHandle": "4Ya9P7y772f4YXwLAdPZ-source-bottom",
+            "scriptStepEndHandle": "4AxegnmnnPFrWPpmJaQV-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "4Ya9P7y772fb696WjdPZ",
+            "scriptStepStartId": "5vamqgQggPHy4XN5Pa4y",
+            "scriptStepEndId": "87dB02k22ZfJ7gW35DZ2",
+            "scriptStepStartHandle": "5vamqgQggPHy4XN5Pa4y-source-bottom",
+            "scriptStepEndHandle": "87dB02k22ZfJ7gW35DZ2-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "4AxegnmnnPFlMZM9RaQV",
+            "scriptStepStartId": "87dB02k22ZfJ7gW35DZ2",
+            "scriptStepEndId": "WwD673y332TBERl4wxkJ",
+            "scriptStepStartHandle": "87dB02k22ZfJ7gW35DZ2-source-bottom",
+            "scriptStepEndHandle": "WwD673y332TBERl4wxkJ-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "5vamqgQggPHKpbpmja4y",
+            "scriptStepStartId": "WwD673y332TBERl4wxkJ",
+            "scriptStepEndId": "LRdRY9g99jiN8KJW9xjw",
+            "scriptStepStartHandle": "WwD673y332TBERl4wxkJ-source-bottom",
+            "scriptStepEndHandle": "LRdRY9g99jiN8KJW9xjw-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "87dB02k22ZfLvnv11DZ2",
+            "scriptStepStartId": "LRdRY9g99jiN8KJW9xjw",
+            "scriptStepEndId": "B6DNLrArrnFB84qkqdJL",
+            "scriptStepStartHandle": "LRdRY9g99jiN8KJW9xjw-source-bottom",
+            "scriptStepEndHandle": "B6DNLrArrnFB84qkqdJL-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "WwD673y332Tvr2r73xkJ",
+            "scriptStepStartId": "B6DNLrArrnFB84qkqdJL",
+            "scriptStepEndId": "m0D0KNWNN7iXOQEj8ajn",
+            "scriptStepStartHandle": "B6DNLrArrnFB84qkqdJL-source-bottom",
+            "scriptStepEndHandle": "m0D0KNWNN7iXOQEj8ajn-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "LRdRY9g99jiLyOyV0xjw",
+            "scriptStepStartId": "m0D0KNWNN7iXOQEj8ajn",
+            "scriptStepEndId": "VPDz2YwYYGtrYRGjADjZ",
+            "scriptStepStartHandle": "m0D0KNWNN7iXOQEj8ajn-source-bottom",
+            "scriptStepEndHandle": "VPDz2YwYYGtrYRGjADjZ-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "接下来我们将进入下一阶段"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "你需要为阶段切换生成一句自然承接语。\n【输入参数】\n- 上一轮对话 ${previous_dialogue}\n- 当前阶段名称 ${current_stage_name}\n- 下一阶段名称 ${next_stage_name}\n- 下一阶段原始开场白 ${next_stage_opening}\n【要求】\n- 结合上一轮对话自然过渡\n- 不要照搬 next_stage_opening\n- 不超过120字",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "B6DNLrArrnFneleJrdJL",
+            "scriptStepStartId": "VPDz2YwYYGtrYRGjADjZ",
+            "scriptStepEndId": "j2DpG9e998f28Ylr3a1e",
+            "scriptStepStartHandle": "VPDz2YwYYGtrYRGjADjZ-source-bottom",
+            "scriptStepEndHandle": "j2DpG9e998f28Ylr3a1e-target-top",
+            "flowCondition": "本次实训到此结束",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": "本次实训到此结束"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "m0D0KNWNN7inrMr6Qajn",
+            "scriptStepStartId": "WwD673y332TBgz1E8xkJ",
+            "scriptStepEndId": "M6DLzrKrrRSPzNXkmdVr",
+            "scriptStepStartHandle": "WwD673y332TBgz1E8xkJ-source-bottom",
+            "scriptStepEndHandle": "M6DLzrKrrRSPzNXkmdVr-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "VPDz2YwYYGtpKMKovDjZ",
+            "scriptStepStartId": "8eDVMQwQQrtlq2wmnakN",
+            "scriptStepEndId": "3JdrylJllPt9zq286xeK",
+            "scriptStepStartHandle": "8eDVMQwQQrtlq2wmnakN-source-bottom",
+            "scriptStepEndHandle": "3JdrylJllPt9zq286xeK-target-top",
+            "flowCondition": "关卡1",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "M6DLzrKrrRS02Q2jldVr",
+            "scriptStepStartId": "rGDnyj9jjztqGP3zganQ",
+            "scriptStepEndId": "8eDVMQwQQrtlq2wmnakN",
+            "scriptStepStartHandle": "rGDnyj9jjztqGP3zganQ-source-bottom",
+            "scriptStepEndHandle": "8eDVMQwQQrtlq2wmnakN-target-top",
+            "flowCondition": "",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 0,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "8eDVMQwQQrtAZ3ZzLakN",
+            "scriptStepStartId": "zmaG3gKggkhXR8Z4Oalg",
+            "scriptStepEndId": "5vamqgQggPHyqkL4ma4y",
+            "scriptStepStartHandle": "zmaG3gKggkhXR8Z4Oalg-source-bottom",
+            "scriptStepEndHandle": "5vamqgQggPHyqkL4ma4y-target-top",
+            "flowCondition": "欢迎进入关卡二：生灭有序",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "zmaG3gKggkhKVWVMWalg",
+            "scriptStepStartId": "5OD4zJKJJ2S1y9PJjdmP",
+            "scriptStepEndId": "4Ya9P7y772f483nYmdPZ",
+            "scriptStepStartHandle": "5OD4zJKJJ2S1y9PJjdmP-source-bottom",
+            "scriptStepEndHandle": "4Ya9P7y772f483nYmdPZ-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "MRaAgymyy2F2M6MX2xpZ",
+            "scriptStepStartId": "MRaAgymyy2F5nVLJgxpZ",
+            "scriptStepEndId": "LRdRY9g99jiNqYGJAxjw",
+            "scriptStepStartHandle": "MRaAgymyy2F5nVLJgxpZ-source-bottom",
+            "scriptStepEndHandle": "LRdRY9g99jiNqYGJAxjw-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "mPxYJQ5QQAFNWkWJRd0Y",
+            "scriptStepStartId": "mPxYJQ5QQAFo3zyZXd0Y",
+            "scriptStepEndId": "8eDVMQwQQrtloKEw3akN",
+            "scriptStepStartHandle": "mPxYJQ5QQAFo3zyZXd0Y-source-bottom",
+            "scriptStepEndHandle": "8eDVMQwQQrtloKEw3akN-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "QgDjBp1ppjinjbjkMD51",
+            "scriptStepStartId": "QgDjBp1ppjiPgAlrAD51",
+            "scriptStepEndId": "VPDz2YwYYGtrYRG9ADjZ",
+            "scriptStepStartHandle": "QgDjBp1ppjiPgAlrAD51-source-bottom",
+            "scriptStepEndHandle": "VPDz2YwYYGtrYRG9ADjZ-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "bmaKArerr1fk4L48rxgY",
+            "scriptStepStartId": "bmaKArerr1fEVMq9yxgY",
+            "scriptStepEndId": "mPxYJQ5QQAFo3zy9Xd0Y",
+            "scriptStepStartHandle": "bmaKArerr1fEVMq9yxgY-source-bottom",
+            "scriptStepEndHandle": "mPxYJQ5QQAFo3zy9Xd0Y-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "Z8DbqVYVVQHWm4mz8a0X",
+            "scriptStepStartId": "Z8DbqVYVVQHO17L0Ga0X",
+            "scriptStepEndId": "zmaG3gKggkhXR8Z4Oalg",
+            "scriptStepStartHandle": "Z8DbqVYVVQHO17L0Ga0X-source-bottom",
+            "scriptStepEndHandle": "zmaG3gKggkhXR8Z4Oalg-target-top",
+            "flowCondition": "关卡二",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "直接输出以下开场白：\n每个士兵被创建时，都需要初始化他的属性：血量、攻击力、移动速度。当士兵阵亡时，我们需要清理他占用的资源，最后才能归于尘土。生有生的秩序，灭有灭的章法。这就是构造与析构。看看Army类是如何管理一个士兵井然有序的\"一生\"的。",
+            "transitionHistoryNum": 1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "j2DpG9e998fgwQw5Ra1e",
+            "scriptStepStartId": "Z8DbqVYVVQHO17L0Ga0X",
+            "scriptStepEndId": "MRaAgymyy2F5nVLJgxpZ",
+            "scriptStepStartHandle": "Z8DbqVYVVQHO17L0Ga0X-source-bottom",
+            "scriptStepEndHandle": "MRaAgymyy2F5nVLJgxpZ-target-top",
+            "flowCondition": "关卡三",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 0,
+            "flowSettingType": "quick",
+            "transitionPrompt": "直接输出以下开场白：\n欢迎进入关卡三，一个玩家（Player）拥有什么？他有农民列表、军队列表、建筑列表、导弹列表。这些不是继承关系——玩家“不是”一个农民，而是“拥有”农民。这就是组合关系，通过对象成员实现。对象成员中又有一些特殊的成员，例如静态成员。",
+            "transitionHistoryNum": 1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "rGDnyj9jjzt74B4rOanQ",
+            "scriptStepStartId": "j2DpG9e998f2rzjkka1e",
+            "scriptStepEndId": "MRaAgymyy2F5nVLJgxpZ",
+            "scriptStepStartHandle": "j2DpG9e998f2rzjkka1e-source-bottom",
+            "scriptStepEndHandle": "MRaAgymyy2F5nVLJgxpZ-target-top",
+            "flowCondition": "关卡三",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "直接输出以下开场白：\n欢迎进入关卡三，一个玩家（Player）拥有什么？他有农民列表、军队列表、建筑列表、导弹列表。这些不是继承关系——玩家“不是”一个农民，而是“拥有”农民。这就是组合关系，通过对象成员实现。对象成员中又有一些特殊的成员，例如静态成员。",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "3JdrylJllPtNQvQWGxeK",
+            "scriptStepStartId": "j2DpG9e998f2rzjkka1e",
+            "scriptStepEndId": "mPxYJQ5QQAFo3zyZXd0Y",
+            "scriptStepStartHandle": "j2DpG9e998f2rzjkka1e-source-bottom",
+            "scriptStepEndHandle": "mPxYJQ5QQAFo3zyZXd0Y-target-top",
+            "flowCondition": "关卡四",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 0,
+            "flowSettingType": "quick",
+            "transitionPrompt": "直接输出以下开场白：\n欢迎进入关卡四，村民(Farmer)和士兵(Army)都是人(Human)，他们都会移动、都有血量、都能被攻击。但村民能采集资源，士兵能自动巡逻。动物（Animal）拥有移动、资源、血量这三种完全不同的特性。继承让我们复用共同的代码，派生让我们实现特殊的逻辑。",
+            "transitionHistoryNum": -1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "g2dlgpYppMFLezeKZxkb",
+            "scriptStepStartId": "rGDnyj9jjztqzVEeBanQ",
+            "scriptStepEndId": "zmaG3gKggkhXR8Z4Oalg",
+            "scriptStepStartHandle": "rGDnyj9jjztqzVEeBanQ-source-bottom",
+            "scriptStepEndHandle": "zmaG3gKggkhXR8Z4Oalg-target-top",
+            "flowCondition": "关卡二",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 0,
+            "flowSettingType": "quick",
+            "transitionPrompt": "直接输出以下开场白：\n欢迎进入关卡二，每个士兵被创建时，都需要初始化他的属性：血量、攻击力、移动速度。当士兵阵亡时，我们需要清理他占用的资源。这就是构造函数和析构函数的用武之地。看看 Army 类是如何管理一个士兵的“一生”的。",
+            "transitionHistoryNum": 1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "5OD4zJKJJ2SWk6kqrdmP",
+            "scriptStepStartId": "rGDnyj9jjztqzVEeBanQ",
+            "scriptStepEndId": "mPxYJQ5QQAFo3zyZXd0Y",
+            "scriptStepStartHandle": "rGDnyj9jjztqzVEeBanQ-source-bottom",
+            "scriptStepEndHandle": "mPxYJQ5QQAFo3zyZXd0Y-target-top",
+            "flowCondition": "关卡四",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "直接输出以下开场白：\n欢迎进入关卡四，村民(Farmer)和士兵(Army)都是人(Human)，他们都会移动、都有血量、都能被攻击。但村民能采集资源，士兵能自动巡逻。动物（Animal）拥有移动、资源、血量这三种完全不同的特性。继承让我们复用共同的代码，派生让我们实现特殊的逻辑。",
+            "transitionHistoryNum": 1
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "4Ya9P7y772fb696BjdPZ",
+            "scriptStepStartId": "M6DLzrKrrRSPzNXkmdVr",
+            "scriptStepEndId": "3JdrylJllPt98Jg1NxeK",
+            "scriptStepStartHandle": "M6DLzrKrrRSPzNXkmdVr-source-bottom",
+            "scriptStepEndHandle": "3JdrylJllPt98Jg1NxeK-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "9VDE93633bFOqQqrYDjG",
+            "scriptStepStartId": "3JdrylJllPt98Jg1NxeK",
+            "scriptStepEndId": "j2DpG9e998f2rzjkka1e",
+            "scriptStepStartHandle": "3JdrylJllPt98Jg1NxeK-source-bottom",
+            "scriptStepEndHandle": "j2DpG9e998f2rzjkka1e-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "XBDgqJBJJ9HyqVqkedNO",
+            "scriptStepStartId": "M6DLzrKrrRSP9wRX5dVr",
+            "scriptStepEndId": "rGDnyj9jjztqzVEeBanQ",
+            "scriptStepStartHandle": "M6DLzrKrrRSP9wRX5dVr-source-bottom",
+            "scriptStepEndHandle": "rGDnyj9jjztqzVEeBanQ-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "zZx2b0j00GtP7673kxYB",
+            "scriptStepStartId": "m0D0KNWNN7iXOQE98ajn",
+            "scriptStepEndId": "QgDjBp1ppjiPgAlrAD51",
+            "scriptStepStartHandle": "m0D0KNWNN7iXOQE98ajn-source-bottom",
+            "scriptStepEndHandle": "QgDjBp1ppjiPgAlrAD51-target-top",
+            "flowCondition": "关卡5",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "MbDogyQyyzFVQzQbYDoY",
+            "scriptStepStartId": "MRaAgymyy2F5nVL0gxpZ",
+            "scriptStepEndId": "bmaKArerr1fEVMq9yxgY",
+            "scriptStepStartHandle": "MRaAgymyy2F5nVL0gxpZ-source-bottom",
+            "scriptStepEndHandle": "bmaKArerr1fEVMq9yxgY-target-top",
+            "flowCondition": "关卡6",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "P9d3KGXGGyi70o0Ond3b",
+            "scriptStepStartId": "j2DpG9e998f2rzjPka1e",
+            "scriptStepEndId": "rGDnyj9jjztqzVE0BanQ",
+            "scriptStepStartHandle": "j2DpG9e998f2rzjPka1e-source-bottom",
+            "scriptStepEndHandle": "rGDnyj9jjztqzVE0BanQ-target-top",
+            "flowCondition": "关卡7",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "L9dyJOBOOMF6NPNZRa54",
+            "scriptStepStartId": "4AxegnmnnPFrWPpmJaQV",
+            "scriptStepEndId": "5vamqgQggPHy4XN5Pa4y",
+            "scriptStepStartHandle": "4AxegnmnnPFrWPpmJaQV-source-bottom",
+            "scriptStepEndHandle": "5vamqgQggPHy4XN5Pa4y-target-top",
+            "flowCondition": "关卡8",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        },
+        {
+            "trainTaskId": "zZx2b0j00GtYPvJjoxYB",
+            "flowId": "pbDQprArrKt48Y8X7aWL",
+            "scriptStepStartId": "4AxegnmnnPFrYKnW5aQV",
+            "scriptStepEndId": "Z8DbqVYVVQHO17L0Ga0X",
+            "scriptStepStartHandle": "4AxegnmnnPFrYKnW5aQV-source-bottom",
+            "scriptStepEndHandle": "Z8DbqVYVVQHO17L0Ga0X-target-top",
+            "flowCondition": "接下来我们将进入下一阶段",
+            "flowConfiguration": {
+                "relation": "and",
+                "conditions": [
+                    {
+                        "text": "条件组1",
+                        "relation": "and",
+                        "conditions": [
+                            {
+                                "text": ""
+                            }
+                        ]
+                    }
+                ]
+            },
+            "isDefault": 1,
+            "flowSettingType": "quick",
+            "transitionPrompt": "",
+            "transitionHistoryNum": 0
+        }
+    ],
+    "currentTime": 1781594222533,
+    "traceId": "f0f3637a561d498bae84c00ce0a894c7",
+    "success": true
+}

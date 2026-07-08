@@ -28,7 +28,17 @@ import sys
 from pathlib import Path
 
 import requests
-from nanoid import generate
+
+try:
+    from nanoid import generate
+except ImportError:
+    import secrets
+    import string
+
+    _NANOID_ALPHABET = string.ascii_letters + string.digits + "_-"
+
+    def generate(size=21):
+        return "".join(secrets.choice(_NANOID_ALPHABET) for _ in range(size))
 
 try:
     from dotenv import load_dotenv
@@ -115,6 +125,14 @@ def detail_of(node):
 
 def is_business(node):
     return detail_of(node).get("nodeType") == "SCRIPT_NODE"
+
+
+def is_start(node):
+    return detail_of(node).get("nodeType") == "SCRIPT_START"
+
+
+def is_end(node):
+    return detail_of(node).get("nodeType") == "SCRIPT_END"
 
 
 def module_of(step_name):
@@ -279,6 +297,26 @@ def create_start_end_nodes(task_id, course_id):
         )
         if not ok:
             raise RuntimeError(f"创建 {ntype} 失败: {j}")
+    return start_id, end_id
+
+
+def ensure_start_end_nodes(task_id, course_id, import_mode):
+    """replace 模式新建 START/END；append 模式优先复用已有 START/END。"""
+    if import_mode == "replace":
+        clean_task(task_id)
+        return create_start_end_nodes(task_id, course_id)
+
+    steps = query_script_steps(task_id)
+    start_nodes = [s for s in steps if is_start(s)]
+    end_nodes = [s for s in steps if is_end(s)]
+    if start_nodes and end_nodes:
+        start_id = start_nodes[0]["stepId"]
+        end_id = end_nodes[0]["stepId"]
+        print(f"   ➕ 追加模式：复用 START={start_id}  END={end_id}")
+        return start_id, end_id
+
+    start_id, end_id = create_start_end_nodes(task_id, course_id)
+    print(f"   ➕ 追加模式：未找到完整 START/END，已新建 START={start_id}  END={end_id}")
     return start_id, end_id
 
 
@@ -485,6 +523,31 @@ def group_nodes_by_level(nodes, skip_names=None):
     return result
 
 
+def load_split_plan(plan_file):
+    if not plan_file:
+        return None
+    return json.loads(Path(plan_file).read_text(encoding="utf-8"))
+
+
+def group_nodes_by_plan(nodes, plan):
+    """按外部规划文件分组，支持任意卡片组合。"""
+    if not plan:
+        return None, {}
+    nodes_by_id = {n["stepId"]: n for n in nodes}
+    result = {}
+    titles = {}
+    for idx, group in enumerate(plan.get("groups") or [], start=1):
+        level = int(group.get("level") or idx)
+        ids = [str(i) for i in (group.get("nodeIds") or [])]
+        selected = [nodes_by_id[i] for i in ids if i in nodes_by_id and is_business(nodes_by_id[i])]
+        if not selected:
+            print(f"⚠️ 规划组 {level} 未匹配到业务节点，跳过")
+            continue
+        result[level] = selected
+        titles[level] = group.get("title") or f"拆分组{level}"
+    return result, titles
+
+
 def classify_flows(flows, sel_ids):
     """将连线分为组内和边界出边。"""
     internal, boundary_out = [], []
@@ -501,8 +564,8 @@ def classify_flows(flows, sel_ids):
 # ── dry-run ──────────────────────────────────────────
 
 
-def print_dry_run(level, sel_nodes, internal, boundary_out, nodes_by_id, rmap):
-    label = f"关卡{CN.get(level, level)}"
+def print_dry_run(level, sel_nodes, internal, boundary_out, nodes_by_id, rmap, title=None):
+    label = title or f"关卡{CN.get(level, level)}"
     print("\n" + "=" * 72)
     print(f"📦 {label}：业务节点 {len(sel_nodes)} 个（另加 START/END）")
     print("\n   节点(原名 → 新名 | 附件):")
@@ -527,13 +590,12 @@ def print_dry_run(level, sel_nodes, internal, boundary_out, nodes_by_id, rmap):
 # ── 导入单个关卡 ──────────────────────────────────────
 
 
-def import_level(level, task_id, course_id, sel_nodes, internal, boundary_out, rmap):
+def import_level(level, task_id, course_id, sel_nodes, internal, boundary_out, rmap, import_mode="replace"):
     """将一个关卡的节点和连线导入目标任务。"""
     label = f"关卡{CN.get(level, level)}"
     print(f"\n🚀 导入 {label} → 任务 {task_id}")
 
-    clean_task(task_id)
-    start_id, end_id = create_start_end_nodes(task_id, course_id)
+    start_id, end_id = ensure_start_end_nodes(task_id, course_id, import_mode)
     print(f"   ✅ START={start_id}  END={end_id}")
 
     # 为每个业务节点生成新 ID
@@ -647,6 +709,16 @@ def parse_args():
     )
     p.add_argument("--dry-run", action="store_true", help="仅打印拆分计划，不调接口")
     p.add_argument("--import", dest="do_import", action="store_true", help="正式导入")
+    p.add_argument(
+        "--plan-file",
+        help="拆分规划 JSON 文件，格式: {groups:[{level,title,nodeIds[]}]}",
+    )
+    p.add_argument(
+        "--import-mode",
+        choices=["replace", "append"],
+        default="replace",
+        help="导入模式: replace=清空目标后导入, append=保留现有节点和连线后追加",
+    )
     # 动态生成 --level1 ~ --level20（足够覆盖大多数场景）
     for i in range(1, 21):
         p.add_argument(
@@ -664,13 +736,17 @@ def main():
     nodes, flows = load_source(args.source_dir)
     nodes_by_id = {n["stepId"]: n for n in nodes}
 
+    plan = load_split_plan(args.plan_file)
+
     # 自动检测关卡数量
     max_level = auto_detect_levels(nodes)
     print(f"📖 源数据：节点 {len(nodes)}，连线 {len(flows)}，检测到 {max_level} 个关卡")
 
-    groups = group_nodes_by_level(nodes, skip_names=SKIP_NAMES)
+    planned_groups, group_titles = group_nodes_by_plan(nodes, plan) if plan else (None, {})
+    groups = planned_groups or group_nodes_by_level(nodes, skip_names=SKIP_NAMES)
     for level in sorted(groups.keys()):
-        print(f"   关卡{CN.get(level, level)}: {len(groups[level])} 个业务节点")
+        label = group_titles.get(level) or f"关卡{CN.get(level, level)}"
+        print(f"   {label}: {len(groups[level])} 个业务节点")
 
     # ── dry-run ──
     if args.dry_run:
@@ -679,7 +755,15 @@ def main():
             sel_ids = {n["stepId"] for n in sel}
             internal, boundary_out = classify_flows(flows, sel_ids)
             rmap = {}  # 默认不重编号
-            print_dry_run(level, sel, internal, boundary_out, nodes_by_id, rmap)
+            print_dry_run(
+                level,
+                sel,
+                internal,
+                boundary_out,
+                nodes_by_id,
+                rmap,
+                title=group_titles.get(level),
+            )
         print("\n🧪 Dry-run 完成，未调用任何接口。")
         return
 
@@ -706,7 +790,14 @@ def main():
             rmap = {}  # 默认不重编号
             try:
                 ok = import_level(
-                    level, tid, args.course_id, sel, internal, boundary_out, rmap
+                    level,
+                    tid,
+                    args.course_id,
+                    sel,
+                    internal,
+                    boundary_out,
+                    rmap,
+                    import_mode=args.import_mode,
                 )
                 results[level] = ok
             except Exception as e:

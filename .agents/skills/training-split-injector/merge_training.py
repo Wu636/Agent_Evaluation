@@ -40,7 +40,17 @@ import sys
 from pathlib import Path
 
 import requests
-from nanoid import generate
+
+try:
+    from nanoid import generate
+except ImportError:
+    import secrets
+    import string
+
+    _NANOID_ALPHABET = string.ascii_letters + string.digits + "_-"
+
+    def generate(size=21):
+        return "".join(secrets.choice(_NANOID_ALPHABET) for _ in range(size))
 
 try:
     from dotenv import load_dotenv
@@ -456,6 +466,26 @@ def clean_task(task_id):
         raise RuntimeError(f"清空后仍残留 {len(remaining)} 个节点，已中止。")
 
 
+def ensure_start_end_nodes(task_id, course_id, import_mode):
+    """replace 模式新建 START/END；append 模式优先复用已有 START/END。"""
+    if import_mode == "replace":
+        clean_task(task_id)
+        return create_start_end_nodes(task_id, course_id)
+
+    steps = query_script_steps(task_id)
+    start_nodes = [s for s in steps if is_start(s)]
+    end_nodes = [s for s in steps if is_end(s)]
+    if start_nodes and end_nodes:
+        start_id = start_nodes[0]["stepId"]
+        end_id = end_nodes[0]["stepId"]
+        print(f"   ➕ 追加模式：复用 START={start_id}  END={end_id}")
+        return start_id, end_id
+
+    start_id, end_id = create_start_end_nodes(task_id, course_id)
+    print(f"   ➕ 追加模式：未找到完整 START/END，已新建 START={start_id}  END={end_id}")
+    return start_id, end_id
+
+
 # ── 源训练分析 ──────────────────────────────────────
 
 
@@ -604,12 +634,11 @@ def print_dry_run(sources, rmaps, mode):
 # ── 合并导入 ──────────────────────────────────────
 
 
-def import_merge(target_id, course_id, sources, rmaps, mode):
+def import_merge(target_id, course_id, sources, rmaps, mode, import_mode="replace"):
     """将多个源训练合并注入到目标任务。"""
     print(f"\n🚀 合并导入 → 任务 {target_id}（模式: {mode}）")
 
-    clean_task(target_id)
-    start_id, end_id = create_start_end_nodes(target_id, course_id)
+    start_id, end_id = ensure_start_end_nodes(target_id, course_id, import_mode)
     print(f"   ✅ START={start_id}  END={end_id}")
 
     # 全局 ID 映射: 源 stepId → 新 stepId
@@ -683,6 +712,7 @@ def import_merge(target_id, course_id, sources, rmaps, mode):
 
         # 源N末节点 → 源N+1首节点
         for si in range(len(sources) - 1):
+            src = sources[si]
             for lid in source_last_ids[si]:
                 for fid in source_first_ids[si + 1]:
                     # 继承源N末节点→END的连线条件（如果有）
@@ -832,6 +862,12 @@ def parse_args():
     p.add_argument("--dry-run", action="store_true", help="仅打印合并计划，不调接口")
     p.add_argument("--import", dest="do_import", action="store_true", help="正式导入")
     p.add_argument(
+        "--import-mode",
+        choices=["replace", "append"],
+        default="replace",
+        help="导入模式: replace=清空目标后导入, append=保留现有节点和连线后追加",
+    )
+    p.add_argument(
         "--mode",
         choices=["sequential", "branch"],
         default="sequential",
@@ -894,7 +930,14 @@ def main():
     # ── import ──
     if args.do_import:
         try:
-            ok = import_merge(args.target, args.course_id, sources, rmaps, args.mode)
+            ok = import_merge(
+                args.target,
+                args.course_id,
+                sources,
+                rmaps,
+                args.mode,
+                import_mode=args.import_mode,
+            )
             if ok:
                 print(f"\n✅ 合并导入成功！")
             else:

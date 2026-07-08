@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Sparkles, History, Settings, FileText, ClipboardCheck, Wand2, BookOpen, ChevronDown } from 'lucide-react';
+import { Sparkles, History, Settings, FileText, ClipboardCheck, Wand2, BookOpen, ChevronDown, GitMerge } from 'lucide-react';
 import Link from 'next/link';
 import { UserMenu } from './UserMenu';
 import { SettingsModal } from './SettingsModal';
@@ -37,6 +37,7 @@ export function Navbar() {
                             items={[
                                 { href: '/training-generate', label: '基础版', icon: <Wand2 className="w-4 h-4" /> },
                                 { href: '/training-generate-pro', label: 'Pro 版', icon: <Sparkles className="w-4 h-4" /> },
+                                { href: '/training-split-merge', label: '拆分/合并', icon: <GitMerge className="w-4 h-4" /> },
                             ]}
                         />
                         <NavLink href="/explore" icon={<History className="w-4 h-4" />}>探索</NavLink>

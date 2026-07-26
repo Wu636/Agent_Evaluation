@@ -29,6 +29,12 @@ import {
 interface InjectConfigProModalProps {
   markdown: string;
   onClose: () => void;
+  initialTargetUrl?: string;
+  initialCredentials?: {
+    authorization?: string;
+    cookie?: string;
+    userNid?: string;
+  };
 }
 
 const STORAGE_KEY = "training-injector-pro-credentials";
@@ -138,14 +144,24 @@ function normalizeManagedSkillName(value: string): string {
 export function InjectConfigProModal({
   markdown,
   onClose,
+  initialTargetUrl,
+  initialCredentials,
 }: InjectConfigProModalProps) {
   const stored = loadStoredCredentials();
 
   // ─── 表单状态 ──────────────────────────────────────────────
-  const [authorization, setAuthorization] = useState(stored.authorization);
-  const [cookie, setCookie] = useState(stored.cookie);
-  const [userNid, setUserNid] = useState(stored.userNid);
-  const [targetUrl, setTargetUrl] = useState(stored.targetUrl);
+  const [authorization, setAuthorization] = useState(
+    initialCredentials?.authorization || stored.authorization,
+  );
+  const [cookie, setCookie] = useState(
+    initialCredentials?.cookie || stored.cookie,
+  );
+  const [userNid, setUserNid] = useState(
+    initialCredentials?.userNid || stored.userNid,
+  );
+  const [targetUrl, setTargetUrl] = useState(
+    initialTargetUrl || stored.targetUrl,
+  );
   const [mode, setMode] = useState<"fresh" | "append">("fresh");
 
   // 图片相关

@@ -119,6 +119,10 @@ export function parseProMembers(markdown: string): ProMemberConfig[] {
       memberName: name,
       avatarGender:
         extractField(block, "数字人性别") || extractField(block, "性别") || "",
+      avatarAgeGroup:
+        extractField(block, "数字人年龄层") ||
+        extractField(block, "年龄层") ||
+        "",
       roleDescription:
         extractField(block, "角色描述") ||
         extractField(block, "描述") ||

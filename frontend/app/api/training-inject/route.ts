@@ -31,13 +31,19 @@ import {
 import { InjectProgressEvent, ParsedFlowConfig, ParsedFlowEdge, PolymasCredentials, PolymasScriptStep } from "@/lib/training-injector/types";
 import {
     getDigitalHumanGenderLabel,
+    getDigitalHumanAgeGroupLabel,
+    inferDigitalHumanRoleAgeGroup,
+    inferVoiceCandidateAgeGroup,
     inferDigitalHumanGender,
     inferVoiceCandidateGender,
+    isDigitalHumanAgeGroupCompatible,
     isDigitalHumanGenderCompatible,
+    normalizeDigitalHumanAgeGroup,
     normalizeDigitalHumanGender,
     selectBestVoiceCandidate,
     toVoiceCandidate,
     toVoiceCandidates,
+    type DigitalHumanAgeGroup,
     type DigitalHumanGender,
     type VoiceCandidate,
 } from "@/lib/training-injector/voice-selection";
@@ -68,6 +74,7 @@ interface ResolvedDigitalHumanConfig {
     agentVoiceId?: string;
     voiceName?: string;
     voiceGender: DigitalHumanGender;
+    voiceAgeGroup: DigitalHumanAgeGroup;
     source: "existing" | "created";
 }
 
@@ -169,6 +176,7 @@ function toResolvedDigitalHumanConfig(item: OwnerDigitalHumanItem): ResolvedDigi
         agentVoiceId,
         voiceName: cleanDigitalHumanValue(item.voiceName) || undefined,
         voiceGender: inferVoiceCandidateGender(voiceCandidate),
+        voiceAgeGroup: inferVoiceCandidateAgeGroup(voiceCandidate),
         source: "existing",
     };
 }
@@ -177,24 +185,35 @@ function findReusableDigitalHumanByName(
     configs: ResolvedDigitalHumanConfig[],
     nameKey: string,
     preferredGender: DigitalHumanGender = "unknown",
+    preferredAgeGroup: DigitalHumanAgeGroup = "unknown",
 ): ResolvedDigitalHumanConfig | null {
     if (!nameKey) return null;
-    const matchingGender = configs.filter(
-        (item) => item.voiceGender === preferredGender
+    const compatibleConfigs = configs.filter(
+        (item) =>
+            isDigitalHumanGenderCompatible(
+                preferredGender,
+                item.voiceGender,
+            ) &&
+            isDigitalHumanAgeGroupCompatible(
+                preferredAgeGroup,
+                item.voiceAgeGroup,
+            )
     );
-    const unknownGender = configs.filter(
-        (item) => item.voiceGender === "unknown"
+    const exactAgeAndGender = compatibleConfigs.filter(
+        (item) =>
+            (preferredGender === "unknown" ||
+                item.voiceGender === preferredGender) &&
+            (preferredAgeGroup === "unknown" ||
+                item.voiceAgeGroup === preferredAgeGroup)
     );
-    const compatibleConfigs = preferredGender === "unknown"
-        ? configs
-        : matchingGender.length > 0
-            ? matchingGender
-            : unknownGender;
-    const exactMatch = compatibleConfigs.find((item) => item.nameKey === nameKey);
+    const prioritizedConfigs = exactAgeAndGender.length > 0
+        ? exactAgeAndGender
+        : compatibleConfigs;
+    const exactMatch = prioritizedConfigs.find((item) => item.nameKey === nameKey);
     if (exactMatch) return exactMatch;
 
     if (nameKey.length < 2) return null;
-    return compatibleConfigs.find((item) => (
+    return prioritizedConfigs.find((item) => (
         item.nameKey.length >= 2 &&
         (item.nameKey.includes(nameKey) || nameKey.includes(item.nameKey))
     )) || null;
@@ -202,9 +221,10 @@ function findReusableDigitalHumanByName(
 
 function describeDigitalHuman(config: ResolvedDigitalHumanConfig): string {
     const genderLabel = getDigitalHumanGenderLabel(config.voiceGender);
+    const ageLabel = getDigitalHumanAgeGroupLabel(config.voiceAgeGroup);
     return config.voiceName
-        ? `${config.digitalHumanName}（${genderLabel}，音色：${config.voiceName}）`
-        : `${config.digitalHumanName}（${genderLabel}）`;
+        ? `${config.digitalHumanName}（${genderLabel}，${ageLabel}，音色：${config.voiceName}）`
+        : `${config.digitalHumanName}（${genderLabel}，${ageLabel}）`;
 }
 
 function getNodeX(step: PolymasScriptStep): number {
@@ -824,8 +844,24 @@ export async function POST(request: NextRequest) {
                             );
 
                             for (const item of ownerDigitalHumans) {
-                                const config = toResolvedDigitalHumanConfig(item);
-                                if (!config) continue;
+                                const baseConfig = toResolvedDigitalHumanConfig(item);
+                                if (!baseConfig) continue;
+                                const accountVoiceCandidate =
+                                    availableVoiceCandidates.find(
+                                        (candidate) =>
+                                            candidate.voiceNid === baseConfig.voiceNid
+                                    ) || null;
+                                const config: ResolvedDigitalHumanConfig = {
+                                    ...baseConfig,
+                                    voiceGender:
+                                        baseConfig.voiceGender === "unknown"
+                                            ? inferVoiceCandidateGender(accountVoiceCandidate)
+                                            : baseConfig.voiceGender,
+                                    voiceAgeGroup:
+                                        baseConfig.voiceAgeGroup === "unknown"
+                                            ? inferVoiceCandidateAgeGroup(accountVoiceCandidate)
+                                            : baseConfig.voiceAgeGroup,
+                                };
                                 const voiceCandidate = toVoiceCandidate(item, "digital-human");
                                 if (voiceCandidate) availableVoiceCandidates.push(voiceCandidate);
 
@@ -951,7 +987,29 @@ export async function POST(request: NextRequest) {
                                         : sameNameDigitalHuman?.voiceGender !== "unknown"
                                             ? sameNameDigitalHuman?.voiceGender || "male"
                                             : "male";
-                        const genderCacheKey = `${digitalHumanNameKey}::${preferredGender}`;
+                        const configuredAgeGroup = normalizeDigitalHumanAgeGroup(
+                            step.trainerAgeGroup
+                        );
+                        const inferredRoleAgeGroup = inferDigitalHumanRoleAgeGroup(
+                            trainerName,
+                            [step.description, step.llmPrompt, step.prologue]
+                                .filter(Boolean)
+                                .join(" "),
+                        );
+                        const requestedVoiceAgeGroup =
+                            inferVoiceCandidateAgeGroup(requestedVoiceCandidate);
+                        const preferredAgeGroup: DigitalHumanAgeGroup =
+                            configuredAgeGroup !== "unknown"
+                                ? configuredAgeGroup
+                                : inferredRoleAgeGroup !== "unknown"
+                                    ? inferredRoleAgeGroup
+                                    : requestedVoiceAgeGroup !== "unknown"
+                                        ? requestedVoiceAgeGroup
+                                        : sameNameDigitalHuman?.voiceAgeGroup !== "unknown"
+                                            ? sameNameDigitalHuman?.voiceAgeGroup || "adult"
+                                            : "adult";
+                        const digitalHumanCacheKey =
+                            `${digitalHumanNameKey}::${preferredGender}::${preferredAgeGroup}`;
                         const requestedExactKey = buildDigitalHumanExactKey(
                             digitalHumanNameKey,
                             requestedAgentId,
@@ -966,29 +1024,41 @@ export async function POST(request: NextRequest) {
                             isDigitalHumanGenderCompatible(
                                 preferredGender,
                                 requestedExactDigitalHuman.voiceGender
+                            ) &&
+                            isDigitalHumanAgeGroupCompatible(
+                                preferredAgeGroup,
+                                requestedExactDigitalHuman.voiceAgeGroup
                             )
                                 ? requestedExactDigitalHuman
                                 : findReusableDigitalHumanByName(
                                     reusableDigitalHumanConfigs,
                                     digitalHumanNameKey,
-                                    preferredGender
+                                    preferredGender,
+                                    preferredAgeGroup
                                 );
-                        const genderMatchedDigitalHumans = reusableDigitalHumanConfigs.filter(
-                            (item) => item.voiceGender === preferredGender
+                        const exactMatchedDigitalHumans = reusableDigitalHumanConfigs.filter(
+                            (item) =>
+                                item.voiceGender === preferredGender &&
+                                item.voiceAgeGroup === preferredAgeGroup
                         );
-                        const unknownGenderDigitalHumans = reusableDigitalHumanConfigs.filter(
-                            (item) => item.voiceGender === "unknown"
+                        const compatibleDigitalHumans = reusableDigitalHumanConfigs.filter(
+                            (item) =>
+                                isDigitalHumanGenderCompatible(
+                                    preferredGender,
+                                    item.voiceGender
+                                ) &&
+                                isDigitalHumanAgeGroupCompatible(
+                                    preferredAgeGroup,
+                                    item.voiceAgeGroup
+                                )
                         );
-                        const compatibleDigitalHumans =
-                            genderMatchedDigitalHumans.length > 0
-                                ? genderMatchedDigitalHumans
-                                : unknownGenderDigitalHumans;
                         const fallbackDigitalHuman =
                             exactExistingDigitalHuman ||
+                            exactMatchedDigitalHumans[0] ||
                             compatibleDigitalHumans[0] ||
                             null;
                         let digitalHumanConfig =
-                            customDigitalHumanCache.get(genderCacheKey) ||
+                            customDigitalHumanCache.get(digitalHumanCacheKey) ||
                             (shouldGenerateDigitalHumanAvatar ? null : exactExistingDigitalHuman) ||
                             null;
                         let agentId =
@@ -996,14 +1066,24 @@ export async function POST(request: NextRequest) {
                             (isDigitalHumanGenderCompatible(
                                 preferredGender,
                                 requestedVoiceGender
+                            ) &&
+                            isDigitalHumanAgeGroupCompatible(
+                                preferredAgeGroup,
+                                requestedVoiceAgeGroup
                             )
                                 ? requestedAgentId
                                 : "") ||
-                            (preferredGender === "male" ? "Tg3LpKo28D" : "");
+                            (preferredGender === "male" &&
+                            preferredAgeGroup === "adult"
+                                ? "Tg3LpKo28D"
+                                : "");
                         let avatarNid =
                             fallbackDigitalHuman?.avatarNid ||
                             requestedAvatarNid ||
-                            (preferredGender === "male" ? "hnuOVqMu8b" : "");
+                            (preferredGender === "male" &&
+                            preferredAgeGroup === "adult"
+                                ? "hnuOVqMu8b"
+                                : "");
                         let agentVoiceId = fallbackDigitalHuman?.agentVoiceId;
                         let resolvedVoiceName = fallbackDigitalHuman?.voiceName;
                         const selectedAccountVoice =
@@ -1014,6 +1094,7 @@ export async function POST(request: NextRequest) {
                                         preferredName: requestedAgentId,
                                         preferredVoiceNid: requestedAgentId,
                                         preferredGender,
+                                        preferredAgeGroup,
                                         roleName: trainerName,
                                         roleDescription: step.description,
                                         avatarDescription: step.llmPrompt,
@@ -1028,7 +1109,7 @@ export async function POST(request: NextRequest) {
                         }
 
                         if (!digitalHumanConfig && shouldGenerateDigitalHumanAvatar) {
-                            let generatedAvatar = generatedAvatarCache.get(genderCacheKey) || null;
+                            let generatedAvatar = generatedAvatarCache.get(digitalHumanCacheKey) || null;
                             if (!generatedAvatar) {
                                 send({
                                     type: "progress",
@@ -1051,6 +1132,7 @@ export async function POST(request: NextRequest) {
                                             libraryFolderId: finalLibraryFolderId,
                                             baseAvatarNid: avatarNid,
                                             avatarGender: preferredGender,
+                                            avatarAgeGroup: preferredAgeGroup,
                                             avatarStylePrompt: String(digitalHumanAvatarStylePrompt || "").trim() || undefined,
                                             arkApiKey: llmSettings?.apiKey,
                                             llmApiUrl: llmSettings?.apiUrl,
@@ -1065,7 +1147,7 @@ export async function POST(request: NextRequest) {
                                             avatarNid: result.avatarNid,
                                             avatarUrl: result.avatarUrl,
                                         };
-                                        generatedAvatarCache.set(genderCacheKey, generatedAvatar);
+                                        generatedAvatarCache.set(digitalHumanCacheKey, generatedAvatar);
                                         send({
                                             type: "progress",
                                             phase: "script",
@@ -1138,9 +1220,16 @@ export async function POST(request: NextRequest) {
                                                 ? preferredGender
                                                 : selectedGender;
                                         })(),
+                                        voiceAgeGroup: (() => {
+                                            const selectedAgeGroup =
+                                                inferVoiceCandidateAgeGroup(selectedAccountVoice);
+                                            return selectedAgeGroup === "unknown"
+                                                ? preferredAgeGroup
+                                                : selectedAgeGroup;
+                                        })(),
                                         source: "created",
                                     };
-                                    customDigitalHumanCache.set(genderCacheKey, digitalHumanConfig);
+                                    customDigitalHumanCache.set(digitalHumanCacheKey, digitalHumanConfig);
                                     if (digitalHumanNameKey && !existingDigitalHumanByName.has(digitalHumanNameKey)) {
                                         existingDigitalHumanByName.set(digitalHumanNameKey, digitalHumanConfig);
                                     }
@@ -1174,7 +1263,7 @@ export async function POST(request: NextRequest) {
                             agentId = digitalHumanConfig.voiceNid || agentId;
                             avatarNid = digitalHumanConfig.avatarNid || avatarNid;
                             agentVoiceId = digitalHumanConfig.agentVoiceId || agentVoiceId;
-                            customDigitalHumanCache.set(genderCacheKey, digitalHumanConfig);
+                            customDigitalHumanCache.set(digitalHumanCacheKey, digitalHumanConfig);
                             send({
                                 type: "progress",
                                 phase: "script",

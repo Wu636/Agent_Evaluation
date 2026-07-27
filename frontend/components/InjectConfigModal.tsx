@@ -121,6 +121,7 @@ function createEmptyParsedStep(stageNumber: number): ParsedStep {
         stepName: `新阶段${stageNumber}`,
         trainerName: "",
         trainerGender: "",
+        trainerAgeGroup: "",
         modelId: "",
         agentId: "",
         avatarNid: "",
@@ -2390,6 +2391,19 @@ export function InjectConfigModal({
                                                                                                     <option value="">自动识别</option>
                                                                                                     <option value="男性">男性</option>
                                                                                                     <option value="女性">女性</option>
+                                                                                                </select>
+                                                                                            </div>
+                                                                                            <div>
+                                                                                                <label className="text-xs font-medium text-slate-700 block mb-1.5">数字人年龄层</label>
+                                                                                                <select
+                                                                                                    value={step.trainerAgeGroup}
+                                                                                                    onChange={(e) => handleStructuredStageChange(index, "trainerAgeGroup", e.target.value)}
+                                                                                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                                                                                >
+                                                                                                    <option value="">自动识别</option>
+                                                                                                    <option value="儿童">儿童</option>
+                                                                                                    <option value="成年">成年</option>
+                                                                                                    <option value="老年">老年</option>
                                                                                                 </select>
                                                                                             </div>
                                                                                             <div>

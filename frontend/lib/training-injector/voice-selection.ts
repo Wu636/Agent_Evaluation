@@ -9,11 +9,13 @@ export interface VoiceCandidate {
 }
 
 export type DigitalHumanGender = "male" | "female" | "unknown";
+export type DigitalHumanAgeGroup = "child" | "adult" | "senior" | "unknown";
 
 export interface VoiceSelectionInput {
     preferredName?: string;
     preferredVoiceNid?: string;
     preferredGender?: DigitalHumanGender | string;
+    preferredAgeGroup?: DigitalHumanAgeGroup | string;
     roleName?: string;
     roleDescription?: string;
     avatarDescription?: string;
@@ -113,6 +115,125 @@ export function getDigitalHumanGenderLabel(
     return "未指定";
 }
 
+export function inferDigitalHumanAgeGroup(
+    ...values: unknown[]
+): DigitalHumanAgeGroup {
+    const text = normalize(values.filter(Boolean).join(" "));
+    if (!text) return "unknown";
+
+    const seniorSignals = [
+        "老年", "老人", "老爷爷", "老奶奶", "爷爷", "奶奶", "外公",
+        "外婆", "爷爷音", "奶奶音", "高龄", "elderly", "seniorvoice",
+        "agedvoice", "oldman", "oldwoman",
+    ];
+    const childSignals = [
+        "儿童", "幼儿", "幼童", "男童", "女童", "童声", "少儿",
+        "小童", "孩童", "少年", "少女", "男孩", "女孩", "小男孩",
+        "小女孩", "萌娃", "奶气", "正太", "萝莉", "child", "kid",
+        "boy", "girl", "boyvoice", "girlvoice", "xiaotong",
+        "tongsheng", "mengwa", "zhengtai", "luoli",
+    ];
+    const adultSignals = [
+        "成人", "成年", "青年", "中年", "成熟男声", "成熟女声",
+        "adult", "youngadult", "middleaged",
+    ];
+    const hasSenior = includesAny(text, seniorSignals);
+    const hasChild = includesAny(text, childSignals);
+    const hasAdult = includesAny(text, adultSignals);
+    const matchedCount = [hasSenior, hasChild, hasAdult].filter(Boolean).length;
+    if (matchedCount !== 1) return "unknown";
+    if (hasSenior) return "senior";
+    if (hasChild) return "child";
+    return "adult";
+}
+
+export function normalizeDigitalHumanAgeGroup(
+    value: unknown,
+): DigitalHumanAgeGroup {
+    const normalized = normalize(value);
+    if (!normalized) return "unknown";
+    if (["儿童", "幼儿", "幼童", "少儿", "child", "kid"].includes(normalized)) {
+        return "child";
+    }
+    if (["成人", "成年", "青年", "中年", "adult", "youngadult"].includes(normalized)) {
+        return "adult";
+    }
+    if (["老年", "老人", "高龄", "senior", "elderly"].includes(normalized)) {
+        return "senior";
+    }
+    return inferDigitalHumanAgeGroup(normalized);
+}
+
+/**
+ * 角色年龄先看角色名称中的主体身份，避免“患儿父亲”因上下文出现患儿而被判成儿童。
+ */
+export function inferDigitalHumanRoleAgeGroup(
+    roleName?: unknown,
+    roleDescription?: unknown,
+    avatarDescription?: unknown,
+): DigitalHumanAgeGroup {
+    const normalizedName = normalize(roleName);
+    const seniorRoleSignals = [
+        "爷爷", "奶奶", "外公", "外婆", "祖父", "祖母", "老年人", "老人",
+    ];
+    const adultRoleSignals = [
+        "父亲", "母亲", "爸爸", "妈妈", "家长", "监护人", "叔叔", "阿姨",
+        "医生", "护士", "教师", "老师", "教授", "导师", "律师", "法官",
+        "经理", "主任", "工程师", "教练", "辅导员", "工作人员", "专家",
+    ];
+    const childRoleSignals = [
+        "患儿", "儿童", "幼儿", "幼童", "男童", "女童", "小朋友",
+        "小男孩", "小女孩", "萌娃",
+    ];
+
+    if (includesAny(normalizedName, seniorRoleSignals)) return "senior";
+    if (includesAny(normalizedName, adultRoleSignals)) return "adult";
+    if (includesAny(normalizedName, childRoleSignals)) return "child";
+
+    const roleText = normalize(
+        [roleName, roleDescription, avatarDescription].filter(Boolean).join(" "),
+    );
+    if (includesAny(roleText, seniorRoleSignals)) return "senior";
+    if (includesAny(roleText, adultRoleSignals)) return "adult";
+    if (includesAny(roleText, childRoleSignals)) return "child";
+    return inferDigitalHumanAgeGroup(roleText);
+}
+
+export function inferVoiceCandidateAgeGroup(
+    candidate?: VoiceCandidate | null,
+): DigitalHumanAgeGroup {
+    if (!candidate) return "unknown";
+    const primaryAge = inferDigitalHumanAgeGroup(
+        candidate.voiceName,
+        candidate.voiceType,
+        candidate.voiceParam,
+    );
+    return primaryAge !== "unknown"
+        ? primaryAge
+        : inferDigitalHumanAgeGroup(candidate.description);
+}
+
+export function isDigitalHumanAgeGroupCompatible(
+    preferred: DigitalHumanAgeGroup | string | undefined,
+    actual: DigitalHumanAgeGroup | string | undefined,
+): boolean {
+    const preferredAge = normalizeDigitalHumanAgeGroup(preferred);
+    const actualAge = normalizeDigitalHumanAgeGroup(actual);
+    return preferredAge === "unknown" ||
+        actualAge === "unknown" ||
+        preferredAge === actualAge;
+}
+
+export function getDigitalHumanAgeGroupLabel(
+    ageGroup: DigitalHumanAgeGroup | string | undefined,
+): string {
+    const normalized = normalizeDigitalHumanAgeGroup(ageGroup);
+    if (normalized === "child") return "儿童";
+    if (normalized === "adult") return "成年";
+    if (normalized === "senior") return "老年";
+    return "年龄未指定";
+}
+
 function uniqueCandidates(candidates: VoiceCandidate[]): VoiceCandidate[] {
     const seen = new Set<string>();
     const result: VoiceCandidate[] = [];
@@ -178,6 +299,7 @@ export function toVoiceCandidate(
         ]),
         readString(object, ["language", "locale"]),
         readString(object, ["gender", "speakerGender", "sex"]),
+        readString(object, ["ageGroup", "speakerAge", "age"]),
     ]
         .filter(Boolean)
         .join(" ");
@@ -239,6 +361,17 @@ function scoreVoiceCandidate(
             input.avatarDescription,
         );
     const candidateGender = inferVoiceCandidateGender(candidate);
+    const explicitAgeGroup = normalizeDigitalHumanAgeGroup(
+        input.preferredAgeGroup,
+    );
+    const preferredAgeGroup = explicitAgeGroup !== "unknown"
+        ? explicitAgeGroup
+        : inferDigitalHumanRoleAgeGroup(
+            input.roleName,
+            input.roleDescription,
+            input.avatarDescription,
+        );
+    const candidateAgeGroup = inferVoiceCandidateAgeGroup(candidate);
     let score = 0;
 
     if (
@@ -250,6 +383,19 @@ function scoreVoiceCandidate(
     }
     if (preferredGender !== "unknown" && preferredGender === candidateGender) {
         score += 180;
+    }
+    if (
+        preferredAgeGroup !== "unknown" &&
+        candidateAgeGroup !== "unknown" &&
+        preferredAgeGroup !== candidateAgeGroup
+    ) {
+        return -20_000;
+    }
+    if (
+        preferredAgeGroup !== "unknown" &&
+        preferredAgeGroup === candidateAgeGroup
+    ) {
+        score += 220;
     }
 
     if (preferredVoiceNid && normalize(candidate.voiceNid) === preferredVoiceNid) {
@@ -272,7 +418,6 @@ function scoreVoiceCandidate(
 
     if (!roleText) return score;
 
-    const childSignals = ["儿童", "孩子", "小朋友", "幼儿", "童声", "萌娃"];
     const professionalSignals = [
         "专家",
         "教授",
@@ -291,9 +436,6 @@ function scoreVoiceCandidate(
     const livelySignals = ["活泼", "灵动", "陪伴", "轻松", "年轻", "青年"];
     const englishSignals = ["英文", "英语", "美式", "英式", "english"];
 
-    if (includesAny(roleText, childSignals) && includesAny(candidateText, ["童", "娃", "奶", "萌", "孩子"])) {
-        score += 42;
-    }
     if (includesAny(roleText, professionalSignals) && includesAny(candidateText, ["专业", "沉稳", "成熟", "儒雅", "磁性", "擎苍", "霸气", "稳重"])) {
         score += 24;
     }
@@ -322,7 +464,17 @@ export function selectBestVoiceCandidate(
             input.roleDescription,
             input.avatarDescription,
         );
-    const compatible = preferredGender === "unknown"
+    const explicitAgeGroup = normalizeDigitalHumanAgeGroup(
+        input.preferredAgeGroup,
+    );
+    const preferredAgeGroup = explicitAgeGroup !== "unknown"
+        ? explicitAgeGroup
+        : inferDigitalHumanRoleAgeGroup(
+            input.roleName,
+            input.roleDescription,
+            input.avatarDescription,
+        );
+    const genderCompatible = preferredGender === "unknown"
         ? unique
         : unique.filter((candidate) =>
             isDigitalHumanGenderCompatible(
@@ -330,7 +482,15 @@ export function selectBestVoiceCandidate(
                 inferVoiceCandidateGender(candidate),
             )
         );
-    // 已明确角色性别时，宁可不选，也不回退到已知相反性别的音色。
+    const compatible = preferredAgeGroup === "unknown"
+        ? genderCompatible
+        : genderCompatible.filter((candidate) =>
+            isDigitalHumanAgeGroupCompatible(
+                preferredAgeGroup,
+                inferVoiceCandidateAgeGroup(candidate),
+            )
+        );
+    // 已明确角色性别或年龄层时，宁可不选，也不回退到已知不匹配的音色。
     if (compatible.length === 0) return null;
 
     let best: { candidate: VoiceCandidate; score: number } | null = null;
@@ -338,6 +498,7 @@ export function selectBestVoiceCandidate(
         const score = scoreVoiceCandidate(candidate, {
             ...input,
             preferredGender,
+            preferredAgeGroup,
         });
         if (!best || score > best.score) {
             best = { candidate, score };

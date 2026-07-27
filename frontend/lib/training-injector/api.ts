@@ -5,7 +5,10 @@
  */
 
 import { PolymasCredentials, PolymasScriptStep, PolymasScriptFlow } from "./types";
-import type { DigitalHumanGender } from "./voice-selection";
+import type {
+    DigitalHumanAgeGroup,
+    DigitalHumanGender,
+} from "./voice-selection";
 
 const POLYMAS_BASE = "https://cloudapi.polymas.com/teacher-course/abilityTrain";
 const POLYMAS_AI_BASE = "https://cloudapi.polymas.com/ai-tools";
@@ -102,17 +105,26 @@ function buildDigitalHumanAvatarPrompt(params: {
     stageName: string;
     stageDescription: string;
     avatarGender?: DigitalHumanGender;
+    avatarAgeGroup?: DigitalHumanAgeGroup;
     avatarStylePrompt?: string;
 }): string {
     const genderRequirement = params.avatarGender === "female"
-        ? "The mentor must be an adult woman. Do not generate a man."
+        ? "The visible person must be female. Do not generate a male person."
         : params.avatarGender === "male"
-            ? "The mentor must be an adult man. Do not generate a woman."
-            : "Keep the mentor's gender consistent with the role description.";
+            ? "The visible person must be male. Do not generate a female person."
+            : "Keep the visible person's gender consistent with the role description.";
+    const ageRequirement = params.avatarAgeGroup === "child"
+        ? "The visible person must be a child. Do not generate an adult or elderly person."
+        : params.avatarAgeGroup === "senior"
+            ? "The visible person must be an elderly adult. Do not generate a child or young adult."
+            : params.avatarAgeGroup === "adult"
+                ? "The visible person must be an adult. Do not generate a child or childlike face."
+                : "Keep the mentor's age group consistent with the role description.";
     return [
-        "Create a realistic professional human portrait headshot, not a background scene.",
-        "The image must contain exactly one adult human mentor with a clearly visible head, face, neck, and shoulders.",
+        "Create a realistic human role portrait headshot, not a background scene.",
+        "The image must contain exactly one person with a clearly visible head, face, neck, and shoulders.",
         genderRequirement,
+        ageRequirement,
         "The person's head and upper body should be centered and occupy most of the image, like a formal profile avatar.",
         "Use a clean plain studio background or softly blurred office background.",
         "Do not create an empty room, classroom, meeting room, interior design scene, object, icon, landscape, cartoon mascot, text, logo, watermark, poster, or multi-person image.",
@@ -123,13 +135,22 @@ function buildDigitalHumanAvatarPrompt(params: {
         `Stage goal: ${params.stageDescription}`,
         params.avatarStylePrompt
             ? `Additional avatar style requirement: ${params.avatarStylePrompt}`
-            : "Additional avatar style requirement: professional teaching mentor avatar, friendly, trustworthy, realistic, suitable for a course training scenario.",
+            : params.avatarAgeGroup === "child"
+                ? "Additional avatar style requirement: age-appropriate child role portrait, natural, friendly, realistic, suitable for a course training scenario."
+                : "Additional avatar style requirement: professional teaching role avatar, friendly, trustworthy, realistic, suitable for a course training scenario.",
         params.avatarGender === "female"
             ? "Final gender constraint: the visible person must be female, matching the selected female voice."
             : params.avatarGender === "male"
                 ? "Final gender constraint: the visible person must be male, matching the selected male voice."
                 : "Final gender constraint: the visible person's gender must match the role description.",
-        "Final hard constraint: this must be a portrait of a human mentor with a visible head. If the scene does not contain a human head and face, it is wrong.",
+        params.avatarAgeGroup === "child"
+            ? "Final age constraint: the visible person and selected voice must both be child age."
+            : params.avatarAgeGroup === "senior"
+                ? "Final age constraint: the visible person and selected voice must both be senior age."
+                : params.avatarAgeGroup === "adult"
+                    ? "Final age constraint: the visible person and selected voice must both be adult age; never childlike."
+                    : "Final age constraint: the visible person's age must match the role description.",
+        "Final hard constraint: this must be a portrait of the human role with a visible head. If the scene does not contain a human head and face, it is wrong.",
     ].join("\n");
 }
 
@@ -1220,6 +1241,7 @@ async function generateDigitalHumanAvatarImageSource(
         stageName: string;
         stageDescription: string;
         avatarGender?: DigitalHumanGender;
+        avatarAgeGroup?: DigitalHumanAgeGroup;
         avatarStylePrompt?: string;
         arkApiKey?: string;
         llmApiUrl?: string;
@@ -1429,6 +1451,7 @@ export async function generateAndSyncDigitalHumanAvatar(
         stageName: string;
         stageDescription: string;
         avatarGender?: DigitalHumanGender;
+        avatarAgeGroup?: DigitalHumanAgeGroup;
         courseId?: string;
         libraryFolderId?: string;
         baseAvatarNid?: string;

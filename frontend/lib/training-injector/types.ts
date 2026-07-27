@@ -14,6 +14,7 @@ export interface ParsedStep {
     stepName: string;
     trainerName: string;
     trainerGender: string;   // 数字人性别（男性 / 女性）
+    trainerAgeGroup: string; // 数字人年龄层（儿童 / 成年 / 老年）
     modelId: string;
     agentId: string;         // 声音 ID
     avatarNid: string;       // 形象 ID

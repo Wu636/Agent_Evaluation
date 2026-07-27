@@ -117,6 +117,8 @@ export function parseProMembers(markdown: string): ProMemberConfig[] {
 
     members.push({
       memberName: name,
+      avatarGender:
+        extractField(block, "数字人性别") || extractField(block, "性别") || "",
       roleDescription:
         extractField(block, "角色描述") ||
         extractField(block, "描述") ||

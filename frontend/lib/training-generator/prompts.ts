@@ -9,7 +9,7 @@ import { ScriptMode } from "./types";
 import { TRAINING_SCRIPT_COMPLETE_MARKER } from "./script-tools";
 
 // 默认模板版本号——每次修改 DEFAULT_*_TEMPLATE 时递增，用于清除旧缓存
-export const TEMPLATE_VERSION = 11;
+export const TEMPLATE_VERSION = 12;
 
 function appendScriptCompletionMarkerInstruction(prompt: string): string {
     return [
@@ -73,6 +73,7 @@ export const DEFAULT_SCRIPT_TEMPLATE = `你是一名专业的**实训剧本架�
 ### 阶段1: [根据文档设计的阶段名称]
 
 **虚拟训练官名字**: [从提示词Role部分提取角色名]
+**数字人性别**: [男性或女性；必须与角色身份、头像和音色一致]
 **模型**: 
 **声音**: 
 **形象**: 
@@ -216,6 +217,7 @@ export const OPTIMIZED_SEQUENTIAL_SCRIPT_TEMPLATE = `你是一名专业的**实�
 
 ### 阶段1: [阶段名称]
 **虚拟训练官名字**: [角色简称]
+**数字人性别**: [男性或女性；同一角色在所有阶段保持一致]
 **模型**:
 **声音**:
 **形象**:
@@ -326,6 +328,7 @@ export const OPTIMIZED_ROLEPLAY_SCRIPT_TEMPLATE = `你是一名专业的**实训
 
 ### 阶段1: [阶段名称]
 **虚拟训练官名字**: [角色名]
+**数字人性别**: [男性或女性；同一角色在所有阶段保持一致]
 **模型**:
 **声音**:
 **形象**:
@@ -432,6 +435,7 @@ export const OPTIMIZED_SUMMARY_SCRIPT_TEMPLATE = `你是一名专业的**实训�
 
 ### 阶段1: [总结阶段名称]
 **虚拟训练官名字**: [角色名]
+**数字人性别**: [男性或女性；同一角色在所有阶段保持一致]
 **模型**:
 **声音**:
 **形象**:

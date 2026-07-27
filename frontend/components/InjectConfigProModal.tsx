@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronRight,
   FileText,
+  Download,
   RefreshCw,
   Image as ImageIcon,
   Trash2,
@@ -25,6 +26,8 @@ import {
   LLM_SETTINGS_STORAGE_KEY,
   loadLLMSettingsFromStorage,
 } from "@/lib/llm/settings";
+import { downloadProMarkdown } from "@/lib/training-generator-pro/client";
+import { PRO_CONFIG_MARKDOWN_TEMPLATE } from "@/lib/training-injector-pro/template";
 
 interface InjectConfigProModalProps {
   markdown: string;
@@ -249,6 +252,13 @@ export function InjectConfigProModal({
     };
     reader.readAsText(file);
     e.target.value = "";
+  };
+
+  const handleDownloadConfigTemplate = () => {
+    downloadProMarkdown(
+      PRO_CONFIG_MARKDOWN_TEMPLATE,
+      "能力训练-Pro-配置模板.md",
+    );
   };
 
   const validateSkillManagerCredentials = () => {
@@ -1369,6 +1379,14 @@ export function InjectConfigProModal({
                           <FileText className="w-3.5 h-3.5" />
                           上传 .md 文件
                         </button>
+                        <button
+                          type="button"
+                          onClick={handleDownloadConfigTemplate}
+                          className="px-3 py-1.5 text-xs font-medium border border-indigo-200 rounded-lg bg-indigo-50/50 hover:bg-indigo-50 text-indigo-700 flex items-center gap-1.5 transition-colors"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          下载 Pro 配置模板
+                        </button>
                         {customMarkdown && (
                           <span className="text-xs text-emerald-600">
                             已加载 {customMarkdown.length} 字符
@@ -1379,7 +1397,7 @@ export function InjectConfigProModal({
                       <textarea
                         value={customMarkdown}
                         onChange={(e) => setCustomMarkdown(e.target.value)}
-                        placeholder="把你想真正注入的 Pro 配置 Markdown 粘贴到这里；保存后将优先按这里的内容注入..."
+                        placeholder="粘贴按 Pro 配置模板填写的 Markdown；执行注入时会优先使用这里的内容..."
                         rows={10}
                         className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono resize-y"
                       />

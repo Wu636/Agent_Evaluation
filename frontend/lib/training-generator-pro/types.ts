@@ -38,6 +38,7 @@ export interface ProSkillConfig {
 /** 全局成员配置 */
 export interface ProMemberConfig {
   memberName: string; // 角色名
+  avatarGender: string; // 数字人性别（男性 / 女性）
   roleDescription: string; // 角色描述（用于平台 prompt 字段，必填）
   modelId: string; // 模型
   voiceName: string; // 声音名称（如"灿灿"）

@@ -13,6 +13,7 @@ export interface PolymasCredentials {
 export interface ParsedStep {
     stepName: string;
     trainerName: string;
+    trainerGender: string;   // 数字人性别（男性 / 女性）
     modelId: string;
     agentId: string;         // 声音 ID
     avatarNid: string;       // 形象 ID

@@ -30,9 +30,15 @@ import {
 } from "@/lib/training-injector/api";
 import { InjectProgressEvent, ParsedFlowConfig, ParsedFlowEdge, PolymasCredentials, PolymasScriptStep } from "@/lib/training-injector/types";
 import {
+    getDigitalHumanGenderLabel,
+    inferDigitalHumanGender,
+    inferVoiceCandidateGender,
+    isDigitalHumanGenderCompatible,
+    normalizeDigitalHumanGender,
     selectBestVoiceCandidate,
     toVoiceCandidate,
     toVoiceCandidates,
+    type DigitalHumanGender,
     type VoiceCandidate,
 } from "@/lib/training-injector/voice-selection";
 
@@ -61,6 +67,7 @@ interface ResolvedDigitalHumanConfig {
     voiceNid: string;
     agentVoiceId?: string;
     voiceName?: string;
+    voiceGender: DigitalHumanGender;
     source: "existing" | "created";
 }
 
@@ -151,6 +158,7 @@ function toResolvedDigitalHumanConfig(item: OwnerDigitalHumanItem): ResolvedDigi
     if (!customNid || !nameKey || !avatarNid || !voiceNid) return null;
 
     const agentVoiceId = cleanDigitalHumanValue(item.bigModelVoiceParam) || undefined;
+    const voiceCandidate = toVoiceCandidate(item, "digital-human");
 
     return {
         customNid,
@@ -160,29 +168,43 @@ function toResolvedDigitalHumanConfig(item: OwnerDigitalHumanItem): ResolvedDigi
         voiceNid,
         agentVoiceId,
         voiceName: cleanDigitalHumanValue(item.voiceName) || undefined,
+        voiceGender: inferVoiceCandidateGender(voiceCandidate),
         source: "existing",
     };
 }
 
 function findReusableDigitalHumanByName(
     configs: ResolvedDigitalHumanConfig[],
-    nameKey: string
+    nameKey: string,
+    preferredGender: DigitalHumanGender = "unknown",
 ): ResolvedDigitalHumanConfig | null {
     if (!nameKey) return null;
-    const exactMatch = configs.find((item) => item.nameKey === nameKey);
+    const matchingGender = configs.filter(
+        (item) => item.voiceGender === preferredGender
+    );
+    const unknownGender = configs.filter(
+        (item) => item.voiceGender === "unknown"
+    );
+    const compatibleConfigs = preferredGender === "unknown"
+        ? configs
+        : matchingGender.length > 0
+            ? matchingGender
+            : unknownGender;
+    const exactMatch = compatibleConfigs.find((item) => item.nameKey === nameKey);
     if (exactMatch) return exactMatch;
 
     if (nameKey.length < 2) return null;
-    return configs.find((item) => (
+    return compatibleConfigs.find((item) => (
         item.nameKey.length >= 2 &&
         (item.nameKey.includes(nameKey) || nameKey.includes(item.nameKey))
     )) || null;
 }
 
 function describeDigitalHuman(config: ResolvedDigitalHumanConfig): string {
+    const genderLabel = getDigitalHumanGenderLabel(config.voiceGender);
     return config.voiceName
-        ? `${config.digitalHumanName}（音色：${config.voiceName}）`
-        : config.digitalHumanName;
+        ? `${config.digitalHumanName}（${genderLabel}，音色：${config.voiceName}）`
+        : `${config.digitalHumanName}（${genderLabel}）`;
 }
 
 function getNodeX(step: PolymasScriptStep): number {
@@ -905,25 +927,83 @@ export async function POST(request: NextRequest) {
                         const requestedAgentId = cleanDigitalHumanValue(step.agentId);
                         const requestedAvatarNid = cleanDigitalHumanValue(step.avatarNid);
                         const digitalHumanNameKey = normalizeDigitalHumanNameForReuse(trainerName);
+                        const requestedVoiceCandidate = availableVoiceCandidates.find(
+                            (candidate) => candidate.voiceNid === requestedAgentId
+                        ) || null;
+                        const sameNameDigitalHuman = reusableDigitalHumanConfigs.find(
+                            (item) => item.nameKey === digitalHumanNameKey
+                        ) || null;
+                        const configuredGender = normalizeDigitalHumanGender(step.trainerGender);
+                        const inferredRoleGender = inferDigitalHumanGender(
+                            trainerName,
+                            step.description,
+                            step.llmPrompt,
+                            step.prologue,
+                        );
+                        const requestedVoiceGender = inferVoiceCandidateGender(requestedVoiceCandidate);
+                        const preferredGender: DigitalHumanGender =
+                            configuredGender !== "unknown"
+                                ? configuredGender
+                                : inferredRoleGender !== "unknown"
+                                    ? inferredRoleGender
+                                    : requestedVoiceGender !== "unknown"
+                                        ? requestedVoiceGender
+                                        : sameNameDigitalHuman?.voiceGender !== "unknown"
+                                            ? sameNameDigitalHuman?.voiceGender || "male"
+                                            : "male";
+                        const genderCacheKey = `${digitalHumanNameKey}::${preferredGender}`;
                         const requestedExactKey = buildDigitalHumanExactKey(
                             digitalHumanNameKey,
                             requestedAgentId,
                             requestedAvatarNid
                         );
+                        const requestedExactDigitalHuman =
+                            requestedAgentId && requestedAvatarNid
+                                ? existingDigitalHumanByExactKey.get(requestedExactKey) || null
+                                : null;
                         const exactExistingDigitalHuman =
-                            (requestedAgentId && requestedAvatarNid
-                                ? existingDigitalHumanByExactKey.get(requestedExactKey)
-                                : null) ||
-                            findReusableDigitalHumanByName(reusableDigitalHumanConfigs, digitalHumanNameKey) ||
-                            existingDigitalHumanByName.get(digitalHumanNameKey) ||
+                            requestedExactDigitalHuman &&
+                            isDigitalHumanGenderCompatible(
+                                preferredGender,
+                                requestedExactDigitalHuman.voiceGender
+                            )
+                                ? requestedExactDigitalHuman
+                                : findReusableDigitalHumanByName(
+                                    reusableDigitalHumanConfigs,
+                                    digitalHumanNameKey,
+                                    preferredGender
+                                );
+                        const genderMatchedDigitalHumans = reusableDigitalHumanConfigs.filter(
+                            (item) => item.voiceGender === preferredGender
+                        );
+                        const unknownGenderDigitalHumans = reusableDigitalHumanConfigs.filter(
+                            (item) => item.voiceGender === "unknown"
+                        );
+                        const compatibleDigitalHumans =
+                            genderMatchedDigitalHumans.length > 0
+                                ? genderMatchedDigitalHumans
+                                : unknownGenderDigitalHumans;
+                        const fallbackDigitalHuman =
+                            exactExistingDigitalHuman ||
+                            compatibleDigitalHumans[0] ||
                             null;
-                        const fallbackDigitalHuman = exactExistingDigitalHuman || reusableDigitalHumanConfigs[0] || null;
                         let digitalHumanConfig =
-                            customDigitalHumanCache.get(digitalHumanNameKey) ||
+                            customDigitalHumanCache.get(genderCacheKey) ||
                             (shouldGenerateDigitalHumanAvatar ? null : exactExistingDigitalHuman) ||
                             null;
-                        let agentId = fallbackDigitalHuman?.voiceNid || requestedAgentId || "Tg3LpKo28D";
-                        let avatarNid = fallbackDigitalHuman?.avatarNid || requestedAvatarNid || "hnuOVqMu8b";
+                        let agentId =
+                            fallbackDigitalHuman?.voiceNid ||
+                            (isDigitalHumanGenderCompatible(
+                                preferredGender,
+                                requestedVoiceGender
+                            )
+                                ? requestedAgentId
+                                : "") ||
+                            (preferredGender === "male" ? "Tg3LpKo28D" : "");
+                        let avatarNid =
+                            fallbackDigitalHuman?.avatarNid ||
+                            requestedAvatarNid ||
+                            (preferredGender === "male" ? "hnuOVqMu8b" : "");
                         let agentVoiceId = fallbackDigitalHuman?.agentVoiceId;
                         let resolvedVoiceName = fallbackDigitalHuman?.voiceName;
                         const selectedAccountVoice =
@@ -933,9 +1013,10 @@ export async function POST(request: NextRequest) {
                                     {
                                         preferredName: requestedAgentId,
                                         preferredVoiceNid: requestedAgentId,
+                                        preferredGender,
                                         roleName: trainerName,
                                         roleDescription: step.description,
-                                        avatarDescription: step.backgroundImage,
+                                        avatarDescription: step.llmPrompt,
                                         fallbackToFirst: availableVoiceCandidates.length > 0 && !fallbackDigitalHuman,
                                     }
                                 )
@@ -947,7 +1028,7 @@ export async function POST(request: NextRequest) {
                         }
 
                         if (!digitalHumanConfig && shouldGenerateDigitalHumanAvatar) {
-                            let generatedAvatar = generatedAvatarCache.get(digitalHumanNameKey) || null;
+                            let generatedAvatar = generatedAvatarCache.get(genderCacheKey) || null;
                             if (!generatedAvatar) {
                                 send({
                                     type: "progress",
@@ -969,6 +1050,7 @@ export async function POST(request: NextRequest) {
                                             courseId: finalCourseId,
                                             libraryFolderId: finalLibraryFolderId,
                                             baseAvatarNid: avatarNid,
+                                            avatarGender: preferredGender,
                                             avatarStylePrompt: String(digitalHumanAvatarStylePrompt || "").trim() || undefined,
                                             arkApiKey: llmSettings?.apiKey,
                                             llmApiUrl: llmSettings?.apiUrl,
@@ -983,7 +1065,7 @@ export async function POST(request: NextRequest) {
                                             avatarNid: result.avatarNid,
                                             avatarUrl: result.avatarUrl,
                                         };
-                                        generatedAvatarCache.set(digitalHumanNameKey, generatedAvatar);
+                                        generatedAvatarCache.set(genderCacheKey, generatedAvatar);
                                         send({
                                             type: "progress",
                                             phase: "script",
@@ -1049,9 +1131,16 @@ export async function POST(request: NextRequest) {
                                         voiceNid: agentId,
                                         agentVoiceId,
                                         voiceName: resolvedVoiceName,
+                                        voiceGender: (() => {
+                                            const selectedGender =
+                                                inferVoiceCandidateGender(selectedAccountVoice);
+                                            return selectedGender === "unknown"
+                                                ? preferredGender
+                                                : selectedGender;
+                                        })(),
                                         source: "created",
                                     };
-                                    customDigitalHumanCache.set(digitalHumanNameKey, digitalHumanConfig);
+                                    customDigitalHumanCache.set(genderCacheKey, digitalHumanConfig);
                                     if (digitalHumanNameKey && !existingDigitalHumanByName.has(digitalHumanNameKey)) {
                                         existingDigitalHumanByName.set(digitalHumanNameKey, digitalHumanConfig);
                                     }
@@ -1085,7 +1174,7 @@ export async function POST(request: NextRequest) {
                             agentId = digitalHumanConfig.voiceNid || agentId;
                             avatarNid = digitalHumanConfig.avatarNid || avatarNid;
                             agentVoiceId = digitalHumanConfig.agentVoiceId || agentVoiceId;
-                            customDigitalHumanCache.set(digitalHumanNameKey, digitalHumanConfig);
+                            customDigitalHumanCache.set(genderCacheKey, digitalHumanConfig);
                             send({
                                 type: "progress",
                                 phase: "script",

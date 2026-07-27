@@ -5,6 +5,7 @@
  */
 
 import { PolymasCredentials, PolymasScriptStep, PolymasScriptFlow } from "./types";
+import type { DigitalHumanGender } from "./voice-selection";
 
 const POLYMAS_BASE = "https://cloudapi.polymas.com/teacher-course/abilityTrain";
 const POLYMAS_AI_BASE = "https://cloudapi.polymas.com/ai-tools";
@@ -100,11 +101,18 @@ function buildDigitalHumanAvatarPrompt(params: {
     trainerName: string;
     stageName: string;
     stageDescription: string;
+    avatarGender?: DigitalHumanGender;
     avatarStylePrompt?: string;
 }): string {
+    const genderRequirement = params.avatarGender === "female"
+        ? "The mentor must be an adult woman. Do not generate a man."
+        : params.avatarGender === "male"
+            ? "The mentor must be an adult man. Do not generate a woman."
+            : "Keep the mentor's gender consistent with the role description.";
     return [
         "Create a realistic professional human portrait headshot, not a background scene.",
         "The image must contain exactly one adult human mentor with a clearly visible head, face, neck, and shoulders.",
+        genderRequirement,
         "The person's head and upper body should be centered and occupy most of the image, like a formal profile avatar.",
         "Use a clean plain studio background or softly blurred office background.",
         "Do not create an empty room, classroom, meeting room, interior design scene, object, icon, landscape, cartoon mascot, text, logo, watermark, poster, or multi-person image.",
@@ -116,6 +124,11 @@ function buildDigitalHumanAvatarPrompt(params: {
         params.avatarStylePrompt
             ? `Additional avatar style requirement: ${params.avatarStylePrompt}`
             : "Additional avatar style requirement: professional teaching mentor avatar, friendly, trustworthy, realistic, suitable for a course training scenario.",
+        params.avatarGender === "female"
+            ? "Final gender constraint: the visible person must be female, matching the selected female voice."
+            : params.avatarGender === "male"
+                ? "Final gender constraint: the visible person must be male, matching the selected male voice."
+                : "Final gender constraint: the visible person's gender must match the role description.",
         "Final hard constraint: this must be a portrait of a human mentor with a visible head. If the scene does not contain a human head and face, it is wrong.",
     ].join("\n");
 }
@@ -512,7 +525,7 @@ async function requestCloudapiImageGeneration(
         trainName: string;
         trainDescription: string;
         stageName: string;
-        stageDescription: string; 
+        stageDescription: string;
     },
     credentials: PolymasCredentials,
     timeoutMs: number
@@ -1206,6 +1219,7 @@ async function generateDigitalHumanAvatarImageSource(
         trainerName: string;
         stageName: string;
         stageDescription: string;
+        avatarGender?: DigitalHumanGender;
         avatarStylePrompt?: string;
         arkApiKey?: string;
         llmApiUrl?: string;
@@ -1414,6 +1428,7 @@ export async function generateAndSyncDigitalHumanAvatar(
         trainerName: string;
         stageName: string;
         stageDescription: string;
+        avatarGender?: DigitalHumanGender;
         courseId?: string;
         libraryFolderId?: string;
         baseAvatarNid?: string;

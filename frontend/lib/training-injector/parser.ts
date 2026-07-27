@@ -41,6 +41,7 @@ const TASK_CONFIG_FIELD_LABELS = [
 
 const SCRIPT_FIELD_LABELS = [
     "虚拟训练官名字",
+    "数字人性别",
     "模型",
     "声音",
     "形象",
@@ -520,6 +521,11 @@ function parseStageBlock(stageMarkdown: string): ParsedStep {
             currentStep.trainerName = normalizeValue(trainerName);
             continue;
         }
+        const trainerGender = getFieldLineValue(stripped, "数字人性别");
+        if (trainerGender !== null) {
+            currentStep.trainerGender = normalizeValue(trainerGender);
+            continue;
+        }
         const modelId = getFieldLineValue(stripped, "模型");
         if (modelId !== null) {
             currentStep.modelId = normalizeValue(modelId);
@@ -970,6 +976,7 @@ export function serializeTrainingStage(step: ParsedStep, stageNumber: number): s
     return [
         `### 阶段${stageNumber}: ${normalizedStepName}`,
         formatInlineScriptField("虚拟训练官名字", step.trainerName),
+        formatInlineScriptField("数字人性别", step.trainerGender),
         formatInlineScriptField("模型", step.modelId),
         formatInlineScriptField("声音", step.agentId),
         formatInlineScriptField("形象", step.avatarNid),
@@ -1188,6 +1195,7 @@ function makeStep(partial: Partial<ParsedStep>): ParsedStep {
     return {
         stepName: partial.stepName || "",
         trainerName: partial.trainerName || "",
+        trainerGender: partial.trainerGender || "",
         modelId: partial.modelId || "",
         agentId: partial.agentId || "",
         avatarNid: partial.avatarNid || "",

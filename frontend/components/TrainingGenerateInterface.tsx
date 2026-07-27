@@ -2939,8 +2939,16 @@ export function TrainingGenerateInterface() {
                         </div>
 
                         {/* 操作按钮 */}
-                        {activeContent && phase === "completed" && (
-                            <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                                onClick={() => setShowInjectModal(true)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 rounded-lg shadow-sm shadow-indigo-200 transition-all hover:-translate-y-0.5"
+                                title="可使用当前结果，或直接上传自己的训练剧本配置后注入"
+                            >
+                                🚀 一键注入
+                            </button>
+                            {activeContent && phase === "completed" && (
+                                <>
                                 {scriptContent && (
                                     <button
                                         onClick={() => setShowOptimizationModal(true)}
@@ -2951,13 +2959,6 @@ export function TrainingGenerateInterface() {
                                         闭环优化
                                     </button>
                                 )}
-                                <button
-                                    onClick={() => setShowInjectModal(true)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 rounded-lg shadow-sm shadow-indigo-200 transition-all hover:-translate-y-0.5"
-                                    title="一键注入到平台"
-                                >
-                                    🚀 一键注入
-                                </button>
                                 <button
                                     onClick={handleDownload}
                                     className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 rounded-lg transition-colors"
@@ -2974,8 +2975,9 @@ export function TrainingGenerateInterface() {
                                     <RefreshCw className="w-3.5 h-3.5" />
                                     重置
                                 </button>
-                            </div>
-                        )}
+                                </>
+                            )}
+                        </div>
                     </div>
 
                     {phase === "completed" && generateScript && scriptDiagnostics && activeTab === "script" && (

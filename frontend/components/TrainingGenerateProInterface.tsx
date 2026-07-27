@@ -898,17 +898,17 @@ export function TrainingGenerateProInterface() {
             </div>
 
             {/* 操作按钮 */}
-            {activeContent && phase === "completed" && (
-              <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-                {!isEditing ? (
+            <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+              <button
+                onClick={() => setShowInject(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 rounded-lg shadow-sm shadow-indigo-200 transition-all hover:-translate-y-0.5"
+                title="可使用当前结果，或直接上传自己的 Pro 配置后注入"
+              >
+                🚀 一键注入
+              </button>
+              {activeContent && phase === "completed" && (
+                !isEditing ? (
                   <>
-                    <button
-                      onClick={() => setShowInject(true)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 rounded-lg shadow-sm shadow-indigo-200 transition-all hover:-translate-y-0.5"
-                      title="一键注入到平台"
-                    >
-                      🚀 一键注入
-                    </button>
                     <button
                       onClick={handleEdit}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 rounded-lg transition-colors"
@@ -962,9 +962,9 @@ export function TrainingGenerateProInterface() {
                       取消
                     </button>
                   </>
-                )}
-              </div>
-            )}
+                )
+              )}
+            </div>
           </div>
 
           {/* 内容区域 */}

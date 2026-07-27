@@ -223,8 +223,12 @@ export function InjectConfigProModal({
     useState("");
 
   // Markdown 审阅与修正
-  const [customDocExpanded, setCustomDocExpanded] = useState(false);
+  const hasGeneratedMarkdown = markdown.trim().length > 0;
+  const [customDocExpanded, setCustomDocExpanded] = useState(
+    !hasGeneratedMarkdown,
+  );
   const [customMarkdown, setCustomMarkdown] = useState("");
+  const directFileRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
@@ -649,7 +653,9 @@ export function InjectConfigProModal({
             <div>
               <h2 className="text-xl font-bold">一键注入到智慧树 Pro 平台</h2>
               <p className="text-indigo-100 text-xs mt-0.5">
-                将 Pro 配置自动创建为能力训练节点
+                {hasGeneratedMarkdown
+                  ? "将当前 Pro 配置自动创建为能力训练节点"
+                  : "上传自己的 Pro 配置，无需先在本系统生成"}
               </p>
             </div>
           </div>
@@ -677,6 +683,47 @@ export function InjectConfigProModal({
           {/* 配置区域 (注入中隐藏) */}
           {!injecting && !summary && (
             <>
+              {!hasGeneratedMarkdown && (
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-5 space-y-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-indigo-900">
+                      直接上传 Pro 配置
+                    </h3>
+                    <p className="mt-1 text-xs text-indigo-700">
+                      上传按 Pro 配置格式编写的 Markdown，系统解析后即可直接注入。
+                    </p>
+                  </div>
+                  <input
+                    ref={directFileRef}
+                    type="file"
+                    accept=".md,.markdown,.txt"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => directFileRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700"
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                      上传 Pro 配置 .md
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadConfigTemplate}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-white px-3.5 py-2 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-50"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      下载 Pro 配置模板
+                    </button>
+                    <span className="text-xs text-indigo-700">
+                      也可以在下方编辑区直接粘贴内容
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* 平台认证凭证 */}
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
                 <div className="flex items-center gap-2">
@@ -1306,7 +1353,9 @@ export function InjectConfigProModal({
                   )}
                   <Upload className="w-3.5 h-3.5 text-slate-500" />
                   <span className="text-xs font-medium text-slate-700 group-hover:text-indigo-600 transition-colors">
-                    注入前审阅与修正（可选）
+                    {hasGeneratedMarkdown
+                      ? "注入前审阅与修正（可选）"
+                      : "上传或粘贴待注入 Pro 配置"}
                   </span>
                   {hasCustomDoc && (
                     <span className="ml-auto text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
@@ -1321,11 +1370,14 @@ export function InjectConfigProModal({
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div className="space-y-1">
                           <div className="text-sm font-semibold text-slate-800">
-                            当前待注入内容审阅
+                            {hasGeneratedMarkdown
+                              ? "当前待注入内容审阅"
+                              : "直接导入外部 Pro 配置"}
                           </div>
                           <p className="text-xs text-slate-500">
-                            如果生成的 Markdown
-                            有问题，可以直接在这里粘贴或修改，执行注入时会优先使用这里的修正版。
+                            {hasGeneratedMarkdown
+                              ? "如果生成的 Markdown 有问题，可以直接在这里粘贴或修改，执行注入时会优先使用这里的修正版。"
+                              : "无需先在本系统生成。可直接上传或粘贴按 Pro 配置模板编写的 Markdown，然后执行注入。"}
                           </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -1356,7 +1408,9 @@ export function InjectConfigProModal({
                         >
                           {hasCustomDoc
                             ? "本次将按修正版注入"
-                            : "本次将按当前生成结果注入"}
+                            : hasGeneratedMarkdown
+                              ? "本次将按当前生成结果注入"
+                              : "请上传或粘贴 Pro 配置"}
                         </span>
                         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-white border border-slate-200 text-slate-700">
                           内容长度：{effectiveMarkdown.length} 字符

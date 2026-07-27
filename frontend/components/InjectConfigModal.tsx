@@ -198,6 +198,7 @@ export function InjectConfigModal({
     const switchedImageProviderPriority = imageProviderMode === "openai" ? "cloudapi,openai" : "openai,cloudapi";
 
     const logsEndRef = useRef<HTMLDivElement>(null);
+    const directScriptFileRef = useRef<HTMLInputElement>(null);
     const combinedFileRef = useRef<HTMLInputElement>(null);
     const scriptFileRef = useRef<HTMLInputElement>(null);
     const rubricFileRef = useRef<HTMLInputElement>(null);
@@ -207,6 +208,9 @@ export function InjectConfigModal({
         customDocMode === "combined"
             ? customCombinedText.trim().length > 0
             : (customScriptText.trim().length > 0 || customRubricText.trim().length > 0)
+    );
+    const hasGeneratedDocuments = Boolean(
+        scriptMarkdown?.trim() || rubricMarkdown?.trim()
     );
 
     const effectiveScriptMd = customDocMode === "combined"
@@ -268,6 +272,18 @@ export function InjectConfigModal({
         setInjectScript(!!scriptMarkdown);
         setInjectRubric(!!rubricMarkdown);
     }, [scriptMarkdown, rubricMarkdown, isOpen]);
+
+    // 没有本系统生成结果时，直接展开上传区，并默认按剧本/评分标准分开导入。
+    useEffect(() => {
+        if (
+            isOpen &&
+            !hasGeneratedDocuments &&
+            !hasCustomDoc
+        ) {
+            setCustomDocExpanded(true);
+            setCustomDocMode("separate");
+        }
+    }, [isOpen, hasGeneratedDocuments, hasCustomDoc]);
 
     // 自定义文档变化时同步注入开关
     useEffect(() => {
@@ -1495,7 +1511,11 @@ export function InjectConfigModal({
                         </div>
                         <div>
                             <h2 className="text-xl font-bold">一键注入到智慧树平台</h2>
-                            <p className="text-indigo-100 text-xs mt-0.5">将生成的配置自动创建为工作流节点</p>
+                            <p className="text-indigo-100 text-xs mt-0.5">
+                                {hasGeneratedDocuments
+                                    ? "将当前配置自动创建为工作流节点"
+                                    : "上传自己的训练剧本配置，无需先在本系统生成"}
+                            </p>
                         </div>
                     </div>
                     {!injecting && (
@@ -1517,6 +1537,40 @@ export function InjectConfigModal({
                     {/* 配置区域 (注入中隐藏) */}
                     {!injecting && !summary && (
                         <>
+                            {!hasGeneratedDocuments && (
+                                <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-5 space-y-3">
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-indigo-900">直接上传训练剧本配置</h3>
+                                        <p className="mt-1 text-xs text-indigo-700">
+                                            支持 Markdown 或纯文本配置。上传后会自动开启“训练剧本”注入，评分标准可以稍后按需补充。
+                                        </p>
+                                    </div>
+                                    <input
+                                        ref={directScriptFileRef}
+                                        type="file"
+                                        accept=".md,.markdown,.txt"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            setCustomDocMode("separate");
+                                            handleFileUpload(e, setCustomScriptText);
+                                        }}
+                                    />
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => directScriptFileRef.current?.click()}
+                                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700"
+                                        >
+                                            <Upload className="h-3.5 w-3.5" />
+                                            上传训练剧本 .md
+                                        </button>
+                                        <span className="text-xs text-indigo-700">
+                                            也可以在下方“上传或粘贴待注入配置”区域直接粘贴内容
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* 认证凭证 */}
                             <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
                                 <div className="flex items-center gap-2">
@@ -2055,7 +2109,9 @@ export function InjectConfigModal({
                                         }
                                         <Upload className="w-3.5 h-3.5 text-slate-500" />
                                         <span className="text-xs font-medium text-slate-700 group-hover:text-indigo-600 transition-colors">
-                                            注入前审阅与修正（可选）
+                                            {hasGeneratedDocuments
+                                                ? "注入前审阅与修正（可选）"
+                                                : "上传或粘贴待注入配置"}
                                         </span>
                                         {hasCustomDoc && (
                                             <span className="ml-auto text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">将使用修正版注入</span>
@@ -2067,9 +2123,15 @@ export function InjectConfigModal({
                                             <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-4">
                                                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                                                     <div className="space-y-1">
-                                                        <div className="text-sm font-semibold text-slate-800">当前待注入内容审阅</div>
+                                                        <div className="text-sm font-semibold text-slate-800">
+                                                            {hasGeneratedDocuments
+                                                                ? "当前待注入内容审阅"
+                                                                : "直接导入外部训练配置"}
+                                                        </div>
                                                         <p className="text-xs text-slate-500">
-                                                            先看解析摘要和阶段 JSON；如果哪里不对，直接在下面粘贴或修改 Markdown，执行注入时会优先使用这里的修正版。
+                                                            {hasGeneratedDocuments
+                                                                ? "先看解析摘要和阶段 JSON；如果哪里不对，直接在下面粘贴或修改 Markdown，执行注入时会优先使用这里的修正版。"
+                                                                : "无需先在本系统生成。上传或粘贴自己的训练剧本 Markdown，系统解析确认后即可直接注入；评分标准可选。"}
                                                         </p>
                                                     </div>
                                                     <div className="flex flex-wrap items-center gap-2">
@@ -2100,7 +2162,11 @@ export function InjectConfigModal({
 
                                                 <div className="flex flex-wrap gap-2">
                                                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${hasCustomDoc ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"}`}>
-                                                        {hasCustomDoc ? "本次将按修正版注入" : "本次将按当前生成结果注入"}
+                                                        {hasCustomDoc
+                                                            ? "本次将按导入内容注入"
+                                                            : hasGeneratedDocuments
+                                                                ? "本次将按当前生成结果注入"
+                                                                : "请上传或粘贴配置"}
                                                     </span>
                                                     {reviewTaskConfig?.trainTaskName && (
                                                         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-white border border-slate-200 text-slate-700">

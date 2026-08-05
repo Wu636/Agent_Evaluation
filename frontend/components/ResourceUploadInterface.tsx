@@ -27,8 +27,11 @@ import {
   collectProjectAssets,
   createProjectFileIndex,
   findCssReferences,
+  findHtmlReferences,
+  injectRuntimeAssetResolver,
   isCssFile,
   isHtmlFile,
+  isLocalProjectReference,
   type ProjectAsset,
   resolveProjectReference,
   rewriteCssReferences,
@@ -62,6 +65,7 @@ interface UploadResponse {
 interface ProjectResult {
   url: string;
   assetCount: number;
+  replacementCount: number;
   warnings: string[];
 }
 
@@ -88,6 +92,11 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function looksLikeStaticFileReference(reference: string): boolean {
+  const pathname = reference.trim().split(/[?#]/, 1)[0];
+  return /(^|\/)[^/]+\.[a-z0-9]{1,12}$/i.test(pathname);
 }
 
 function FileTypeIcon({ type, name }: { type: string; name: string }) {
@@ -294,7 +303,40 @@ export function ResourceUploadInterface() {
     const entry = projectIndex.byPath.get(projectEntryPath);
     if (!entry) {
       setProjectPhase("error");
-      setProjectMessage("请选择一个 HTML 文件作为网页入口。\n");
+      setProjectMessage("请选择一个 HTML 文件作为网页入口。");
+      return;
+    }
+
+    let sourceHtml = "";
+    const missingReferences = new Set<string>();
+    try {
+      sourceHtml = await entry.file.text();
+      for (const reference of findHtmlReferences(sourceHtml)) {
+        if (!isLocalProjectReference(reference)) continue;
+        if (looksLikeStaticFileReference(reference) && !resolveProjectReference(reference, entry.path, projectIndex)) {
+          missingReferences.add(reference);
+        }
+      }
+      for (const stylesheet of projectAssets.filter((asset) => isCssFile(asset.path))) {
+        const css = await stylesheet.file.text();
+        for (const reference of findCssReferences(css)) {
+          if (!isLocalProjectReference(reference)) continue;
+          if (!resolveProjectReference(reference, stylesheet.path, projectIndex)) {
+            missingReferences.add(`${stylesheet.path} → ${reference}`);
+          }
+        }
+      }
+    } catch {
+      setProjectPhase("error");
+      setProjectMessage("读取 HTML/CSS 文件失败，请重新选择项目文件夹。");
+      return;
+    }
+
+    if (missingReferences.size > 0) {
+      const examples = [...missingReferences].slice(0, 5).join("；");
+      setProjectPhase("error");
+      setProjectProgress(0);
+      setProjectMessage(`发布已停止：项目文件夹内找不到 ${missingReferences.size} 个本地资源。请重新选择同时包含 HTML 和 assets 目录的项目根文件夹。缺失示例：${examples}`);
       return;
     }
 
@@ -307,6 +349,7 @@ export function ResourceUploadInterface() {
 
     const publicUrls = new Map<string, string>();
     const warnings = new Set<string>();
+    let replacementCount = 0;
     if (projectHtmlFiles.length > 1) {
       warnings.add("当前会发布选中的入口 HTML；入口中链接到其他本地 HTML 页的地址保持原样。多页面站点请分别选择每个页面发布。");
     }
@@ -354,6 +397,7 @@ export function ResourceUploadInterface() {
           warnings.add(`未能自动替换 CSS 引用：${path} → ${target.path}`);
           return reference;
         }
+        replacementCount += 1;
         return `${url}${target.suffix}`;
       });
       const rewrittenFile = new File([rewritten], asset.file.name, {
@@ -369,18 +413,29 @@ export function ResourceUploadInterface() {
       for (const asset of rawAssets) await uploadAsset(asset);
       for (const asset of cssAssets) await prepareCss(asset.path);
 
-      const sourceHtml = await entry.file.text();
       const rewrittenHtml = rewriteHtmlReferences(sourceHtml, (reference) => {
         const target = resolveProjectReference(reference, entry.path, projectIndex);
         if (!target) return reference;
         const url = publicUrls.get(target.path);
-        if (url) return `${url}${target.suffix}`;
+        if (url) {
+          replacementCount += 1;
+          return `${url}${target.suffix}`;
+        }
         if (!isHtmlFile(target.path)) {
           warnings.add(`未能自动替换 HTML 引用：${entry.path} → ${target.path}`);
         }
         return reference;
       });
-      const publishedHtml = new File([rewrittenHtml], entry.file.name, {
+      const unreplaced = findHtmlReferences(rewrittenHtml).filter((reference) => {
+        if (!isLocalProjectReference(reference)) return false;
+        const target = resolveProjectReference(reference, entry.path, projectIndex);
+        return Boolean(target && !isHtmlFile(target.path) && publicUrls.has(target.path));
+      });
+      if (unreplaced.length > 0) {
+        throw new Error(`路径替换校验未通过，已停止发布：${unreplaced.slice(0, 5).join("；")}`);
+      }
+      const runtimeResolvedHtml = injectRuntimeAssetResolver(rewrittenHtml, publicUrls, entry.path);
+      const publishedHtml = new File([runtimeResolvedHtml], entry.file.name, {
         type: entry.file.type || "text/html",
         lastModified: entry.file.lastModified,
       });
@@ -389,10 +444,14 @@ export function ResourceUploadInterface() {
       completedOperations += 1;
       setProjectProgress(100);
       setProjectPhase("success");
-      setProjectMessage("发布完成：HTML 中的静态资源路径已替换为公网 ossUrl。");
+      setProjectMessage(replacementCount > 0
+        ? `发布完成：已静态替换 ${replacementCount} 处路径，并启用 ${publicUrls.size} 个资源的动态路径解析。`
+        : `发布完成：资源路径由 JavaScript 动态生成，已注入 ${publicUrls.size} 个资源的运行时 OSS 映射。`,
+      );
       setProjectResult({
         url: finalData.ossUrl!,
         assetCount: publicUrls.size,
+        replacementCount,
         warnings: [...warnings],
       });
     } catch (error) {
@@ -533,7 +592,7 @@ export function ResourceUploadInterface() {
             </div>
           </div>}
 
-          {projectResult && <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4"><div className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" /><div className="min-w-0 flex-1"><p className="font-semibold text-emerald-900">项目发布完成</p><p className="mt-0.5 text-sm text-emerald-700">已自动上传并替换 {projectResult.assetCount} 个资源链接。</p><div className="mt-3 flex min-w-0 items-center gap-2 rounded-lg bg-white/80 px-2.5 py-2"><LinkIcon className="h-4 w-4 shrink-0 text-emerald-600" /><a href={projectResult.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate font-mono text-xs text-emerald-800 hover:underline" title={projectResult.url}>{projectResult.url}</a><button type="button" onClick={() => void copyText(projectResult.url, "project")} className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100">{copied === "project" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copied === "project" ? "已复制" : "复制"}</button></div></div></div>
+          {projectResult && <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4"><div className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" /><div className="min-w-0 flex-1"><p className="font-semibold text-emerald-900">项目发布完成</p><p className="mt-0.5 text-sm text-emerald-700">已上传 {projectResult.assetCount} 个资源；静态替换 {projectResult.replacementCount} 处，并已启用动态路径 OSS 映射。</p><div className="mt-3 flex min-w-0 items-center gap-2 rounded-lg bg-white/80 px-2.5 py-2"><LinkIcon className="h-4 w-4 shrink-0 text-emerald-600" /><a href={projectResult.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate font-mono text-xs text-emerald-800 hover:underline" title={projectResult.url}>{projectResult.url}</a><button type="button" onClick={() => void copyText(projectResult.url, "project")} className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100">{copied === "project" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copied === "project" ? "已复制" : "复制"}</button></div></div></div>
             {projectResult.warnings.length > 0 && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800"><p className="font-semibold">注意事项</p><ul className="mt-1 list-disc pl-4">{projectResult.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
           </div>}
           </>}

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Sparkles, History, Settings, FileText, ClipboardCheck, Wand2, BookOpen, ChevronDown, GitMerge, RefreshCw } from 'lucide-react';
+import { Sparkles, History, Settings, FileText, ClipboardCheck, Wand2, BookOpen, ChevronDown, GitMerge, RefreshCw, UploadCloud } from 'lucide-react';
 import Link from 'next/link';
 import { UserMenu } from './UserMenu';
 import { SettingsModal } from './SettingsModal';
@@ -42,6 +42,7 @@ export function Navbar() {
                             ]}
                         />
                         <NavLink href="/explore" icon={<History className="w-4 h-4" />}>探索</NavLink>
+                        <NavLink href="/resource-upload" icon={<UploadCloud className="w-4 h-4" />}>资源上传</NavLink>
                         <NavLink href="/history" icon={<History className="w-4 h-4" />}>历史记录</NavLink>
                         <button
                             onClick={() => setShowSettings(true)}

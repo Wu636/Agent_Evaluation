@@ -476,9 +476,6 @@ function parseHomeworkInstanceNid(input: string): string {
 }
 
 export function HomeworkReviewInterface() {
-  // Railway API 直连（绕过 Vercel 300秒超时限制）
-  const RAILWAY_API = process.env.NEXT_PUBLIC_HOMEWORK_API_URL || "";
-
   // 从 sessionStorage 恢复上次会话状态
   const saved = useRef(loadSessionState());
 
@@ -881,10 +878,8 @@ export function HomeworkReviewInterface() {
       let apiUrl: string;
 
       if (mode === "generate" || mode === "generate-and-review") {
-        // 生成答案（或生成并评测）→ 都走 generate API
-        apiUrl = RAILWAY_API
-          ? `${RAILWAY_API}/api/generate`
-          : "/api/homework-review/generate";
+        // 始终走同源 API，由 Vercel 代理 Railway，避免国内浏览器直连 Railway。
+        apiUrl = "/api/homework-review/generate";
         if (usingTextInput) {
           formData.append("exam_text", pastedText.trim());
           appendLog("📝 使用粘贴文字作为题卷输入");
@@ -906,9 +901,7 @@ export function HomeworkReviewInterface() {
         }
       } else if (hasGeneratedFiles && !hasUploadedFiles) {
         // 批阅模式 + 从生成 Tab 带过来的文件（走 server_paths）
-        apiUrl = RAILWAY_API
-          ? `${RAILWAY_API}/api/review`
-          : "/api/homework-review";
+        apiUrl = "/api/homework-review";
         formData.append("server_paths", JSON.stringify(generatedFiles.map((f) => f.path)));
         formData.append("output_format", outputFormat);
         formData.append("local_parse", String(localParse));
@@ -922,9 +915,7 @@ export function HomeworkReviewInterface() {
         appendLog(`📂 使用已生成的 ${generatedFiles.length} 份答案进行批阅`);
       } else {
         // 批阅模式 + 用户上传的文件
-        apiUrl = RAILWAY_API
-          ? `${RAILWAY_API}/api/review`
-          : "/api/homework-review";
+        apiUrl = "/api/homework-review";
         files.forEach((file) => formData.append("files", file));
         formData.append("output_format", outputFormat);
         formData.append("local_parse", String(localParse));
@@ -1155,10 +1146,8 @@ export function HomeworkReviewInterface() {
         formData.append("skip_llm_files", JSON.stringify(skipNames));
       }
 
-      // 直接调用Railway API绕过Vercel 300秒超时
-      const reviewUrl = RAILWAY_API
-        ? `${RAILWAY_API}/api/review`
-        : "/api/homework-review";
+      // 始终走同源 API，由 Vercel 代理 Railway。
+      const reviewUrl = "/api/homework-review";
 
       // SSE 连接 + 自动重试（网络中断最多重试2次）
       const MAX_FETCH_RETRIES = 2;
@@ -1284,9 +1273,8 @@ export function HomeworkReviewInterface() {
     setPreviewLoading(true);
     setPreviewHtml("");
     try {
-      // Railway 上的文件走 Railway 预览接口，本地文件走 Vercel
-      const previewUrl = RAILWAY_API && file.path.startsWith("/tmp/")
-        ? `${RAILWAY_API}/api/preview?path=${encodeURIComponent(file.path)}`
+      const previewUrl = file.path.startsWith("/tmp/")
+        ? `/api/homework-review/remote/preview?path=${encodeURIComponent(file.path)}`
         : `/api/homework-review/preview?path=${encodeURIComponent(file.path)}`;
       const res = await fetch(previewUrl);
       const data = await res.json();
@@ -1301,18 +1289,17 @@ export function HomeworkReviewInterface() {
 
   /** 下载生成的 docx 文件 */
   const downloadGeneratedFile = (file: { name: string; path: string }) => {
-    // Railway 上的文件走 Railway 下载接口
-    const url = RAILWAY_API && file.path.startsWith("/tmp/")
-      ? `${RAILWAY_API}/api/files?path=${encodeURIComponent(file.path)}`
+    const url = file.path.startsWith("/tmp/")
+      ? `/api/homework-review/remote/files?path=${encodeURIComponent(file.path)}`
       : `/api/homework-review/preview?path=${encodeURIComponent(file.path)}&download=1`;
     window.open(url, "_blank");
   };
 
   const downloadLink = (file: string) => {
     if (!result) return "#";
-    // Railway 模式：outputFiles 是 /tmp/xxx 绝对路径，走 Railway /api/files 下载
-    if (RAILWAY_API && file.startsWith("/tmp/")) {
-      return `${RAILWAY_API}/api/files?path=${encodeURIComponent(file)}`;
+    // Railway 输出文件使用 /tmp 绝对路径，由同源接口在服务端代理下载。
+    if (file.startsWith("/tmp/")) {
+      return `/api/homework-review/remote/files?path=${encodeURIComponent(file)}`;
     }
     // 本地模式：走 Vercel 的 download endpoint
     const url = new URL(result.downloadBaseUrl, window.location.origin);

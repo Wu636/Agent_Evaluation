@@ -3,12 +3,13 @@ import { spawn } from "child_process";
 import { promises as fs } from "fs";
 import path from "path";
 import crypto from "crypto";
+import { getHomeworkApiEndpoint, getHomeworkApiUrl } from "@/lib/homework-api.server";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-// Railway API配置
-const RAILWAY_API_URL = process.env.NEXT_PUBLIC_HOMEWORK_API_URL;
+// 仅服务端可见的 Railway API 配置（兼容旧环境变量以便平滑迁移）
+const RAILWAY_API_URL = getHomeworkApiUrl();
 const USE_REMOTE_API = !!RAILWAY_API_URL;
 
 // 在Vercel serverless环境使用/tmp目录（可写）
@@ -79,8 +80,9 @@ export async function POST(request: NextRequest) {
               sseEvent(controller, "log", { message: `📥 正在从服务器下载 ${paths.length} 份生成文件...` });
 
               for (const filePath of paths) {
-                const downloadUrl = `${RAILWAY_API_URL}/api/files?path=${encodeURIComponent(filePath)}`;
-                const fileResp = await fetch(downloadUrl);
+                const downloadUrl = new URL(getHomeworkApiEndpoint("/api/files"));
+                downloadUrl.searchParams.set("path", filePath);
+                const fileResp = await fetch(downloadUrl, { signal: request.signal });
 
                 if (!fileResp.ok) {
                   sseEvent(controller, "error", {
@@ -124,9 +126,10 @@ export async function POST(request: NextRequest) {
           if (fileGroupsJson) railwayFormData.append("file_groups", fileGroupsJson);
 
           // 转发到Railway API
-          const response = await fetch(`${RAILWAY_API_URL}/api/review`, {
+          const response = await fetch(getHomeworkApiEndpoint("/api/review"), {
             method: "POST",
             body: railwayFormData,
+            signal: request.signal,
           });
 
           if (!response.ok) {
@@ -151,7 +154,7 @@ export async function POST(request: NextRequest) {
         // 本地模式：使用spawn Python
         if (IS_VERCEL && !USE_REMOTE_API) {
           sseEvent(controller, "error", {
-            message: "❌ 未配置Railway API且无法在Vercel运行Python。请设置NEXT_PUBLIC_HOMEWORK_API_URL环境变量。"
+            message: "❌ 未配置 Railway API 且无法在 Vercel 运行 Python。请设置 HOMEWORK_API_URL 环境变量。"
           });
           controller.close();
           return;
@@ -358,8 +361,9 @@ export async function POST(request: NextRequest) {
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }

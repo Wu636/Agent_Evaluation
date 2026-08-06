@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 import mammoth from "mammoth";
+import {
+  getHomeworkApiEndpoint,
+  isRemoteHomeworkPath,
+} from "@/lib/homework-api.server";
 
 export const runtime = "nodejs";
 
@@ -21,12 +25,46 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "缺少 path 参数" }, { status: 400 });
     }
 
+    // Railway 生成的文件位于其 /tmp 文件系统。浏览器只访问同源路由，
+    // 由这个 Vercel 服务端路由代理预览或下载。
+    if (isRemoteHomeworkPath(filePath)) {
+      const endpoint = getHomeworkApiEndpoint(
+        isDownload ? "/api/files" : "/api/preview"
+      );
+      if (!endpoint) {
+        return NextResponse.json(
+          { error: "未配置 HOMEWORK_API_URL，无法读取远程作业文件" },
+          { status: 503 }
+        );
+      }
+
+      const upstreamUrl = new URL(endpoint);
+      upstreamUrl.searchParams.set("path", filePath);
+      const upstream = await fetch(upstreamUrl, {
+        cache: "no-store",
+        signal: request.signal,
+      });
+
+      const headers = new Headers();
+      for (const name of ["content-type", "content-disposition", "content-length"]) {
+        const value = upstream.headers.get(name);
+        if (value) headers.set(name, value);
+      }
+      headers.set("Cache-Control", "private, no-store");
+
+      return new NextResponse(upstream.body, {
+        status: upstream.status,
+        headers,
+      });
+    }
+
     // 安全检查：只允许访问 homework_review/runtime 目录
     const PROJECT_ROOT = path.resolve(process.cwd(), "..");
     const ALLOWED_ROOT = path.join(PROJECT_ROOT, "homework_review", "runtime");
     const resolvedPath = path.resolve(filePath);
 
-    if (!resolvedPath.startsWith(path.resolve(ALLOWED_ROOT))) {
+    const relativePath = path.relative(path.resolve(ALLOWED_ROOT), resolvedPath);
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
       return NextResponse.json({ error: "非法路径：只能预览 runtime 目录下的文件" }, { status: 403 });
     }
 

@@ -87,10 +87,10 @@ LLM_MODEL=claude-sonnet-4-20250514
 在Vercel项目的环境变量中添加：
 
 ```env
-NEXT_PUBLIC_HOMEWORK_API_URL=https://your-app.railway.app
+HOMEWORK_API_URL=https://your-app.railway.app
 ```
 
-然后前端API会自动调用Railway服务而不是本地spawn。
+然后 Vercel 服务端 API 会自动调用 Railway 服务而不是本地 spawn。
 
 ## 📊 监控和日志
 

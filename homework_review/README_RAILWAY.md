@@ -2,7 +2,8 @@
 
 ## 🎯 解决方案概述
 
-将作业批阅的Python后端部署到Railway，Vercel前端通过HTTP调用：
+将作业批阅的 Python 后端部署到 Railway，浏览器通过 Vercel
+同源外部重写调用：
 
 ```
 ┌─────────────────┐
@@ -62,7 +63,7 @@ git push origin main
 
 在Vercel项目添加环境变量：
 ```env
-NEXT_PUBLIC_HOMEWORK_API_URL=https://your-app.railway.app
+HOMEWORK_API_URL=https://your-app.railway.app
 ```
 
 ### 4. 修改前端代码

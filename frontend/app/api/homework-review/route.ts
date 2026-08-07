@@ -8,6 +8,14 @@ import { getHomeworkApiEndpoint, getHomeworkApiUrl } from "@/lib/homework-api.se
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+const MAX_REVIEW_FILES = 150;
+const MAX_REVIEW_CONCURRENCY = 10;
+
+function clampReviewConcurrency(value: FormDataEntryValue | null) {
+  const parsed = Number(value || 5);
+  return Math.min(MAX_REVIEW_CONCURRENCY, Math.max(1, Number.isFinite(parsed) ? parsed : 5));
+}
+
 // 仅服务端可见的 Railway API 配置（兼容旧环境变量以便平滑迁移）
 const RAILWAY_API_URL = getHomeworkApiUrl();
 const USE_REMOTE_API = !!RAILWAY_API_URL;
@@ -70,6 +78,12 @@ export async function POST(request: NextRequest) {
           const files = formData.getAll("files") as File[];
           const serverPaths = formData.get("server_paths") as string;
 
+          if (files.length > MAX_REVIEW_FILES) {
+            sseEvent(controller, "error", { message: `每个批阅任务最多 ${MAX_REVIEW_FILES} 份文件` });
+            controller.close();
+            return;
+          }
+
           if (files && files.length > 0 && files[0].size > 0) {
             // 用户直接上传的文件 → 直接转发
             files.forEach(file => railwayFormData.append("files", file));
@@ -77,6 +91,11 @@ export async function POST(request: NextRequest) {
             // server_paths 是 Railway 内部路径，需要先从 Railway 下载文件再上传
             try {
               const paths: string[] = JSON.parse(serverPaths);
+              if (paths.length > MAX_REVIEW_FILES) {
+                sseEvent(controller, "error", { message: `每个批阅任务最多 ${MAX_REVIEW_FILES} 份文件` });
+                controller.close();
+                return;
+              }
               sseEvent(controller, "log", { message: `📥 正在从服务器下载 ${paths.length} 份生成文件...` });
 
               for (const filePath of paths) {
@@ -110,7 +129,7 @@ export async function POST(request: NextRequest) {
           railwayFormData.append("cookie", (formData.get("cookie") as string) || "");
           railwayFormData.append("instance_nid", (formData.get("instance_nid") as string) || "");
           railwayFormData.append("attempts", (formData.get("attempts") as string) || "5");
-          railwayFormData.append("max_workers", "3");
+          railwayFormData.append("max_concurrency", String(clampReviewConcurrency(formData.get("max_concurrency"))));
 
           // 可选参数
           const llmApiKey = formData.get("llm_api_key") as string;
@@ -172,6 +191,12 @@ export async function POST(request: NextRequest) {
           if (serverPathsJson) serverPaths = JSON.parse(serverPathsJson);
         } catch { /* ignore */ }
 
+        if ((files?.length || 0) + serverPaths.length > MAX_REVIEW_FILES) {
+          sseEvent(controller, "error", { message: `每个批阅任务最多 ${MAX_REVIEW_FILES} 份文件` });
+          controller.close();
+          return;
+        }
+
         if ((!files || files.length === 0) && serverPaths.length === 0) {
           sseEvent(controller, "error", { message: "请上传至少一个作业文件" });
           controller.close();
@@ -194,7 +219,7 @@ export async function POST(request: NextRequest) {
 
         const attempts = Number(formData.get("attempts") || 5);
         const outputFormat = (formData.get("output_format") || "json") as "json" | "pdf";
-        const maxConcurrency = Number(formData.get("max_concurrency") || 5);
+        const maxConcurrency = clampReviewConcurrency(formData.get("max_concurrency"));
         const localParse = String(formData.get("local_parse") || "false") === "true";
 
         const jobId = generateJobId();
@@ -240,7 +265,7 @@ export async function POST(request: NextRequest) {
           "--attempts", String(Math.max(1, attempts)),
           "--output-format", outputFormat,
           "--output-root", outputRoot,
-          "--max-concurrency", String(Math.max(1, maxConcurrency)),
+          "--max-concurrency", String(maxConcurrency),
         ];
         if (localParse) scriptArgs.push("--local-parse");
 

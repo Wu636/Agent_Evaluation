@@ -14,6 +14,7 @@ from homework_reviewer_v2 import (
     ensure_instance_context,
     run_batch,
     extract_core_data,
+    extract_failure_detail,
     calculate_category_scores,
 )
 
@@ -28,6 +29,11 @@ def parse_args():
     parser.add_argument("--local-parse", action="store_true")
     parser.add_argument("--skip-llm-files", default=None, help="JSON array of filenames to skip LLM validation")
     parser.add_argument("--file-groups", default=None, help="JSON object mapping group names to lists of filenames")
+    parser.add_argument(
+        "--compact-result",
+        action="store_true",
+        help="Return compact per-attempt metadata for large asynchronous jobs",
+    )
     return parser.parse_args()
 
 
@@ -283,11 +289,32 @@ def main():
         st_path.write_text(json.dumps(score_table, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"✅ 评分表JSON已生成: {st_path}")
 
+    result_payload = result or {}
+    if args.compact_result and result_payload:
+        compact_results = []
+        for item in result_payload.get("results", []):
+            compact_item = {
+                "file_path": item.get("file_path", ""),
+                "attempt_index": item.get("attempt_index", 0),
+                "attempt_total": item.get("attempt_total", args.attempts),
+                "success": bool(item.get("success")),
+            }
+            if not compact_item["success"]:
+                compact_item["result"] = {"error": extract_failure_detail(item.get("result"))}
+            compact_results.append(compact_item)
+
+        result_payload = {
+            key: value
+            for key, value in result_payload.items()
+            if key != "results"
+        }
+        result_payload["results"] = compact_results
+
     payload = {
         "success": True,
         "output_root": str(output_root),
         "output_files": output_files,
-        "result": result or {},
+        "result": result_payload,
         "score_table": score_table,
     }
 

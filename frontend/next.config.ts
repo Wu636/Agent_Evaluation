@@ -56,6 +56,14 @@ const nextConfig: NextConfig = {
       // Vercel Function 的执行时长，同时对浏览器保持 wl363eval.top 同源。
       beforeFiles: [
         {
+          source: "/api/homework-review/jobs",
+          destination: `${homeworkApiUrl}/api/review/jobs`,
+        },
+        {
+          source: "/api/homework-review/jobs/:path*",
+          destination: `${homeworkApiUrl}/api/review/jobs/:path*`,
+        },
+        {
           source: "/api/homework-review/generate",
           destination: `${homeworkApiUrl}/api/generate`,
         },

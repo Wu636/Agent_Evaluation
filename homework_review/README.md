@@ -7,6 +7,7 @@
 - 批量处理 Word 文档作业
 - 多次评测并生成统计数据
 - 自动生成 Excel 评分表（含均值、方差）
+- 单次提交最多 150 份作业，支持分包/分片上传和后台队列
 
 ## 核心文件
 
@@ -139,11 +140,20 @@ payload = {
 
 ### 4. 并发控制
 
-默认最大并发数为 5，可在调用时修改：
+默认最大并发数为 5，服务端硬上限为 10。文件数只表示队列长度，不会自动放大并发：
 
 ```python
 asyncio.run(run_batch(..., max_concurrency=10))
 ```
+
+Web 端大批量任务使用短请求异步流程：
+
+1. `POST /api/review/jobs` 创建任务。
+2. `POST /api/review/jobs/{job_id}/files` 分包上传小文件，或调用 `.../chunks` 分片上传大文件。
+3. `POST /api/review/jobs/{job_id}/start` 进入后台队列。
+4. `GET /api/review/jobs/{job_id}` 读取日志和最终汇总结果。
+
+同一服务实例每次执行 1 个批阅 Job，其余 Job 排队，避免多用户同时提交时叠加放大并发。
 
 ### 5. 错误处理
 

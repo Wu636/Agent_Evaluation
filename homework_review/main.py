@@ -7,9 +7,12 @@ import asyncio
 import json
 import os
 import subprocess
+import sys
 import tempfile
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,10 +34,214 @@ SCRIPT_DIR = Path(__file__).parent
 GENERATE_SCRIPT = SCRIPT_DIR / "generate_and_review_service.py"
 REVIEW_SCRIPT = SCRIPT_DIR / "review_service.py"
 
+MAX_REVIEW_FILES = 150
+DEFAULT_REVIEW_CONCURRENCY = 5
+MAX_REVIEW_CONCURRENCY = 10
+MAX_ACTIVE_REVIEW_JOBS = 1
+REVIEW_UPLOAD_CHUNK_SIZE = 1024 * 1024
+
+# Asynchronous review jobs intentionally live in the service process and /tmp.
+# The opaque job id is the only handle exposed to the browser; credentials are
+# passed straight to the worker environment and are never written to job state.
+REVIEW_JOBS: Dict[str, Dict[str, Any]] = {}
+REVIEW_JOB_TASKS: set[asyncio.Task] = set()
+REVIEW_JOB_SEMAPHORE = asyncio.Semaphore(MAX_ACTIVE_REVIEW_JOBS)
+REVIEW_JOBS_ROOT = Path(tempfile.gettempdir()) / "homework_review_jobs"
+REVIEW_JOBS_ROOT.mkdir(parents=True, exist_ok=True)
+
 # 确保.env文件存在（子脚本会尝试加载它，不存在会报错）
 env_file = SCRIPT_DIR / ".env"
 if not env_file.exists():
     env_file.touch()
+
+
+def clamp_review_concurrency(value: int) -> int:
+    return min(MAX_REVIEW_CONCURRENCY, max(1, int(value)))
+
+
+def get_review_job(job_id: str) -> Dict[str, Any]:
+    job = REVIEW_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="批阅任务不存在或服务已重启")
+    return job
+
+
+def append_review_job_log(job: Dict[str, Any], message: str, level: str = "info") -> None:
+    job["logs"].append({
+        "index": len(job["logs"]),
+        "message": message,
+        "level": level,
+    })
+    job["updatedAt"] = datetime.now(timezone.utc).isoformat()
+
+
+def safe_upload_name(filename: str) -> str:
+    basename = Path(filename or "file").name
+    safe = "".join(
+        ch if ch.isalnum() or ch in "-_.()[] " or "\u4e00" <= ch <= "\u9fff" else "_"
+        for ch in basename
+    ).strip(" .")
+    return safe[:180] or "file"
+
+
+def unique_upload_path(upload_dir: Path, filename: str) -> Path:
+    candidate = upload_dir / safe_upload_name(filename)
+    if not candidate.exists():
+        return candidate
+
+    stem, suffix = candidate.stem, candidate.suffix
+    index = 2
+    while True:
+        candidate = upload_dir / f"{stem}({index}){suffix}"
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
+async def terminate_review_job_process(job: Dict[str, Any]) -> None:
+    process = job.get("_process")
+    if process is None or process.returncode is not None:
+        return
+    process.terminate()
+    try:
+        await asyncio.wait_for(process.wait(), timeout=5)
+    except asyncio.TimeoutError:
+        process.kill()
+        await process.wait()
+
+
+async def execute_async_review_job(
+    job_id: str,
+    *,
+    authorization: str,
+    cookie: str,
+    instance_nid: str,
+    attempts: int,
+    output_format: str,
+    max_concurrency: int,
+    local_parse: bool,
+    llm_api_key: str,
+    llm_api_url: str,
+    llm_model: str,
+    skip_llm_files: Optional[str],
+    file_groups: Optional[str],
+) -> None:
+    job = get_review_job(job_id)
+    job["status"] = "running"
+    append_review_job_log(
+        job,
+        f"🚀 后台批阅已启动：{len(job['files'])} 份作业，每份 {attempts} 次，并发 {max_concurrency}",
+    )
+
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    env["AUTHORIZATION"] = authorization
+    env["COOKIE"] = cookie
+    env["INSTANCE_NID"] = instance_nid
+    env["LLM_API_KEY"] = llm_api_key or os.getenv("LLM_API_KEY", "")
+    env["LLM_API_URL"] = llm_api_url or os.getenv("LLM_API_URL", "")
+    env["LLM_MODEL"] = llm_model or os.getenv("LLM_MODEL", "")
+
+    cmd = [
+        sys.executable, "-u", str(REVIEW_SCRIPT),
+        "--inputs", json.dumps(job["files"]),
+        "--attempts", str(max(1, attempts)),
+        "--output-format", output_format,
+        "--output-root", job["outputRoot"],
+        "--max-concurrency", str(clamp_review_concurrency(max_concurrency)),
+        "--compact-result",
+    ]
+    if local_parse:
+        cmd.append("--local-parse")
+    if skip_llm_files:
+        cmd.extend(["--skip-llm-files", skip_llm_files])
+    if file_groups:
+        cmd.extend(["--file-groups", file_groups])
+
+    result_payload: Optional[Dict[str, Any]] = None
+    process: Optional[asyncio.subprocess.Process] = None
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(SCRIPT_DIR),
+            limit=32 * 1024 * 1024,
+        )
+        job["pid"] = process.pid
+        job["_process"] = process
+
+        async def read_stdout() -> None:
+            nonlocal result_payload
+            assert process.stdout is not None
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                message = line.decode(errors="replace").strip()
+                if not message:
+                    continue
+                if message.startswith("__RESULT__"):
+                    result_payload = json.loads(message[len("__RESULT__"):])
+                else:
+                    append_review_job_log(job, message)
+
+        async def read_stderr() -> None:
+            assert process.stderr is not None
+            while True:
+                line = await process.stderr.readline()
+                if not line:
+                    break
+                message = line.decode(errors="replace").strip()
+                if message:
+                    append_review_job_log(job, f"⚠️ {message}", "warn")
+
+        await asyncio.gather(read_stdout(), read_stderr())
+        return_code = await process.wait()
+        if return_code != 0:
+            raise RuntimeError(f"批阅进程退出码 {return_code}")
+        if not result_payload:
+            raise RuntimeError("批阅结果缺少完成标记")
+
+        output_root = Path(job["outputRoot"])
+        absolute_files = [str(output_root / item) for item in result_payload.get("output_files", [])]
+        job["result"] = {
+            "jobId": job_id,
+            "outputFiles": absolute_files,
+            "summary": result_payload.get("result", {}),
+            "scoreTable": result_payload.get("score_table"),
+            "downloadBaseUrl": "/api/homework-review/download",
+        }
+        job["status"] = "completed"
+        append_review_job_log(job, "🎉 全部批阅完成")
+    except asyncio.CancelledError:
+        await terminate_review_job_process(job)
+        if job.get("status") != "cancelled":
+            job["status"] = "cancelled"
+            append_review_job_log(job, "⏹️ 批阅任务已取消", "warn")
+        raise
+    except Exception as exc:
+        if process is not None and process.returncode is None:
+            await terminate_review_job_process(job)
+        job["status"] = "failed"
+        job["error"] = str(exc)
+        append_review_job_log(job, f"❌ 批阅任务失败：{exc}", "error")
+    finally:
+        job.pop("pid", None)
+        job.pop("_process", None)
+        job["updatedAt"] = datetime.now(timezone.utc).isoformat()
+
+
+async def run_async_review_job(job_id: str, **settings: Any) -> None:
+    """Keep aggregate platform pressure bounded even when users submit together."""
+    job = get_review_job(job_id)
+    if REVIEW_JOB_SEMAPHORE.locked():
+        append_review_job_log(job, "⏳ 已进入全局队列，当前有其他批阅任务在执行")
+    async with REVIEW_JOB_SEMAPHORE:
+        if job.get("cancelRequested"):
+            return
+        await execute_async_review_job(job_id, **settings)
 
 
 @app.get("/")
@@ -200,7 +407,7 @@ async def generate_answers(
     
     # 构建命令行参数 - 与前端本地模式一致
     cmd = [
-        "python3", "-u",
+        sys.executable, "-u",
         str(GENERATE_SCRIPT),
         "--output-root", str(output_root),
         "--levels", *levels_list,
@@ -272,6 +479,301 @@ async def generate_answers(
     )
 
 
+@app.post("/api/review/jobs", status_code=201)
+async def create_review_job():
+    """Create an upload session for a long-running review job."""
+    job_id = uuid.uuid4().hex
+    job_dir = REVIEW_JOBS_ROOT / job_id
+    upload_dir = job_dir / "uploads"
+    output_root = job_dir / "output"
+    upload_dir.mkdir(parents=True, exist_ok=False)
+    output_root.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc).isoformat()
+    REVIEW_JOBS[job_id] = {
+        "jobId": job_id,
+        "status": "uploading",
+        "files": [],
+        "uploadedNames": [],
+        "uploadBatches": {},
+        "chunkUploads": {},
+        "uploadDir": str(upload_dir),
+        "outputRoot": str(output_root),
+        "logs": [],
+        "result": None,
+        "error": None,
+        "cancelRequested": False,
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    return {
+        "jobId": job_id,
+        "status": "uploading",
+        "maxFiles": MAX_REVIEW_FILES,
+        "maxConcurrency": MAX_REVIEW_CONCURRENCY,
+    }
+
+
+@app.post("/api/review/jobs/{job_id}/files")
+async def upload_review_job_files(
+    job_id: str,
+    files: List[UploadFile] = File(...),
+    upload_batch_id: str = Form(...),
+    file_keys: Optional[str] = Form(None),
+):
+    """Upload one idempotent chunk of files into an asynchronous job."""
+    job = get_review_job(job_id)
+    if job["status"] != "uploading":
+        raise HTTPException(status_code=409, detail="当前任务已结束上传阶段")
+
+    batch_id = upload_batch_id.strip()
+    if not batch_id:
+        raise HTTPException(status_code=400, detail="upload_batch_id 不能为空")
+    cached = job["uploadBatches"].get(batch_id)
+    if cached:
+        return cached
+
+    valid_files = [item for item in files if item.filename]
+    if not valid_files:
+        raise HTTPException(status_code=400, detail="请至少上传一个作业文件")
+    pending_chunks = sum(1 for item in job["chunkUploads"].values() if not item.get("complete"))
+    if len(job["files"]) + pending_chunks + len(valid_files) > MAX_REVIEW_FILES:
+        raise HTTPException(status_code=400, detail=f"每个批阅任务最多 {MAX_REVIEW_FILES} 份文件")
+
+    parsed_keys: List[str] = []
+    if file_keys:
+        try:
+            value = json.loads(file_keys)
+            if isinstance(value, list):
+                parsed_keys = [str(item) for item in value]
+        except json.JSONDecodeError:
+            pass
+
+    upload_dir = Path(job["uploadDir"])
+    uploaded = []
+    for index, upload in enumerate(valid_files):
+        target = unique_upload_path(upload_dir, upload.filename or "file")
+        with target.open("wb") as output:
+            while True:
+                chunk = await upload.read(REVIEW_UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                output.write(chunk)
+        await upload.close()
+        job["files"].append(str(target))
+        job["uploadedNames"].append(target.name)
+        uploaded.append({
+            "clientKey": parsed_keys[index] if index < len(parsed_keys) else "",
+            "originalName": upload.filename,
+            "storedName": target.name,
+        })
+
+    response = {
+        "jobId": job_id,
+        "uploaded": uploaded,
+        "uploadedCount": len(job["files"]),
+        "maxFiles": MAX_REVIEW_FILES,
+    }
+    job["uploadBatches"][batch_id] = response
+    append_review_job_log(job, f"📦 已上传 {len(job['files'])}/{MAX_REVIEW_FILES} 份文件")
+    return response
+
+
+@app.post("/api/review/jobs/{job_id}/chunks")
+async def upload_review_job_chunk(
+    job_id: str,
+    file: UploadFile = File(...),
+    upload_id: str = Form(...),
+    client_key: str = Form(""),
+    original_name: str = Form(...),
+    chunk_index: int = Form(...),
+    total_chunks: int = Form(...),
+):
+    """Append one idempotent chunk for a large file."""
+    job = get_review_job(job_id)
+    if job["status"] != "uploading":
+        raise HTTPException(status_code=409, detail="当前任务已结束上传阶段")
+    if not upload_id.strip() or total_chunks < 1 or chunk_index < 0 or chunk_index >= total_chunks:
+        raise HTTPException(status_code=400, detail="分片参数不正确")
+
+    chunk_uploads = job["chunkUploads"]
+    state = chunk_uploads.get(upload_id)
+    if state is None:
+        pending_count = sum(1 for item in chunk_uploads.values() if not item.get("complete"))
+        if len(job["files"]) + pending_count >= MAX_REVIEW_FILES:
+            raise HTTPException(status_code=400, detail=f"每个批阅任务最多 {MAX_REVIEW_FILES} 份文件")
+        target = unique_upload_path(Path(job["uploadDir"]), original_name)
+        state = {
+            "target": str(target),
+            "part": str(target.with_name(f".{target.name}.{upload_id}.part")),
+            "nextChunk": 0,
+            "totalChunks": total_chunks,
+            "clientKey": client_key,
+            "originalName": original_name,
+            "complete": False,
+        }
+        chunk_uploads[upload_id] = state
+
+    if state["complete"]:
+        return {
+            "jobId": job_id,
+            "complete": True,
+            "uploadedCount": len(job["files"]),
+            "uploaded": {
+                "clientKey": state["clientKey"],
+                "originalName": state["originalName"],
+                "storedName": Path(state["target"]).name,
+            },
+        }
+    if total_chunks != state["totalChunks"]:
+        raise HTTPException(status_code=409, detail="分片总数与已建立的上传会话不一致")
+    if chunk_index < state["nextChunk"]:
+        return {
+            "jobId": job_id,
+            "complete": False,
+            "nextChunk": state["nextChunk"],
+            "uploadedCount": len(job["files"]),
+        }
+    if chunk_index != state["nextChunk"]:
+        raise HTTPException(status_code=409, detail=f"请先上传第 {state['nextChunk'] + 1} 个分片")
+
+    content = await file.read()
+    await file.close()
+    with Path(state["part"]).open("ab") as output:
+        output.write(content)
+    state["nextChunk"] += 1
+
+    if state["nextChunk"] == state["totalChunks"]:
+        part_path = Path(state["part"])
+        target_path = Path(state["target"])
+        part_path.replace(target_path)
+        state["complete"] = True
+        job["files"].append(str(target_path))
+        job["uploadedNames"].append(target_path.name)
+        append_review_job_log(job, f"📦 已上传 {len(job['files'])}/{MAX_REVIEW_FILES} 份文件")
+
+    return {
+        "jobId": job_id,
+        "complete": state["complete"],
+        "nextChunk": state["nextChunk"],
+        "uploadedCount": len(job["files"]),
+        "uploaded": {
+            "clientKey": state["clientKey"],
+            "originalName": state["originalName"],
+            "storedName": Path(state["target"]).name,
+        } if state["complete"] else None,
+    }
+
+
+@app.post("/api/review/jobs/{job_id}/start", status_code=202)
+async def start_review_job(
+    job_id: str,
+    authorization: str = Form(...),
+    cookie: str = Form(...),
+    instance_nid: str = Form(...),
+    attempts: int = Form(5),
+    output_format: str = Form("json"),
+    max_concurrency: int = Form(DEFAULT_REVIEW_CONCURRENCY),
+    local_parse: bool = Form(False),
+    llm_api_key: Optional[str] = Form(None),
+    llm_api_url: Optional[str] = Form(None),
+    llm_model: Optional[str] = Form(None),
+    skip_llm_files: Optional[str] = Form(None),
+    file_groups: Optional[str] = Form(None),
+):
+    """Start the worker and return immediately; progress is read by polling."""
+    job = get_review_job(job_id)
+    if job["status"] in {"queued", "running", "completed"}:
+        return {"jobId": job_id, "status": job["status"]}
+    if job["status"] == "cancelled":
+        raise HTTPException(status_code=409, detail="任务已取消")
+    if job["status"] == "failed":
+        raise HTTPException(status_code=409, detail=job.get("error") or "任务已失败")
+    if not job["files"]:
+        raise HTTPException(status_code=400, detail="请先上传作业文件")
+    if any(not item.get("complete") for item in job["chunkUploads"].values()):
+        raise HTTPException(status_code=409, detail="仍有大文件分片未上传完成")
+    if not authorization.strip() or not cookie.strip() or not instance_nid.strip():
+        raise HTTPException(status_code=400, detail="请填写完整的智慧树认证信息")
+    if output_format not in {"json", "pdf"}:
+        raise HTTPException(status_code=400, detail="不支持的输出格式")
+
+    concurrency = clamp_review_concurrency(max_concurrency)
+    job["status"] = "queued"
+    job["configuredConcurrency"] = concurrency
+    append_review_job_log(job, f"✅ {len(job['files'])} 份文件已就绪，进入批阅队列")
+    task = asyncio.create_task(run_async_review_job(
+        job_id,
+        authorization=authorization.strip(),
+        cookie=cookie.strip(),
+        instance_nid=instance_nid.strip(),
+        attempts=max(1, attempts),
+        output_format=output_format,
+        max_concurrency=concurrency,
+        local_parse=local_parse,
+        llm_api_key=(llm_api_key or "").strip(),
+        llm_api_url=(llm_api_url or "").strip(),
+        llm_model=(llm_model or "").strip(),
+        skip_llm_files=skip_llm_files,
+        file_groups=file_groups,
+    ))
+    REVIEW_JOB_TASKS.add(task)
+    job["_task"] = task
+
+    def clear_task(completed_task: asyncio.Task) -> None:
+        REVIEW_JOB_TASKS.discard(completed_task)
+        if job.get("_task") is completed_task:
+            job.pop("_task", None)
+
+    task.add_done_callback(clear_task)
+    return {"jobId": job_id, "status": "queued", "maxConcurrency": concurrency}
+
+
+@app.delete("/api/review/jobs/{job_id}")
+async def cancel_review_job(job_id: str):
+    """Cancel an upload, queued job, or running review process."""
+    job = get_review_job(job_id)
+    if job["status"] == "cancelled":
+        return {"jobId": job_id, "status": "cancelled"}
+    if job["status"] in {"completed", "failed"}:
+        raise HTTPException(status_code=409, detail=f"任务已{'完成' if job['status'] == 'completed' else '失败'}")
+
+    job["cancelRequested"] = True
+    await terminate_review_job_process(job)
+    task = job.get("_task")
+    if task is not None and not task.done():
+        task.cancel()
+    job["status"] = "cancelled"
+    job["error"] = None
+    append_review_job_log(job, "⏹️ 用户已取消本次批阅", "warn")
+    return {"jobId": job_id, "status": "cancelled"}
+
+
+@app.get("/api/review/jobs/{job_id}")
+async def get_review_job_status(
+    job_id: str,
+    cursor: int = Query(0, ge=0),
+    log_limit: int = Query(250, ge=1, le=1000),
+):
+    """Return a compact status snapshot and logs after the supplied cursor."""
+    job = get_review_job(job_id)
+    end = min(len(job["logs"]), cursor + log_limit)
+    response: Dict[str, Any] = {
+        "jobId": job_id,
+        "status": job["status"],
+        "uploadedCount": len(job["files"]),
+        "configuredConcurrency": job.get("configuredConcurrency"),
+        "logs": job["logs"][cursor:end],
+        "nextCursor": end,
+        "hasMoreLogs": end < len(job["logs"]),
+        "error": job.get("error"),
+        "createdAt": job["createdAt"],
+        "updatedAt": job["updatedAt"],
+    }
+    if job["status"] == "completed":
+        response["result"] = job["result"]
+    return response
+
+
 @app.post("/api/review")
 async def review_answers(
     files: List[UploadFile] = File(None),
@@ -282,7 +784,7 @@ async def review_answers(
     attempts: int = Form(5),
     max_workers: int = Form(3),
     output_format: str = Form("json"),
-    max_concurrency: int = Form(5),
+    max_concurrency: int = Form(DEFAULT_REVIEW_CONCURRENCY),
     local_parse: bool = Form(False),
     llm_api_key: Optional[str] = Form(None),
     llm_api_url: Optional[str] = Form(None),
@@ -297,6 +799,10 @@ async def review_answers(
     output_root = temp_dir / "output"
     output_root.mkdir(exist_ok=True)
     student_files = []
+
+    incoming_file_count = len([item for item in (files or []) if item.filename])
+    if incoming_file_count > MAX_REVIEW_FILES:
+        raise HTTPException(status_code=400, detail=f"每个批阅任务最多 {MAX_REVIEW_FILES} 份文件")
     
     # 保存上传的文件
     if files:
@@ -311,6 +817,8 @@ async def review_answers(
     if server_paths:
         try:
             paths = json.loads(server_paths)
+            if len(paths) + incoming_file_count > MAX_REVIEW_FILES:
+                raise HTTPException(status_code=400, detail=f"每个批阅任务最多 {MAX_REVIEW_FILES} 份文件")
             student_files.extend(paths)
         except json.JSONDecodeError:
             pass
@@ -330,13 +838,13 @@ async def review_answers(
     
     # 构建命令 - 与前端本地模式一致，调用 review_service.py
     cmd = [
-        "python3", "-u",
+        sys.executable, "-u",
         str(REVIEW_SCRIPT),
         "--inputs", json.dumps(student_files),
         "--attempts", str(max(1, attempts)),
         "--output-format", output_format,
         "--output-root", str(output_root),
-        "--max-concurrency", str(max(1, max_concurrency)),
+        "--max-concurrency", str(clamp_review_concurrency(max_concurrency)),
     ]
     if local_parse:
         cmd.append("--local-parse")

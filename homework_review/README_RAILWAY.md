@@ -24,6 +24,7 @@
 1. **`api_server.py`** - FastAPI服务
    - `/api/generate` - 生成学生答案
    - `/api/review` - 批阅评测
+   - `/api/review/jobs` - 最多 150 份的异步批量任务（分包上传、后台队列、进度轮询）
    - 流式SSE响应
    - CORS配置
 

@@ -18,6 +18,13 @@ const STORAGE_KEY = "homework-review-credentials";
 const HISTORY_KEY = "homework-review-history";
 const SESSION_STATE_KEY = "homework-review-session";
 const MAX_HISTORY = 30;
+const MAX_REVIEW_FILES = 150;
+const DEFAULT_REVIEW_CONCURRENCY = 5;
+const MAX_REVIEW_CONCURRENCY = 10;
+const REVIEW_UPLOAD_BATCH_FILES = 10;
+const REVIEW_UPLOAD_REQUEST_BYTES = Math.floor(3.5 * 1024 * 1024);
+const REVIEW_FILE_CHUNK_BYTES = 3 * 1024 * 1024;
+const REVIEW_JOB_POLL_MS = 2000;
 
 const LEVEL_OPTIONS = ["优秀的回答", "良好的回答", "中等的回答", "合格的回答", "较差的回答"];
 
@@ -136,6 +143,22 @@ interface ReviewResult {
   scoreTable: ScoreTable | null;
 }
 
+interface UploadedReviewFile {
+  clientKey: string;
+  originalName: string;
+  storedName: string;
+}
+
+interface ReviewJobSnapshot {
+  jobId: string;
+  status: "uploading" | "queued" | "running" | "completed" | "failed" | "cancelled";
+  logs?: Array<{ index: number; message: string; level?: string }>;
+  nextCursor?: number;
+  hasMoreLogs?: boolean;
+  error?: string | null;
+  result?: ReviewResult;
+}
+
 interface Credentials {
   authorization: string;
   cookie: string;
@@ -148,8 +171,41 @@ interface GeneratedAnswerFile {
   relative: string;
 }
 
-const getUploadedFileKey = (file: File) => file.name + file.size;
+const getUploadedFileKey = (file: File) =>
+  `${file.webkitRelativePath || file.name}:${file.size}:${file.lastModified}`;
 const getGeneratedFileKey = (file: GeneratedAnswerFile) => file.path || file.relative || file.name;
+
+function clampReviewConcurrency(value: number): number {
+  const normalized = Number.isFinite(value) ? Math.floor(value) : DEFAULT_REVIEW_CONCURRENCY;
+  return Math.min(MAX_REVIEW_CONCURRENCY, Math.max(1, normalized));
+}
+
+function splitSmallReviewFiles(files: File[]): File[][] {
+  const batches: File[][] = [];
+  let current: File[] = [];
+  let currentBytes = 0;
+
+  for (const file of files) {
+    if (file.size > REVIEW_UPLOAD_REQUEST_BYTES) continue;
+    if (
+      current.length > 0 &&
+      (current.length >= REVIEW_UPLOAD_BATCH_FILES || currentBytes + file.size > REVIEW_UPLOAD_REQUEST_BYTES)
+    ) {
+      batches.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(file);
+    currentBytes += file.size;
+  }
+  if (current.length > 0) batches.push(current);
+  return batches;
+}
+
+async function readApiError(response: Response, fallback: string): Promise<string> {
+  const payload = await response.json().catch(() => null);
+  return payload?.detail || payload?.error || payload?.message || `${fallback}（HTTP ${response.status}）`;
+}
 
 function loadCredentials(): Credentials {
   try {
@@ -570,7 +626,7 @@ export function HomeworkReviewInterface() {
   const [attempts, setAttempts] = useState(5);
   const [outputFormat, setOutputFormat] = useState<"json" | "pdf">("json");
   const [localParse, setLocalParse] = useState(false);
-  const [maxConcurrency, setMaxConcurrency] = useState(5);
+  const [maxConcurrency, setMaxConcurrency] = useState(DEFAULT_REVIEW_CONCURRENCY);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
@@ -589,6 +645,10 @@ export function HomeworkReviewInterface() {
   const logEndRef = useRef<HTMLDivElement>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const operationAbortRef = useRef<AbortController | null>(null);
+  const activeReviewJobIdRef = useRef<string | null>(null);
+  const cancelRequestedRef = useRef(false);
+  const [cancelling, setCancelling] = useState(false);
   // 标记是否自动衔接批阅（生成并评测模式），防止 startReview 的 finally 过早清理
   const autoReviewTakenOverRef = useRef(false);
 
@@ -694,11 +754,15 @@ export function HomeworkReviewInterface() {
         setFiles([newFiles[0]]);
       }
     } else {
-      setFiles((prev) => {
-        const existing = new Map(prev.map((f) => [getUploadedFileKey(f), f]));
-        newFiles.forEach((f) => existing.set(getUploadedFileKey(f), f));
-        return Array.from(existing.values());
-      });
+      const existing = new Map(files.map((f) => [getUploadedFileKey(f), f]));
+      newFiles.forEach((f) => existing.set(getUploadedFileKey(f), f));
+      const merged = Array.from(existing.values());
+      if (merged.length > MAX_REVIEW_FILES) {
+        setError(`单次最多提交 ${MAX_REVIEW_FILES} 份作业，已保留前 ${MAX_REVIEW_FILES} 份`);
+      } else {
+        setError(null);
+      }
+      setFiles(merged.slice(0, MAX_REVIEW_FILES));
     }
 
     // 重置 input value，确保下次选同一文件仍可触发 onChange
@@ -777,6 +841,229 @@ export function HomeworkReviewInterface() {
     saveSessionState(saved);
   };
 
+  const runUploadedReviewJob = async (
+    reviewTargets: File[],
+    llm: { apiKey: string; apiUrl: string; model: string }
+  ): Promise<ReviewResult> => {
+    if (reviewTargets.length > MAX_REVIEW_FILES) {
+      throw new Error(`单次最多提交 ${MAX_REVIEW_FILES} 份作业`);
+    }
+    const signal = operationAbortRef.current?.signal;
+
+    const fetchWithNetworkRetry = async (
+      url: string,
+      init: RequestInit,
+      fallbackMessage: string,
+    ): Promise<Response> => {
+      let lastError: unknown = null;
+      for (let retry = 0; retry <= 2; retry += 1) {
+        try {
+          const response = await fetch(url, { ...init, signal });
+          if (!response.ok) {
+            throw new Error(await readApiError(response, fallbackMessage));
+          }
+          return response;
+        } catch (error) {
+          lastError = error;
+          if (error instanceof Error && !/fetch|network|load|connection/i.test(error.message)) {
+            throw error;
+          }
+          if (retry < 2) {
+            await new Promise((resolve) => setTimeout(resolve, (retry + 1) * 1500));
+          }
+        }
+      }
+      throw lastError instanceof Error ? lastError : new Error(fallbackMessage);
+    };
+
+    appendLog(`🛠️ 正在创建批量任务（上限 ${MAX_REVIEW_FILES} 份）...`);
+    const createResponse = await fetch("/api/homework-review/jobs", { method: "POST", signal });
+    if (!createResponse.ok) {
+      throw new Error(await readApiError(createResponse, "创建批阅任务失败"));
+    }
+    const created = await createResponse.json();
+    const jobId = String(created.jobId || "");
+    if (!jobId) throw new Error("批阅服务未返回 Job ID");
+    activeReviewJobIdRef.current = jobId;
+    appendLog(`🆔 Job ID: ${jobId}`);
+
+    const storedNameByKey = new Map<string, string>();
+    const smallBatches = splitSmallReviewFiles(reviewTargets);
+    let uploadedCount = 0;
+
+    for (let batchIndex = 0; batchIndex < smallBatches.length; batchIndex += 1) {
+      const batch = smallBatches[batchIndex];
+      const formData = new FormData();
+      const keys = batch.map(getUploadedFileKey);
+      batch.forEach((file) => formData.append("files", file));
+      formData.append("upload_batch_id", `small-${batchIndex}`);
+      formData.append("file_keys", JSON.stringify(keys));
+      const response = await fetchWithNetworkRetry(
+        `/api/homework-review/jobs/${encodeURIComponent(jobId)}/files`,
+        { method: "POST", body: formData },
+        `第 ${batchIndex + 1} 个上传包失败`,
+      );
+      const payload = await response.json();
+      for (const item of (payload.uploaded || []) as UploadedReviewFile[]) {
+        if (item.clientKey) storedNameByKey.set(item.clientKey, item.storedName);
+      }
+      uploadedCount = Number(payload.uploadedCount || uploadedCount + batch.length);
+      appendLog(`📤 上传进度：${uploadedCount}/${reviewTargets.length} 份`);
+    }
+
+    const largeFiles = reviewTargets.filter((file) => file.size > REVIEW_UPLOAD_REQUEST_BYTES);
+    for (let fileIndex = 0; fileIndex < largeFiles.length; fileIndex += 1) {
+      const file = largeFiles[fileIndex];
+      const clientKey = getUploadedFileKey(file);
+      const totalChunks = Math.ceil(file.size / REVIEW_FILE_CHUNK_BYTES);
+      let completedUpload: UploadedReviewFile | null = null;
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+        const start = chunkIndex * REVIEW_FILE_CHUNK_BYTES;
+        const chunk = file.slice(start, Math.min(file.size, start + REVIEW_FILE_CHUNK_BYTES));
+        const formData = new FormData();
+        formData.append("file", chunk, `${file.name}.part`);
+        formData.append("upload_id", `large-${fileIndex}`);
+        formData.append("client_key", clientKey);
+        formData.append("original_name", file.name);
+        formData.append("chunk_index", String(chunkIndex));
+        formData.append("total_chunks", String(totalChunks));
+        const response = await fetchWithNetworkRetry(
+          `/api/homework-review/jobs/${encodeURIComponent(jobId)}/chunks`,
+          { method: "POST", body: formData },
+          `文件「${file.name}」第 ${chunkIndex + 1} 个分片上传失败`,
+        );
+        const payload = await response.json();
+        if (payload.uploaded) completedUpload = payload.uploaded as UploadedReviewFile;
+        appendLog(`📤 大文件「${file.name}」：${chunkIndex + 1}/${totalChunks} 分片`);
+      }
+      if (completedUpload) storedNameByKey.set(clientKey, completedUpload.storedName);
+      uploadedCount += 1;
+      appendLog(`📤 上传进度：${uploadedCount}/${reviewTargets.length} 份`);
+    }
+
+    if (uploadedCount !== reviewTargets.length) {
+      throw new Error(`上传数量校验失败：应为 ${reviewTargets.length} 份，实际为 ${uploadedCount} 份`);
+    }
+
+    const startForm = new FormData();
+    startForm.append("authorization", authorization.trim());
+    startForm.append("cookie", cookie.trim());
+    startForm.append("instance_nid", instanceNid.trim());
+    startForm.append("attempts", String(Math.max(1, attempts)));
+    startForm.append("output_format", outputFormat);
+    startForm.append("local_parse", String(localParse));
+    startForm.append("max_concurrency", String(clampReviewConcurrency(maxConcurrency)));
+    if (llm.apiKey) startForm.append("llm_api_key", llm.apiKey);
+    if (llm.apiUrl) startForm.append("llm_api_url", llm.apiUrl);
+    if (llm.model) startForm.append("llm_model", MODEL_NAME_MAPPING[llm.model] || llm.model);
+
+    const skippedNames = reviewTargets
+      .filter((file) => skipLLMFiles.has(getUploadedFileKey(file)))
+      .map((file) => storedNameByKey.get(getUploadedFileKey(file)) || file.name);
+    if (skippedNames.length > 0) {
+      startForm.append("skip_llm_files", JSON.stringify(skippedNames));
+    }
+
+    if (fileGroups.size > 0) {
+      const groups: Record<string, string[]> = {};
+      fileGroups.forEach((group) => {
+        const names = group.fileKeys
+          .map((key) => storedNameByKey.get(key))
+          .filter((value): value is string => Boolean(value));
+        if (names.length > 1) groups[group.name] = names;
+      });
+      if (Object.keys(groups).length > 0) {
+        startForm.append("file_groups", JSON.stringify(groups));
+      }
+    }
+
+    const startResponse = await fetch(
+      `/api/homework-review/jobs/${encodeURIComponent(jobId)}/start`,
+      { method: "POST", body: startForm, signal },
+    );
+    if (!startResponse.ok) {
+      throw new Error(await readApiError(startResponse, "启动后台批阅失败"));
+    }
+    appendLog(`✅ ${reviewTargets.length} 份作业已全部提交，后台并发上限 ${clampReviewConcurrency(maxConcurrency)}`);
+
+    let cursor = 0;
+    let pollFailures = 0;
+    while (true) {
+      try {
+        const statusResponse = await fetch(
+          `/api/homework-review/jobs/${encodeURIComponent(jobId)}?cursor=${cursor}`,
+          { cache: "no-store", signal },
+        );
+        if (!statusResponse.ok) {
+          throw new Error(await readApiError(statusResponse, "读取批阅进度失败"));
+        }
+        const snapshot = await statusResponse.json() as ReviewJobSnapshot;
+        for (const entry of snapshot.logs || []) appendLog(entry.message);
+        cursor = snapshot.nextCursor ?? cursor;
+        pollFailures = 0;
+
+        if (snapshot.hasMoreLogs) continue;
+        if (snapshot.status === "completed" && snapshot.result) return snapshot.result;
+        if (snapshot.status === "cancelled") {
+          throw new DOMException("批阅任务已取消", "AbortError");
+        }
+        if (snapshot.status === "failed") {
+          throw new Error(snapshot.error || "后台批阅任务失败");
+        }
+      } catch (error) {
+        pollFailures += 1;
+        if (pollFailures >= 5 || (error instanceof Error && !/fetch|network|load|connection/i.test(error.message))) {
+          throw error;
+        }
+        appendLog(`⚠️ 进度连接暂时中断，正在重连（${pollFailures}/5）...`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, REVIEW_JOB_POLL_MS));
+    }
+  };
+
+  const handleCancelReview = async () => {
+    if (!loading || cancelling) return;
+    if (!confirm("确定取消本次批阅？已完成的部分会停留在后台临时目录中。")) return;
+
+    cancelRequestedRef.current = true;
+    setCancelling(true);
+    appendLog("⏹️ 正在取消本次批阅...");
+    const jobId = activeReviewJobIdRef.current;
+    let backendCancelled = !jobId;
+
+    if (jobId) {
+      const cancelController = new AbortController();
+      const cancelTimeout = setTimeout(() => cancelController.abort(), 8000);
+      try {
+        const response = await fetch(
+          `/api/homework-review/jobs/${encodeURIComponent(jobId)}`,
+          { method: "DELETE", signal: cancelController.signal },
+        );
+        backendCancelled = response.ok;
+        if (!response.ok) {
+          appendLog(`⚠️ ${await readApiError(response, "后端取消请求失败")}`);
+        }
+      } catch (error) {
+        appendLog(`⚠️ 后端取消请求未确认：${error instanceof Error ? error.message : "未知错误"}`);
+      } finally {
+        clearTimeout(cancelTimeout);
+      }
+    }
+
+    operationAbortRef.current?.abort();
+    operationAbortRef.current = null;
+    activeReviewJobIdRef.current = null;
+    setLoading(false);
+    setGenPhase("idle");
+    setError(null);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    appendLog(backendCancelled ? "✅ 本次批阅已取消" : "⚠️ 页面已停止等待，请查看后端日志确认任务状态");
+    setCancelling(false);
+  };
+
   const startReview = async () => {
     const isGenerateMode = mode === "generate" || mode === "generate-and-review";
     const usingTextInput = isGenerateMode && inputMode === "text";
@@ -833,6 +1120,12 @@ export function HomeworkReviewInterface() {
       saveCredentials({ authorization, cookie, instanceNid });
     }
 
+    operationAbortRef.current?.abort();
+    operationAbortRef.current = new AbortController();
+    activeReviewJobIdRef.current = null;
+    cancelRequestedRef.current = false;
+    setCancelling(false);
+
     // 锁定当前 Tab 的 log setter，即使后续用户切换了 Tab，日志仍写入正确位置
     activeLogSetterRef.current = setLogs;
     autoReviewTakenOverRef.current = false;
@@ -857,6 +1150,38 @@ export function HomeworkReviewInterface() {
     appendLog(`🚀 开始${modeLabels[mode]}...`);
 
     try {
+      if (mode === "review" && hasUploadedFiles) {
+        const completedResult = await runUploadedReviewJob(files, llm);
+        setResult(completedResult);
+        appendLog("🎉 批阅全部完成！");
+
+        const failureSummary = summarizeReviewFailures(completedResult.summary);
+        if (failureSummary.total > 0 && failureSummary.failed > 0) {
+          appendLog(`⚠️ 批阅失败 ${failureSummary.failed}/${failureSummary.total} 次：${failureSummary.messages[0] || "未知错误"}`);
+          if (failureSummary.failed === failureSummary.total) {
+            setError(`批阅全部失败：${failureSummary.messages[0] || "未知错误"}`);
+          }
+        }
+
+        const finalTable =
+          completedResult.scoreTable && completedResult.scoreTable.students?.length > 0
+            ? completedResult.scoreTable
+            : buildScoreTableFromSummary(completedResult.summary);
+        if (finalTable && finalTable.students.length > 0) {
+          addHistoryItem({
+            id: generateHistoryId(),
+            timestamp: new Date().toISOString(),
+            fileNames: files.map((file) => file.name),
+            attempts: finalTable.attempts,
+            jobId: completedResult.jobId,
+            scoreTable: finalTable,
+          });
+          refreshHistory();
+          appendLog("📝 评分表已保存到历史记录");
+        }
+        return;
+      }
+
       const formData = new FormData();
 
       // LLM 设置
@@ -905,7 +1230,7 @@ export function HomeworkReviewInterface() {
         formData.append("server_paths", JSON.stringify(generatedFiles.map((f) => f.path)));
         formData.append("output_format", outputFormat);
         formData.append("local_parse", String(localParse));
-        formData.append("max_concurrency", String(maxConcurrency));
+        formData.append("max_concurrency", String(clampReviewConcurrency(maxConcurrency)));
         const skipNames = generatedFiles
           .filter(f => skipLLMFiles.has(getGeneratedFileKey(f)))
           .map(f => f.name);
@@ -919,7 +1244,7 @@ export function HomeworkReviewInterface() {
         files.forEach((file) => formData.append("files", file));
         formData.append("output_format", outputFormat);
         formData.append("local_parse", String(localParse));
-        formData.append("max_concurrency", String(maxConcurrency));
+        formData.append("max_concurrency", String(clampReviewConcurrency(maxConcurrency)));
         // 传递每文件跳过LLM校验标记
         const skipNames = files.filter(f => skipLLMFiles.has(getUploadedFileKey(f))).map(f => f.name);
         if (skipNames.length > 0) {
@@ -953,6 +1278,7 @@ export function HomeworkReviewInterface() {
           res = await fetch(apiUrl, {
             method: "POST",
             body: formData,
+            signal: operationAbortRef.current?.signal,
           });
           break; // 成功建立连接
         } catch (fetchErr) {
@@ -1069,15 +1395,20 @@ export function HomeworkReviewInterface() {
         }
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "操作失败";
-      setError(msg);
-      appendLog(`❌ ${msg}`);
+      const wasCancelled = cancelRequestedRef.current || (e instanceof DOMException && e.name === "AbortError");
+      if (!wasCancelled) {
+        const msg = e instanceof Error ? e.message : "操作失败";
+        setError(msg);
+        appendLog(`❌ ${msg}`);
+      }
     } finally {
       // 如果自动衔接了批阅（生成并评测），不在这里清理——由 startReviewFromGenerated 的 finally 处理
       if (autoReviewTakenOverRef.current) {
         autoReviewTakenOverRef.current = false;
       } else {
         setLoading(false);
+        activeReviewJobIdRef.current = null;
+        operationAbortRef.current = null;
         if (timerRef.current) {
           clearInterval(timerRef.current);
           timerRef.current = null;
@@ -1097,6 +1428,11 @@ export function HomeworkReviewInterface() {
       return;
     }
     saveCredentials({ authorization, cookie, instanceNid });
+
+    if (!operationAbortRef.current || operationAbortRef.current.signal.aborted) {
+      operationAbortRef.current = new AbortController();
+    }
+    cancelRequestedRef.current = false;
 
     // 锁定当前 Tab 的 log setter
     activeLogSetterRef.current = setLogs;
@@ -1135,7 +1471,7 @@ export function HomeworkReviewInterface() {
       formData.append("attempts", String(attempts));
       formData.append("output_format", outputFormat);
       formData.append("local_parse", String(localParse));
-      formData.append("max_concurrency", String(maxConcurrency));
+      formData.append("max_concurrency", String(clampReviewConcurrency(maxConcurrency)));
 
       // 将生成的文件路径作为 server_paths 传递（避免重新上传）
       formData.append("server_paths", JSON.stringify(reviewTargets.map((f) => f.path)));
@@ -1158,6 +1494,7 @@ export function HomeworkReviewInterface() {
           res = await fetch(reviewUrl, {
             method: "POST",
             body: formData,
+            signal: operationAbortRef.current?.signal,
           });
           break;
         } catch (fetchErr) {
@@ -1249,11 +1586,16 @@ export function HomeworkReviewInterface() {
         }
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "批阅失败";
-      setError(msg);
-      appendLog(`❌ ${msg}`);
+      const wasCancelled = cancelRequestedRef.current || (e instanceof DOMException && e.name === "AbortError");
+      if (!wasCancelled) {
+        const msg = e instanceof Error ? e.message : "批阅失败";
+        setError(msg);
+        appendLog(`❌ ${msg}`);
+      }
     } finally {
       setLoading(false);
+      activeReviewJobIdRef.current = null;
+      operationAbortRef.current = null;
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -1577,7 +1919,7 @@ export function HomeworkReviewInterface() {
                   </div>
                   <div className="text-sm text-slate-600">
                     {mode === "review"
-                      ? "支持 doc/docx/pdf/ppt/pptx/png/jpg，支持多文件或文件夹"
+                      ? `支持 doc/docx/pdf/ppt/pptx/png/jpg，可一次提交最多 ${MAX_REVIEW_FILES} 份`
                       : mode === "generate"
                         ? "支持 docx/pdf 格式的题卷文件，也支持切换到“粘贴文字”直接生成"
                         : "支持 doc/docx/pdf 格式的题卷文件，也支持切换到“粘贴文字”直接生成"
@@ -1605,6 +1947,20 @@ export function HomeworkReviewInterface() {
 
             {(mode === "review" || inputMode === "file") && files.length > 0 && (() => {
               // 构建分组视图数据
+              const currentFileKeys = files.map(getUploadedFileKey);
+              const skippedCurrentCount = currentFileKeys.filter((key) => skipLLMFiles.has(key)).length;
+              const allCurrentFilesSkipped = skippedCurrentCount === currentFileKeys.length;
+              const toggleSkipAllCurrentFiles = () => {
+                setSkipLLMFiles((previous) => {
+                  const next = new Set(previous);
+                  if (allCurrentFilesSkipped) {
+                    currentFileKeys.forEach((key) => next.delete(key));
+                  } else {
+                    currentFileKeys.forEach((key) => next.add(key));
+                  }
+                  return next;
+                });
+              };
               const groupedKeys = new Set<string>();
               fileGroups.forEach(g => g.fileKeys.forEach(k => groupedKeys.add(k)));
               const ungroupedFiles = files.filter(f => !groupedKeys.has(getUploadedFileKey(f)));
@@ -1647,6 +2003,7 @@ export function HomeworkReviewInterface() {
                           <input
                             type="checkbox"
                             checked={isSkipped}
+                            disabled={loading}
                             onChange={(e) => {
                               setSkipLLMFiles(prev => {
                                 const next = new Set(prev);
@@ -1655,7 +2012,7 @@ export function HomeworkReviewInterface() {
                                 return next;
                               });
                             }}
-                            className="w-3.5 h-3.5 rounded text-amber-600 focus:ring-amber-500 border-slate-300"
+                            className="w-3.5 h-3.5 rounded text-amber-600 focus:ring-amber-500 border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
                           />
                           <span className={clsx("text-[10px] font-medium", isSkipped ? "text-amber-700" : "text-slate-400")}>跳过校验</span>
                         </label>
@@ -1673,6 +2030,31 @@ export function HomeworkReviewInterface() {
 
               return (
                 <div className="mt-4 space-y-2 max-h-72 overflow-auto">
+                  {mode === "review" && (
+                    <div className="sticky top-0 z-10 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                      <span className="font-semibold">已选择 {files.length} / {MAX_REVIEW_FILES} 份作业</span>
+                      <label
+                        className={clsx(
+                          "flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium transition cursor-pointer",
+                          allCurrentFilesSkipped
+                            ? "border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200"
+                            : "border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-100",
+                          loading && "cursor-not-allowed opacity-50",
+                        )}
+                        title={loading ? "当前任务已启动，跳过校验选项已锁定" : undefined}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={allCurrentFilesSkipped}
+                          disabled={loading}
+                          onChange={toggleSkipAllCurrentFiles}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-amber-600 disabled:cursor-not-allowed"
+                        />
+                        <span>{allCurrentFilesSkipped ? "取消全选" : "全选跳过校验"}</span>
+                        <span className="text-[10px] opacity-70">({skippedCurrentCount}/{files.length})</span>
+                      </label>
+                    </div>
+                  )}
                   {/* 已分组的文件 */}
                   {Array.from(fileGroups.entries()).map(([gid, group]) => {
                     const groupFiles = group.fileKeys
@@ -1973,10 +2355,14 @@ export function HomeworkReviewInterface() {
                           <input
                             type="number"
                             min={1}
+                            max={MAX_REVIEW_CONCURRENCY}
                             value={maxConcurrency}
-                            onChange={(e) => setMaxConcurrency(Number(e.target.value))}
+                            onChange={(e) => setMaxConcurrency(clampReviewConcurrency(Number(e.target.value)))}
                             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                           />
+                          <p className="mt-1 text-[11px] text-slate-400">
+                            建议保持 {DEFAULT_REVIEW_CONCURRENCY}，服务端最高限制为 {MAX_REVIEW_CONCURRENCY}；文件数不等于并发数。
+                          </p>
                         </div>
                       </div>
                     )}
@@ -2001,12 +2387,18 @@ export function HomeworkReviewInterface() {
 
                 <div className="flex gap-2">
                   <button
-                    onClick={handleClearAll}
-                    disabled={loading}
-                    className="flex-shrink-0 px-4 py-2.5 rounded-lg text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                    title="清空当前Tab所有数据"
+                    onClick={loading ? handleCancelReview : handleClearAll}
+                    disabled={cancelling}
+                    className={clsx(
+                      "flex-shrink-0 px-4 py-2.5 rounded-lg text-sm font-semibold transition",
+                      loading
+                        ? "text-red-700 bg-red-50 hover:bg-red-100 ring-1 ring-red-200"
+                        : "text-slate-600 bg-slate-100 hover:bg-slate-200",
+                      cancelling && "opacity-60 cursor-wait",
+                    )}
+                    title={loading ? "取消本次批阅" : "清空当前Tab所有数据"}
                   >
-                    <X className="w-4 h-4" />
+                    {cancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
                   </button>
                   <button
                     onClick={startReview}

@@ -42,5 +42,8 @@ export function getHomeworkApiEndpoint(pathname: string): string {
 }
 
 export function isRemoteHomeworkPath(filePath: string): boolean {
-  return filePath.startsWith("/tmp/");
+  // Python 返回其所在机器的绝对临时路径。Linux/Railway 通常是 /tmp，
+  // macOS 本地开发则通常是 /var/folders/.../T。配置后端服务时，生成和
+  // 批阅均由该服务执行，因此它返回的绝对路径统一交给后端读取。
+  return filePath.startsWith("/") && Boolean(getHomeworkApiUrl());
 }

@@ -1615,9 +1615,7 @@ export function HomeworkReviewInterface() {
     setPreviewLoading(true);
     setPreviewHtml("");
     try {
-      const previewUrl = file.path.startsWith("/tmp/")
-        ? `/api/homework-review/remote/preview?path=${encodeURIComponent(file.path)}`
-        : `/api/homework-review/preview?path=${encodeURIComponent(file.path)}`;
+      const previewUrl = `/api/homework-review/preview?path=${encodeURIComponent(file.path)}`;
       const res = await fetch(previewUrl);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || data.detail || "预览失败");
@@ -1631,17 +1629,16 @@ export function HomeworkReviewInterface() {
 
   /** 下载生成的 docx 文件 */
   const downloadGeneratedFile = (file: { name: string; path: string }) => {
-    const url = file.path.startsWith("/tmp/")
-      ? `/api/homework-review/remote/files?path=${encodeURIComponent(file.path)}`
-      : `/api/homework-review/preview?path=${encodeURIComponent(file.path)}&download=1`;
+    const url = `/api/homework-review/preview?path=${encodeURIComponent(file.path)}&download=1`;
     window.open(url, "_blank");
   };
 
   const downloadLink = (file: string) => {
     if (!result) return "#";
-    // Railway 输出文件使用 /tmp 绝对路径，由同源接口在服务端代理下载。
-    if (file.startsWith("/tmp/")) {
-      return `/api/homework-review/remote/files?path=${encodeURIComponent(file)}`;
+    // Python 输出文件使用后端机器上的绝对临时路径；Linux 通常在 /tmp，
+    // macOS 本地开发通常在 /var/folders/.../T。统一由同源接口代理读取。
+    if (file.startsWith("/")) {
+      return `/api/homework-review/preview?path=${encodeURIComponent(file)}&download=1`;
     }
     // 本地模式：走 Vercel 的 download endpoint
     const url = new URL(result.downloadBaseUrl, window.location.origin);
@@ -2891,11 +2888,17 @@ export function HomeworkReviewInterface() {
         setJsonContent(null);
         try {
       const response = await fetch(downloadLink(file));
-        if (!response.ok) throw new Error("Failed to fetch JSON");
+        if (!response.ok) {
+          const errorBody = await response.json().catch(() => null);
+          const detail = errorBody?.detail || errorBody?.error;
+          throw new Error(detail || `读取失败（HTTP ${response.status}）`);
+        }
         const data = await response.json();
         setJsonContent(data);
     } catch (error) {
-          setJsonContent({ error: "无法加载JSON文件" });
+          setJsonContent({
+            error: error instanceof Error ? error.message : "JSON 文件读取失败",
+          });
     } finally {
           setJsonLoading(false);
     }

@@ -25,8 +25,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "缺少 path 参数" }, { status: 400 });
     }
 
-    // Railway 生成的文件位于其 /tmp 文件系统。浏览器只访问同源路由，
-    // 由这个 Vercel 服务端路由代理预览或下载。
+    // Python 后端生成的是其机器上的绝对临时路径（Linux 常见 /tmp，
+    // macOS 常见 /var/folders/.../T）。浏览器只访问同源路由，由这里代理。
     if (isRemoteHomeworkPath(filePath)) {
       const endpoint = getHomeworkApiEndpoint(
         isDownload ? "/api/files" : "/api/preview"

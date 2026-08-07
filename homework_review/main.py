@@ -46,7 +46,8 @@ REVIEW_UPLOAD_CHUNK_SIZE = 1024 * 1024
 REVIEW_JOBS: Dict[str, Dict[str, Any]] = {}
 REVIEW_JOB_TASKS: set[asyncio.Task] = set()
 REVIEW_JOB_SEMAPHORE = asyncio.Semaphore(MAX_ACTIVE_REVIEW_JOBS)
-REVIEW_JOBS_ROOT = Path(tempfile.gettempdir()) / "homework_review_jobs"
+SYSTEM_TEMP_ROOT = Path(tempfile.gettempdir()).resolve()
+REVIEW_JOBS_ROOT = SYSTEM_TEMP_ROOT / "homework_review_jobs"
 REVIEW_JOBS_ROOT.mkdir(parents=True, exist_ok=True)
 
 # 确保.env文件存在（子脚本会尝试加载它，不存在会报错）
@@ -64,6 +65,16 @@ def get_review_job(job_id: str) -> Dict[str, Any]:
     if not job:
         raise HTTPException(status_code=404, detail="批阅任务不存在或服务已重启")
     return job
+
+
+def resolve_temp_file(path: str) -> Path:
+    """Resolve a file while keeping access inside this system's temp directory."""
+    resolved = Path(path).resolve()
+    try:
+        resolved.relative_to(SYSTEM_TEMP_ROOT)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="只允许访问临时文件") from exc
+    return resolved
 
 
 def append_review_job_log(job: Dict[str, Any], message: str, level: str = "info") -> None:
@@ -261,15 +272,12 @@ async def health():
 @app.get("/api/files")
 async def download_file(path: str = Query(..., description="文件路径")):
     """下载服务器上的临时文件（用于生成后的批阅流程）"""
-    file_path = Path(path)
-    if not file_path.exists():
+    file_path = resolve_temp_file(path)
+    if not file_path.is_file():
         raise HTTPException(
             status_code=404, 
             detail=f"文件不存在（可能服务已重启）: {path}"
         )
-    # 安全检查：只允许下载/tmp目录下的文件
-    if not str(file_path.resolve()).startswith("/tmp/"):
-        raise HTTPException(status_code=403, detail="只允许访问临时文件")
     return FileResponse(
         file_path,
         filename=file_path.name,
@@ -280,11 +288,9 @@ async def download_file(path: str = Query(..., description="文件路径")):
 @app.get("/api/preview")
 async def preview_file(path: str = Query(..., description="文件路径")):
     """预览文件 - 支持 docx/pdf/ppt/pptx"""
-    file_path = Path(path)
-    if not file_path.exists():
+    file_path = resolve_temp_file(path)
+    if not file_path.is_file():
         raise HTTPException(status_code=404, detail=f"文件不存在: {path}")
-    if not str(file_path.resolve()).startswith("/tmp/"):
-        raise HTTPException(status_code=403, detail="只允许访问临时文件")
     
     ext = file_path.suffix.lower()
     

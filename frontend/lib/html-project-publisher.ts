@@ -27,15 +27,36 @@ function isRootFolderPath(paths: string[]): boolean {
   return roots.size === 1 && paths.every((path) => path.includes("/"));
 }
 
+const IGNORED_PROJECT_DIRECTORIES = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  "__MACOSX",
+  "node_modules",
+]);
+
+function isIgnoredProjectPath(path: string): boolean {
+  return path.split("/").some((part) =>
+    IGNORED_PROJECT_DIRECTORIES.has(part)
+    || part === ".DS_Store"
+    || part === "Thumbs.db"
+    || part.startsWith("._"),
+  );
+}
+
 /** Creates project-relative paths from files selected through a folder input. */
 export function collectProjectAssets(files: File[]): { assets: ProjectAsset[]; duplicates: string[] } {
-  const rawPaths = files.map((file) => normalizePath(file.webkitRelativePath || file.name));
+  const records = files.map((file) => ({
+    file,
+    path: normalizePath(file.webkitRelativePath || file.name),
+  })).filter(({ path }) => !isIgnoredProjectPath(path));
+  const rawPaths = records.map((record) => record.path);
   const removeRoot = isRootFolderPath(rawPaths);
   const assets: ProjectAsset[] = [];
   const seen = new Set<string>();
   const duplicates: string[] = [];
 
-  for (let index = 0; index < files.length; index += 1) {
+  for (let index = 0; index < records.length; index += 1) {
     const rawPath = rawPaths[index];
     const path = removeRoot ? rawPath.split("/").slice(1).join("/") : rawPath;
     if (!path) continue;
@@ -45,7 +66,7 @@ export function collectProjectAssets(files: File[]): { assets: ProjectAsset[]; d
       continue;
     }
     seen.add(key);
-    assets.push({ file: files[index], path });
+    assets.push({ file: records[index].file, path });
   }
 
   return { assets, duplicates };
@@ -64,6 +85,10 @@ export function isHtmlFile(path: string): boolean {
 
 export function isCssFile(path: string): boolean {
   return /\.css$/i.test(path);
+}
+
+export function isJavaScriptFile(path: string): boolean {
+  return /\.(?:cjs|mjs|js)$/i.test(path);
 }
 
 function splitReference(reference: string): { pathname: string; suffix: string } {
@@ -143,25 +168,80 @@ export function resolveProjectReference(
   return fallbackMatches.length === 1 ? { path: fallbackMatches[0], suffix } : null;
 }
 
+interface CssUrlToken {
+  value: string;
+  valueStart: number;
+  valueEnd: number;
+}
+
+function scanCssUrlTokens(content: string): CssUrlToken[] {
+  const tokens: CssUrlToken[] = [];
+  let cursor = 0;
+  while (cursor < content.length) {
+    const match = /\burl\s*\(/gi.exec(content.slice(cursor));
+    if (!match) break;
+    const functionStart = cursor + match.index;
+    let position = functionStart + match[0].length;
+    while (/\s/.test(content[position] || "")) position += 1;
+    const quote = content[position] === '"' || content[position] === "'" ? content[position] : "";
+
+    if (quote) {
+      const valueStart = position + 1;
+      position = valueStart;
+      while (position < content.length) {
+        if (content[position] === "\\") {
+          position += 2;
+          continue;
+        }
+        if (content[position] === quote) break;
+        position += 1;
+      }
+      if (position >= content.length) break;
+      const valueEnd = position;
+      position += 1;
+      while (/\s/.test(content[position] || "")) position += 1;
+      if (content[position] !== ")") {
+        cursor = functionStart + match[0].length;
+        continue;
+      }
+      tokens.push({ value: content.slice(valueStart, valueEnd), valueStart, valueEnd });
+      cursor = position + 1;
+      continue;
+    }
+
+    const rawStart = position;
+    while (position < content.length && content[position] !== ")") {
+      position += content[position] === "\\" ? 2 : 1;
+    }
+    if (position >= content.length) break;
+    const raw = content.slice(rawStart, position);
+    const leadingWhitespace = raw.length - raw.trimStart().length;
+    const trailingWhitespace = raw.length - raw.trimEnd().length;
+    const valueStart = rawStart + leadingWhitespace;
+    const valueEnd = position - trailingWhitespace;
+    tokens.push({ value: content.slice(valueStart, valueEnd), valueStart, valueEnd });
+    cursor = position + 1;
+  }
+  return tokens;
+}
+
 export function findCssReferences(content: string): string[] {
-  const found = new Set<string>();
-  const urlPattern = /url\(\s*(["']?)([^'"\)]+)\1\s*\)/gi;
+  const found = new Set(scanCssUrlTokens(content).map((token) => token.value.trim()));
   const importPattern = /@import\s+(["'])([^'"\n]+)\1/gi;
   let match: RegExpExecArray | null;
-
-  while ((match = urlPattern.exec(content))) found.add(match[2].trim());
   while ((match = importPattern.exec(content))) found.add(match[2].trim());
-  return [...found];
+  return [...found].filter(Boolean);
 }
 
 export function rewriteCssReferences(
   content: string,
   replaceReference: (reference: string) => string,
 ): string {
-  const withUrls = content.replace(
-    /url\(\s*(["']?)([^'"\)]+)\1\s*\)/gi,
-    (_match, quote: string, reference: string) => `url(${quote}${replaceReference(reference)}${quote})`,
-  );
+  let withUrls = content;
+  for (const token of scanCssUrlTokens(content).reverse()) {
+    const rewritten = replaceReference(token.value);
+    withUrls = `${withUrls.slice(0, token.valueStart)}${rewritten}${withUrls.slice(token.valueEnd)}`;
+  }
   return withUrls.replace(
     /(@import\s+)(["'])([^'"\n]+)\2/gi,
     (_match, prefix: string, quote: string, reference: string) => `${prefix}${quote}${replaceReference(reference)}${quote}`,
@@ -191,6 +271,25 @@ export function rewriteJavaScriptReferences(
   );
 }
 
+/** Routes JavaScript-driven page navigation through the injected manifest. */
+export function rewriteJavaScriptNavigationReferences(content: string): string {
+  let rewritten = content.replace(
+    /((?:(?:window\.)?location)\.href\s*=\s*)(["'])([^"'\n]+)\2/g,
+    (_match, prefix: string, quote: string, reference: string) =>
+      `${prefix}window.__polymasAssetUrl(${quote}${reference}${quote})`,
+  );
+  rewritten = rewritten.replace(
+    /((?:(?:window\.)?location)\.(?:assign|replace)\s*\(\s*)(["'])([^"'\n]+)\2/g,
+    (_match, prefix: string, quote: string, reference: string) =>
+      `${prefix}window.__polymasAssetUrl(${quote}${reference}${quote})`,
+  );
+  return rewritten.replace(
+    /(window\.open\s*\(\s*)(["'])([^"'\n]+)\2/g,
+    (_match, prefix: string, quote: string, reference: string) =>
+      `${prefix}window.__polymasAssetUrl(${quote}${reference}${quote})`,
+  );
+}
+
 function rewriteSrcset(value: string, replaceReference: (reference: string) => string): string {
   if (value.trim().startsWith("data:")) return value;
   return value.split(",").map((candidate) => {
@@ -214,8 +313,7 @@ function rewriteHtmlAttributeReferences(
   );
 }
 
-/** Rewrites static asset paths in ordinary HTML documents. */
-export function rewriteHtmlReferences(
+function rewriteHtmlMarkupReferences(
   content: string,
   replaceReference: (reference: string) => string,
 ): string {
@@ -228,27 +326,53 @@ export function rewriteHtmlReferences(
       return quote ? `srcset=${quote}${updated}${quote}` : `srcset=${updated}`;
     },
   );
-  rewritten = rewritten.replace(
-    /(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi,
-    (_match, start: string, css: string, end: string) => `${start}${rewriteCssReferences(css, replaceReference)}${end}`,
-  );
-  rewritten = rewritten.replace(
-    /(<script\b[^>]*>)([\s\S]*?)(<\/script>)/gi,
-    (_match, start: string, source: string, end: string) => `${start}${rewriteJavaScriptReferences(source, replaceReference)}${end}`,
-  );
   return rewritten.replace(
     /\bstyle\s*=\s*(["'])(.*?)\1/gi,
     (_match, quote: string, css: string) => `style=${quote}${rewriteCssReferences(css, replaceReference)}${quote}`,
   );
 }
 
+export interface HtmlReferenceOptions {
+  /** Include complete quoted strings inside inline scripts. Defaults to true. */
+  includeScriptStrings?: boolean;
+}
+
+/** Rewrites static asset paths in ordinary HTML documents. */
+export function rewriteHtmlReferences(
+  content: string,
+  replaceReference: (reference: string) => string,
+  options: HtmlReferenceOptions = {},
+): string {
+  const blockPattern = /(<(script|style)\b[^>]*>)([\s\S]*?)(<\/\2\s*>)/gi;
+  let cursor = 0;
+  let rewritten = "";
+  let match: RegExpExecArray | null;
+
+  while ((match = blockPattern.exec(content))) {
+    rewritten += rewriteHtmlMarkupReferences(content.slice(cursor, match.index), replaceReference);
+    const openingTag = rewriteHtmlMarkupReferences(match[1], replaceReference);
+    const body = match[2].toLowerCase() === "style"
+      ? rewriteCssReferences(match[3], replaceReference)
+      : options.includeScriptStrings === false
+        ? match[3]
+        : rewriteJavaScriptNavigationReferences(rewriteJavaScriptReferences(match[3], replaceReference));
+    rewritten += `${openingTag}${body}${match[4]}`;
+    cursor = blockPattern.lastIndex;
+  }
+
+  return rewritten + rewriteHtmlMarkupReferences(content.slice(cursor), replaceReference);
+}
+
 /** Returns every static reference seen by the same rules used for rewriting. */
-export function findHtmlReferences(content: string): string[] {
+export function findHtmlReferences(
+  content: string,
+  options: HtmlReferenceOptions = {},
+): string[] {
   const references = new Set<string>();
   rewriteHtmlReferences(content, (reference) => {
     references.add(reference.trim());
     return reference;
-  });
+  }, options);
   return [...references].filter(Boolean);
 }
 
@@ -269,6 +393,8 @@ export function injectRuntimeAssetResolver(
   const bootstrap = `<script data-polymas-asset-resolver>(function(){
 var manifest=${safeManifest};
 var entry=${safeEntryPath};
+var manifestKey='__POLYMAS_PROJECT_MANIFEST__:'+(Object.keys(manifest).length?manifest[Object.keys(manifest)[0]]:entry);
+try{var storedManifest=JSON.parse(sessionStorage.getItem(manifestKey)||'{}');Object.keys(storedManifest).forEach(function(key){if(!manifest[key])manifest[key]=storedManifest[key];});sessionStorage.setItem(manifestKey,JSON.stringify(manifest));}catch(_storageError){}
 var entryDir=entry.indexOf('/')>=0?entry.slice(0,entry.lastIndexOf('/')):'';
 function normalize(value){var out=[];String(value||'').replace(/\\\\/g,'/').split('/').forEach(function(part){if(!part||part==='.')return;if(part==='..'){out.pop();return;}out.push(part);});return out.join('/');}
 function resolve(value){
@@ -291,6 +417,7 @@ var assetAttrs={src:1,href:1,poster:1,'data-src':1,'data-original':1,'data-backg
 Element.prototype.setAttribute=function(name,value){var key=String(name).toLowerCase();return nativeSetAttribute.call(this,name,assetAttrs[key]?resolve(String(value)):value);};
 function patchProperty(ctor,name){if(!ctor||!ctor.prototype)return;var descriptor=Object.getOwnPropertyDescriptor(ctor.prototype,name);if(!descriptor||!descriptor.get||!descriptor.set||descriptor.configurable===false)return;Object.defineProperty(ctor.prototype,name,{configurable:descriptor.configurable,enumerable:descriptor.enumerable,get:descriptor.get,set:function(value){descriptor.set.call(this,resolve(String(value)));}});}
 patchProperty(window.HTMLImageElement,'src');patchProperty(window.HTMLMediaElement,'src');patchProperty(window.HTMLSourceElement,'src');patchProperty(window.HTMLScriptElement,'src');patchProperty(window.HTMLLinkElement,'href');patchProperty(window.HTMLIFrameElement,'src');patchProperty(window.HTMLEmbedElement,'src');patchProperty(window.HTMLObjectElement,'data');
+if(window.Audio){var NativeAudio=window.Audio;var ResolvedAudio=function(source){return arguments.length?new NativeAudio(resolve(String(source))):new NativeAudio();};ResolvedAudio.prototype=NativeAudio.prototype;try{Object.setPrototypeOf(ResolvedAudio,NativeAudio);}catch(_audioPrototypeError){}window.Audio=ResolvedAudio;}
 var nativeFetch=window.fetch;if(nativeFetch)window.fetch=function(input,init){return nativeFetch.call(this,typeof input==='string'?resolve(input):input,init);};
 if(window.XMLHttpRequest){var nativeOpen=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(method,url){var args=Array.prototype.slice.call(arguments);args[1]=resolve(String(url));return nativeOpen.apply(this,args);};}
 function rewriteSrcset(value){return String(value||'').split(',').map(function(item){var match=item.match(/^(\\s*)(\\S+)([\\s\\S]*)$/);return match?match[1]+resolve(match[2])+match[3]:item;}).join(',');}

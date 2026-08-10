@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +18,27 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
+
+try:
+    from .skill_review_service import (
+        build_skill_score_table,
+        compact_skill_report,
+        execute_correction_skill,
+        get_correction_skill_report,
+        list_correction_skill_models,
+        platform_report_url,
+        upload_student_attachment,
+    )
+except ImportError:
+    from skill_review_service import (
+        build_skill_score_table,
+        compact_skill_report,
+        execute_correction_skill,
+        get_correction_skill_report,
+        list_correction_skill_models,
+        platform_report_url,
+        upload_student_attachment,
+    )
 
 app = FastAPI(title="作业批阅API", version="1.0.0")
 
@@ -255,6 +277,267 @@ async def run_async_review_job(job_id: str, **settings: Any) -> None:
         await execute_async_review_job(job_id, **settings)
 
 
+SKILL_SUCCESS_STATES = {"SUCCESS"}
+SKILL_FAILURE_STATES = {"FAILED", "FAILURE", "ERROR", "CANCELLED", "CANCELED"}
+
+
+def make_skill_task_id() -> str:
+    return f"test-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
+
+
+async def execute_skill_attempt(
+    *,
+    job: Dict[str, Any],
+    file_name: str,
+    file_index: int,
+    attempt_index: int,
+    attachment: Dict[str, str],
+    authorization: str,
+    cookie: str,
+    skill_version_id: str,
+    skill_nid: str,
+    model_name: str,
+    submission_requirement: str,
+    student_submission: str,
+    poll_interval_seconds: int,
+    poll_timeout_seconds: int,
+) -> Dict[str, Any]:
+    task_id = make_skill_task_id()
+    report_url = platform_report_url(
+        skill_version_id=skill_version_id,
+        skill_nid=skill_nid,
+        task_id=task_id,
+    )
+    try:
+        await asyncio.to_thread(
+            execute_correction_skill,
+            skill_version_id=skill_version_id,
+            task_id=task_id,
+            model_name=model_name,
+            submission_requirement=submission_requirement,
+            student_submission=student_submission,
+            student_attachments=[attachment],
+            requirement_attachments=[],
+            authorization=authorization,
+            cookie=cookie,
+        )
+        append_review_job_log(
+            job,
+            f"🧪 「{file_name}」第 {attempt_index} 次 Skills 批阅已启动（{task_id}）",
+        )
+
+        started_at = time.monotonic()
+        next_wait_log = 60
+        while True:
+            await asyncio.sleep(poll_interval_seconds)
+            response = await asyncio.to_thread(
+                get_correction_skill_report,
+                task_id,
+                authorization,
+                cookie,
+            )
+            skill = ((response.get("data") or {}).get("skill") or {})
+            report_status = str(skill.get("reportStatus") or "").upper()
+            if report_status in SKILL_SUCCESS_STATES:
+                return compact_skill_report(
+                    response,
+                    file_name=file_name,
+                    file_index=file_index,
+                    attempt_index=attempt_index,
+                    task_id=task_id,
+                    report_url=report_url,
+                )
+            if report_status in SKILL_FAILURE_STATES:
+                return {
+                    "success": False,
+                    "fileName": file_name,
+                    "fileIndex": file_index,
+                    "attemptIndex": attempt_index,
+                    "taskId": task_id,
+                    "reportUrl": report_url,
+                    "reportStatus": report_status,
+                    "error": skill.get("message") or skill.get("error") or f"批阅终态：{report_status}",
+                    "items": [],
+                    "sections": [],
+                }
+
+            elapsed = int(time.monotonic() - started_at)
+            if elapsed >= poll_timeout_seconds:
+                raise TimeoutError(f"等待批阅报告超过 {poll_timeout_seconds} 秒")
+            if elapsed >= next_wait_log:
+                append_review_job_log(
+                    job,
+                    f"⏳ 「{file_name}」第 {attempt_index} 次仍在批阅，已等待 {elapsed} 秒",
+                )
+                next_wait_log += 60
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        return {
+            "success": False,
+            "fileName": file_name,
+            "fileIndex": file_index,
+            "attemptIndex": attempt_index,
+            "taskId": task_id,
+            "reportUrl": report_url,
+            "reportStatus": "ERROR",
+            "error": str(exc),
+            "items": [],
+            "sections": [],
+        }
+
+
+async def execute_async_skill_review_job(
+    job_id: str,
+    *,
+    authorization: str,
+    cookie: str,
+    skill_version_id: str,
+    skill_nid: str,
+    submission_requirement: str,
+    student_submission: str,
+    model_name: str,
+    attempts: int,
+    max_concurrency: int,
+    poll_interval_seconds: int,
+    poll_timeout_seconds: int,
+) -> None:
+    job = get_review_job(job_id)
+    job["status"] = "running"
+    job["engine"] = "skill"
+    total_runs = len(job["files"]) * attempts
+    append_review_job_log(
+        job,
+        f"🚀 Skills 批量测试已启动：{len(job['files'])} 份作业，每份 {attempts} 次，共 {total_runs} 次",
+    )
+
+    concurrency = clamp_review_concurrency(max_concurrency)
+    semaphore = asyncio.Semaphore(concurrency)
+    uploaded: Dict[int, Dict[str, str]] = {}
+    upload_errors: Dict[int, str] = {}
+
+    async def upload_one(file_index: int, file_path: str) -> None:
+        file_name = Path(file_path).name
+        async with semaphore:
+            try:
+                uploaded[file_index] = await asyncio.to_thread(
+                    upload_student_attachment,
+                    file_path,
+                    authorization,
+                    cookie,
+                )
+                append_review_job_log(job, f"☁️ 「{file_name}」已上传到智慧树资源服务")
+            except Exception as exc:
+                upload_errors[file_index] = str(exc)
+                append_review_job_log(job, f"❌ 「{file_name}」上传失败：{exc}", "error")
+
+    try:
+        await asyncio.gather(*[
+            upload_one(file_index, file_path)
+            for file_index, file_path in enumerate(job["files"])
+        ])
+
+        completed_runs = 0
+        results: List[Dict[str, Any]] = []
+
+        async def run_one(file_index: int, file_path: str, attempt_index: int) -> None:
+            nonlocal completed_runs
+            file_name = Path(file_path).name
+            if file_index in upload_errors:
+                result = {
+                    "success": False,
+                    "fileName": file_name,
+                    "fileIndex": file_index,
+                    "attemptIndex": attempt_index,
+                    "taskId": "",
+                    "reportUrl": "",
+                    "reportStatus": "UPLOAD_FAILED",
+                    "error": upload_errors[file_index],
+                    "items": [],
+                    "sections": [],
+                }
+            else:
+                async with semaphore:
+                    result = await execute_skill_attempt(
+                        job=job,
+                        file_name=file_name,
+                        file_index=file_index,
+                        attempt_index=attempt_index,
+                        attachment=uploaded[file_index],
+                        authorization=authorization,
+                        cookie=cookie,
+                        skill_version_id=skill_version_id,
+                        skill_nid=skill_nid,
+                        model_name=model_name,
+                        submission_requirement=submission_requirement,
+                        student_submission=student_submission,
+                        poll_interval_seconds=poll_interval_seconds,
+                        poll_timeout_seconds=poll_timeout_seconds,
+                    )
+            results.append(result)
+            completed_runs += 1
+            if result.get("success"):
+                append_review_job_log(
+                    job,
+                    f"✅ 「{file_name}」第 {attempt_index} 次完成：{result.get('totalScore', '—')}/{result.get('fullMark', '—')} 分（{completed_runs}/{total_runs}）",
+                )
+            else:
+                append_review_job_log(
+                    job,
+                    f"❌ 「{file_name}」第 {attempt_index} 次失败：{result.get('error') or result.get('reportStatus')}（{completed_runs}/{total_runs}）",
+                    "error",
+                )
+
+        await asyncio.gather(*[
+            run_one(file_index, file_path, attempt_index)
+            for file_index, file_path in enumerate(job["files"])
+            for attempt_index in range(1, attempts + 1)
+        ])
+
+        results.sort(key=lambda item: (int(item.get("fileIndex", 0)), int(item.get("attemptIndex", 0))))
+        succeeded = sum(1 for item in results if item.get("success"))
+        job["result"] = {
+            "jobId": job_id,
+            "outputFiles": [],
+            "downloadBaseUrl": "",
+            "summary": {
+                "engine": "skill",
+                "skillVersionId": skill_version_id,
+                "skillNid": skill_nid,
+                "modelName": model_name,
+                "attempts": attempts,
+                "totalRuns": total_runs,
+                "succeededRuns": succeeded,
+                "failedRuns": total_runs - succeeded,
+                "results": results,
+            },
+            "scoreTable": build_skill_score_table(results, attempts),
+        }
+        job["status"] = "completed"
+        append_review_job_log(job, f"🎉 Skills 批量测试完成：成功 {succeeded}/{total_runs} 次")
+    except asyncio.CancelledError:
+        if job.get("status") != "cancelled":
+            job["status"] = "cancelled"
+            append_review_job_log(job, "⏹️ Skills 批量测试已取消", "warn")
+        raise
+    except Exception as exc:
+        job["status"] = "failed"
+        job["error"] = str(exc)
+        append_review_job_log(job, f"❌ Skills 批量测试失败：{exc}", "error")
+    finally:
+        job["updatedAt"] = datetime.now(timezone.utc).isoformat()
+
+
+async def run_async_skill_review_job(job_id: str, **settings: Any) -> None:
+    job = get_review_job(job_id)
+    if REVIEW_JOB_SEMAPHORE.locked():
+        append_review_job_log(job, "⏳ 已进入全局队列，当前有其他批阅任务在执行")
+    async with REVIEW_JOB_SEMAPHORE:
+        if job.get("cancelRequested"):
+            return
+        await execute_async_skill_review_job(job_id, **settings)
+
+
 @app.get("/")
 async def root():
     return {
@@ -267,6 +550,37 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@app.post("/api/review/skill-models")
+async def get_skill_review_models(
+    authorization: str = Form(...),
+    cookie: str = Form(...),
+    scene: int = Form(8),
+):
+    """使用当前智慧树会话读取 Skills 批阅可选模型。"""
+    if not authorization.strip() or not cookie.strip():
+        raise HTTPException(status_code=400, detail="请填写完整的智慧树认证信息")
+    normalized_scene = min(100, max(1, scene))
+    try:
+        models = await asyncio.to_thread(
+            list_correction_skill_models,
+            authorization.strip(),
+            cookie.strip(),
+            scene=normalized_scene,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    default_model = next(
+        (item["code"] for item in models if item.get("isDefault")),
+        models[0]["code"],
+    )
+    return {
+        "scene": normalized_scene,
+        "models": models,
+        "defaultModel": default_model,
+    }
 
 
 @app.get("/api/files")
@@ -732,6 +1046,85 @@ async def start_review_job(
 
     task.add_done_callback(clear_task)
     return {"jobId": job_id, "status": "queued", "maxConcurrency": concurrency}
+
+
+@app.post("/api/review/jobs/{job_id}/start-skill", status_code=202)
+async def start_skill_review_job(
+    job_id: str,
+    authorization: str = Form(...),
+    cookie: str = Form(...),
+    skill_version_id: str = Form(...),
+    skill_nid: str = Form(""),
+    submission_requirement: str = Form(...),
+    student_submission: str = Form("见附件"),
+    model_name: str = Form("claude-opus-4-8"),
+    attempts: int = Form(1),
+    max_concurrency: int = Form(3),
+    poll_interval_seconds: int = Form(5),
+    poll_timeout_seconds: int = Form(1200),
+):
+    """启动多份学生作业的 Skills 批量测试。"""
+    job = get_review_job(job_id)
+    if job["status"] in {"queued", "running", "completed"}:
+        return {"jobId": job_id, "status": job["status"]}
+    if job["status"] == "cancelled":
+        raise HTTPException(status_code=409, detail="任务已取消")
+    if job["status"] == "failed":
+        raise HTTPException(status_code=409, detail=job.get("error") or "任务已失败")
+    if not job["files"]:
+        raise HTTPException(status_code=400, detail="请先上传学生作业文件")
+    if any(not item.get("complete") for item in job["chunkUploads"].values()):
+        raise HTTPException(status_code=409, detail="仍有大文件分片未上传完成")
+    if not authorization.strip() or not cookie.strip():
+        raise HTTPException(status_code=400, detail="请填写完整的智慧树认证信息")
+    if not skill_version_id.strip():
+        raise HTTPException(status_code=400, detail="请填写 Skill Version ID")
+    if not submission_requirement.strip():
+        raise HTTPException(status_code=400, detail="请填写所有学生共用的作业要求")
+    if not model_name.strip():
+        raise HTTPException(status_code=400, detail="请填写 Skills 批阅模型")
+
+    normalized_attempts = min(20, max(1, attempts))
+    concurrency = clamp_review_concurrency(max_concurrency)
+    poll_interval = min(30, max(2, poll_interval_seconds))
+    poll_timeout = min(3600, max(60, poll_timeout_seconds))
+    job["status"] = "queued"
+    job["engine"] = "skill"
+    job["configuredConcurrency"] = concurrency
+    append_review_job_log(
+        job,
+        f"✅ {len(job['files'])} 份文件已就绪，Skills 批量测试进入队列",
+    )
+    task = asyncio.create_task(run_async_skill_review_job(
+        job_id,
+        authorization=authorization.strip(),
+        cookie=cookie.strip(),
+        skill_version_id=skill_version_id.strip(),
+        skill_nid=skill_nid.strip(),
+        submission_requirement=submission_requirement.strip(),
+        student_submission=student_submission.strip() or "见附件",
+        model_name=model_name.strip(),
+        attempts=normalized_attempts,
+        max_concurrency=concurrency,
+        poll_interval_seconds=poll_interval,
+        poll_timeout_seconds=poll_timeout,
+    ))
+    REVIEW_JOB_TASKS.add(task)
+    job["_task"] = task
+
+    def clear_task(completed_task: asyncio.Task) -> None:
+        REVIEW_JOB_TASKS.discard(completed_task)
+        if job.get("_task") is completed_task:
+            job.pop("_task", None)
+
+    task.add_done_callback(clear_task)
+    return {
+        "jobId": job_id,
+        "status": "queued",
+        "engine": "skill",
+        "attempts": normalized_attempts,
+        "maxConcurrency": concurrency,
+    }
 
 
 @app.delete("/api/review/jobs/{job_id}")

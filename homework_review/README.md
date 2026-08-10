@@ -4,6 +4,7 @@
 
 本系统提供**自动化作业批阅**功能，支持：
 - **云端 OCR 解析** + **LLM 智能校验**（A+B 方案）
+- **作业批阅 Skills 批量测试**，支持多份学生作业、多次重复批阅和稳定性统计
 - 批量处理 Word 文档作业
 - 多次评测并生成统计数据
 - 自动生成 Excel 评分表（含均值、方差）
@@ -16,6 +17,8 @@
 | `homework_reviewer_v2.py` | 主程序，批阅流程控制 |
 | `llm_answer_corrector.py` | LLM 答案校验模块 |
 | `local_parser.py` | 本地 Word 解析模块（备用） |
+| `skill_review_service.py` | Skills 附件上传、批阅执行、报告轮询与结果标准化 |
+| `main.py` | Web API 与传统 / Skills 异步批阅任务调度 |
 | `.env.example` | 环境变量配置示例 |
 | `requirements.txt` | Python 依赖包列表 |
 
@@ -155,7 +158,40 @@ Web 端大批量任务使用短请求异步流程：
 
 同一服务实例每次执行 1 个批阅 Job，其余 Job 排队，避免多用户同时提交时叠加放大并发。
 
-### 5. 错误处理
+### 5. 作业批阅 Skills 批量测试
+
+Web 端在“作业批阅”页面选择“Skills 批阅测试”，填写：
+
+- 同一登录会话的 `Authorization` 和 `Cookie`
+- Skills 预览链接（会自动提取 `skillVersionId` 和 `skillNid`），或直接填写 `skillVersionId`
+- 所有学生共用的 `submissionRequirement`
+- 从平台 `GET /flow/bot/v1/list/model?scene=8` 加载并选择批阅模型
+- 每份作业的评测次数与最大并发数
+
+后台流程：
+
+1. 每份学生作业只上传一次，记录返回的 OSS 附件地址。
+2. 按“作业数 × 评测次数”创建独立 `taskId`，调用 `correction-skill/execute`。
+3. 轮询 `correction-skill/report-detail`，直到 `reportStatus` 进入成功或失败终态。
+4. 汇总总分、逐项得分、均值、方差，并展示综合评语、改进建议、数据验算明细与平台原始报告链接。
+
+Skills 异步任务沿用同一套 Job 接口，将启动步骤换为：
+
+```text
+POST /api/review/jobs/{job_id}/start-skill
+```
+
+模型下拉框通过同源代理读取：
+
+```text
+POST /api/review/skill-models
+```
+
+后端使用同一组 `Authorization` 和 `Cookie` 请求平台的 `scene=8` 模型列表，优先选中 `defaultFlag=1` 的模型，并将模型 `code` 作为执行接口的 `modelName`。
+
+任务结束后，`GET /api/review/jobs/{job_id}` 会在 `result.summary.engine` 返回 `skill`，并在 `result.scoreTable` 返回与传统批阅一致的统计结构。
+
+### 6. 错误处理
 
 - 解析失败的文件会被跳过，不影响其他文件
 - LLM 校验失败会使用原始解析结果

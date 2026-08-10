@@ -31,11 +31,14 @@ import {
   injectRuntimeAssetResolver,
   isCssFile,
   isHtmlFile,
+  isJavaScriptFile,
   isLocalProjectReference,
   type ProjectAsset,
   resolveProjectReference,
   rewriteCssReferences,
   rewriteHtmlReferences,
+  rewriteJavaScriptNavigationReferences,
+  rewriteJavaScriptReferences,
 } from "@/lib/html-project-publisher";
 
 const CREDENTIAL_STORAGE_KEY = "polymas-resource-uploader-credentials";
@@ -96,6 +99,10 @@ function formatBytes(bytes: number): string {
 
 function looksLikeStaticFileReference(reference: string): boolean {
   const pathname = reference.trim().split(/[?#]/, 1)[0];
+  if (!pathname || /\s|["'`(){}<>]/.test(pathname)) return false;
+  // A leading dot followed by a name is usually a CSS selector (for example
+  // `.card.active`), while ./ and ../ are genuine relative file paths.
+  if (/^\.[^./]/.test(pathname)) return false;
   return /(^|\/)[^/]+\.[a-z0-9]{1,12}$/i.test(pathname);
 }
 
@@ -310,11 +317,18 @@ export function ResourceUploadInterface() {
     let sourceHtml = "";
     const missingReferences = new Set<string>();
     try {
-      sourceHtml = await entry.file.text();
-      for (const reference of findHtmlReferences(sourceHtml)) {
-        if (!isLocalProjectReference(reference)) continue;
-        if (looksLikeStaticFileReference(reference) && !resolveProjectReference(reference, entry.path, projectIndex)) {
-          missingReferences.add(reference);
+      for (const htmlAsset of projectHtmlFiles) {
+        const html = await htmlAsset.file.text();
+        if (htmlAsset.path === entry.path) sourceHtml = html;
+        // Inline scripts contain selectors, event names and ordinary labels in
+        // quotes. Only explicit HTML/CSS references are safe to treat as
+        // required files during preflight; known JS paths are still rewritten
+        // later and dynamic paths are handled by the runtime manifest.
+        for (const reference of findHtmlReferences(html, { includeScriptStrings: false })) {
+          if (!isLocalProjectReference(reference)) continue;
+          if (looksLikeStaticFileReference(reference) && !resolveProjectReference(reference, htmlAsset.path, projectIndex)) {
+            missingReferences.add(`${htmlAsset.path} → ${reference}`);
+          }
         }
       }
       for (const stylesheet of projectAssets.filter((asset) => isCssFile(asset.path))) {
@@ -332,14 +346,6 @@ export function ResourceUploadInterface() {
       return;
     }
 
-    if (missingReferences.size > 0) {
-      const examples = [...missingReferences].slice(0, 5).join("；");
-      setProjectPhase("error");
-      setProjectProgress(0);
-      setProjectMessage(`发布已停止：项目文件夹内找不到 ${missingReferences.size} 个本地资源。请重新选择同时包含 HTML 和 assets 目录的项目根文件夹。缺失示例：${examples}`);
-      return;
-    }
-
     saveCredentials();
     setNotice("");
     setIsUploading(true);
@@ -349,14 +355,18 @@ export function ResourceUploadInterface() {
 
     const publicUrls = new Map<string, string>();
     const warnings = new Set<string>();
-    let replacementCount = 0;
-    if (projectHtmlFiles.length > 1) {
-      warnings.add("当前会发布选中的入口 HTML；入口中链接到其他本地 HTML 页的地址保持原样。多页面站点请分别选择每个页面发布。");
+    if (missingReferences.size > 0) {
+      const references = [...missingReferences];
+      const examples = references.slice(0, 5).join("；");
+      const remainder = references.length > 5 ? `；另有 ${references.length - 5} 处` : "";
+      warnings.add(`发现 ${references.length} 个未匹配的显式本地引用，已保留原路径并继续发布：${examples}${remainder}。若页面对应内容显示异常，请检查这些路径。`);
     }
-
-    const rawAssets = projectAssets.filter((asset) => !isHtmlFile(asset.path) && !isCssFile(asset.path));
+    let replacementCount = 0;
+    const rawAssets = projectAssets.filter((asset) => !isHtmlFile(asset.path) && !isCssFile(asset.path) && !isJavaScriptFile(asset.path));
     const cssAssets = projectAssets.filter((asset) => isCssFile(asset.path));
-    const totalOperations = Math.max(1, rawAssets.length + cssAssets.length + 1);
+    const scriptAssets = projectAssets.filter((asset) => isJavaScriptFile(asset.path));
+    const secondaryHtmlAssets = projectHtmlFiles.filter((asset) => asset.path !== entry.path);
+    const totalOperations = Math.max(1, rawAssets.length + cssAssets.length + scriptAssets.length + secondaryHtmlAssets.length + 1);
     let completedOperations = 0;
 
     const reportProgress = (partProgress = 0) => {
@@ -409,32 +419,65 @@ export function ResourceUploadInterface() {
       return url;
     };
 
-    try {
-      for (const asset of rawAssets) await uploadAsset(asset);
-      for (const asset of cssAssets) await prepareCss(asset.path);
+    const replaceKnownReference = (
+      reference: string,
+      sourcePath: string,
+      allowDocumentRelativeFallback = false,
+    ): string => {
+      const target = resolveProjectReference(reference, sourcePath, projectIndex)
+        || (allowDocumentRelativeFallback
+          ? resolveProjectReference(reference, entry.path, projectIndex)
+          : null);
+      if (!target) return reference;
+      const url = publicUrls.get(target.path);
+      if (!url) return reference;
+      replacementCount += 1;
+      return `${url}${target.suffix}`;
+    };
 
-      const rewrittenHtml = rewriteHtmlReferences(sourceHtml, (reference) => {
-        const target = resolveProjectReference(reference, entry.path, projectIndex);
-        if (!target) return reference;
-        const url = publicUrls.get(target.path);
-        if (url) {
-          replacementCount += 1;
-          return `${url}${target.suffix}`;
-        }
-        if (!isHtmlFile(target.path)) {
-          warnings.add(`未能自动替换 HTML 引用：${entry.path} → ${target.path}`);
-        }
-        return reference;
+    const prepareJavaScript = async (asset: ProjectAsset) => {
+      const content = await asset.file.text();
+      const withStaticUrls = rewriteJavaScriptReferences(content, (reference) =>
+        replaceKnownReference(reference, asset.path, true),
+      );
+      const rewritten = rewriteJavaScriptNavigationReferences(withStaticUrls);
+      const rewrittenFile = new File([rewritten], asset.file.name, {
+        type: asset.file.type || "text/javascript",
+        lastModified: asset.file.lastModified,
       });
-      const unreplaced = findHtmlReferences(rewrittenHtml).filter((reference) => {
+      return uploadAsset(asset, rewrittenFile);
+    };
+
+    const prepareHtml = async (asset: ProjectAsset, html: string) => {
+      const rewritten = rewriteHtmlReferences(html, (reference) =>
+        replaceKnownReference(reference, asset.path),
+      );
+      const unreplaced = findHtmlReferences(rewritten).filter((reference) => {
         if (!isLocalProjectReference(reference)) return false;
-        const target = resolveProjectReference(reference, entry.path, projectIndex);
+        const target = resolveProjectReference(reference, asset.path, projectIndex);
         return Boolean(target && !isHtmlFile(target.path) && publicUrls.has(target.path));
       });
       if (unreplaced.length > 0) {
-        throw new Error(`路径替换校验未通过，已停止发布：${unreplaced.slice(0, 5).join("；")}`);
+        warnings.add(`静态替换后仍检测到 ${unreplaced.length} 个引用，已交给运行时映射继续处理：${asset.path} → ${unreplaced.slice(0, 5).join("；")}`);
       }
-      const runtimeResolvedHtml = injectRuntimeAssetResolver(rewrittenHtml, publicUrls, entry.path);
+      return injectRuntimeAssetResolver(rewritten, publicUrls, asset.path);
+    };
+
+    try {
+      for (const asset of rawAssets) await uploadAsset(asset);
+      for (const asset of cssAssets) await prepareCss(asset.path);
+      for (const asset of scriptAssets) await prepareJavaScript(asset);
+      for (const htmlAsset of secondaryHtmlAssets) {
+        const html = await htmlAsset.file.text();
+        const preparedHtml = await prepareHtml(htmlAsset, html);
+        const preparedFile = new File([preparedHtml], htmlAsset.file.name, {
+          type: htmlAsset.file.type || "text/html",
+          lastModified: htmlAsset.file.lastModified,
+        });
+        await uploadAsset(htmlAsset, preparedFile);
+      }
+
+      const runtimeResolvedHtml = await prepareHtml(entry, sourceHtml);
       const publishedHtml = new File([runtimeResolvedHtml], entry.file.name, {
         type: entry.file.type || "text/html",
         lastModified: entry.file.lastModified,
@@ -562,7 +605,7 @@ export function ResourceUploadInterface() {
           <input ref={directoryInputRef} type="file" multiple className="hidden" onChange={onDirectoryChange} />
           <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm leading-6 text-slate-700">
             <p className="flex items-center gap-2 font-semibold text-indigo-900"><ListChecks className="h-4 w-4" />一键发布静态 HTML 项目</p>
-            <p className="mt-1">选择项目根目录后，系统会先上传图片、视频、音频、JS 等资源，再重写 CSS 与入口 HTML 中的静态本地路径，最终输出可分享的 HTML 链接。</p>
+            <p className="mt-1">选择项目根目录后，系统会先上传图片、视频、音频、JS 等资源，再重写 CSS 与入口 HTML 中的静态本地路径，最终输出可分享的 HTML 链接。无法确定的引用会原样保留并显示诊断，不会阻断整个项目发布。</p>
           </div>
           <div className="mt-4 flex min-h-48 flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/70 px-5 text-center">
             <div className="mb-3 rounded-xl bg-white p-3 shadow-sm"><FolderUp className="h-7 w-7 text-indigo-600" /></div>

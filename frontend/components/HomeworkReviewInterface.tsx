@@ -40,6 +40,7 @@ const DEFAULT_LEVEL_DEFINITIONS: Record<string, string> = {
 // ─── Session 持久化（刷新不丢失） ───
 interface SessionState {
   mode: "generate" | "review" | "generate-and-review";
+  reviewEngine?: "traditional" | "skill";
   generatedFiles: GeneratedAnswerFile[];
   generatedJobId: string;
   generatedOutputRoot: string;
@@ -54,6 +55,9 @@ interface SessionState {
   genAndReviewInputMode: "file" | "text";
   generateTextContent: string;
   genAndReviewTextContent: string;
+  skillReference?: string;
+  skillSubmissionRequirement?: string;
+  skillModelName?: string;
 }
 
 function saveSessionState(state: Partial<SessionState>) {
@@ -133,6 +137,13 @@ interface StudentScore {
 interface ScoreTable {
   attempts: number;
   students: StudentScore[];
+}
+
+interface SkillModelOption {
+  code: string;
+  description: string;
+  logo?: string;
+  isDefault?: boolean;
 }
 
 interface ReviewResult {
@@ -471,7 +482,7 @@ function summarizeReviewFailures(summary: any): { total: number; failed: number;
   const results: any[] = Array.isArray(summary?.results) ? summary.results : [];
   const failedItems = results.filter((item) => item && !item.success);
   const messages = Array.from(new Set(
-    failedItems.map((item) => extractReviewFailureMessage(item.result))
+    failedItems.map((item) => extractReviewFailureMessage(item.result ?? item))
   )).slice(0, 3);
 
   return {
@@ -531,12 +542,30 @@ function parseHomeworkInstanceNid(input: string): string {
   return "";
 }
 
+function parseCorrectionSkillReference(input: string): { skillNid: string; skillVersionId: string } {
+  const text = input.trim().replace(/^['"]|['"]$/g, "");
+  if (!text) return { skillNid: "", skillVersionId: "" };
+  if (/^[A-Za-z0-9_-]{6,80}$/.test(text)) {
+    return { skillNid: "", skillVersionId: text };
+  }
+  try {
+    const url = new URL(text);
+    return {
+      skillNid: url.searchParams.get("skillNid")?.trim() || "",
+      skillVersionId: url.searchParams.get("skillVersionId")?.trim() || "",
+    };
+  } catch {
+    return { skillNid: "", skillVersionId: "" };
+  }
+}
+
 export function HomeworkReviewInterface() {
   // 从 sessionStorage 恢复上次会话状态
   const saved = useRef(loadSessionState());
 
   // 模式选择: generate=仅生成答案, review=批阅评测, generate-and-review=生成并评测
   const [mode, setMode] = useState<"generate" | "review" | "generate-and-review">(saved.current?.mode || "generate");
+  const [reviewEngine, setReviewEngine] = useState<"traditional" | "skill">(saved.current?.reviewEngine || "traditional");
   const [selectedLevels, setSelectedLevels] = useState<string[]>(saved.current?.selectedLevels || LEVEL_OPTIONS);
 
   // 生成模式两步状态（跨 Tab 保留）
@@ -638,6 +667,16 @@ export function HomeworkReviewInterface() {
   const [instanceNid, setInstanceNid] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // 作业批阅 Skills 测试配置
+  const [skillReference, setSkillReference] = useState(saved.current?.skillReference || "");
+  const [skillSubmissionRequirement, setSkillSubmissionRequirement] = useState(saved.current?.skillSubmissionRequirement || "");
+  const [skillModelName, setSkillModelName] = useState(saved.current?.skillModelName || "");
+  const [skillModels, setSkillModels] = useState<SkillModelOption[]>([]);
+  const [skillModelsLoading, setSkillModelsLoading] = useState(false);
+  const [skillModelsError, setSkillModelsError] = useState<string | null>(null);
+  const skillModelRequestIdRef = useRef(0);
+  const parsedSkillReference = parseCorrectionSkillReference(skillReference);
+
   // LLM 设置（从全局设置读取）
   const [llmInfo, setLlmInfo] = useState({ apiKey: "", apiUrl: "", model: "" });
 
@@ -673,6 +712,77 @@ export function HomeworkReviewInterface() {
       setInstanceNid("");
     }
   };
+
+  const loadSkillModels = useCallback(async (signal?: AbortSignal) => {
+    const requestId = ++skillModelRequestIdRef.current;
+    if (!authorization.trim() || !cookie.trim()) {
+      setSkillModels([]);
+      setSkillModelsError(null);
+      setSkillModelsLoading(false);
+      return;
+    }
+
+    setSkillModelsLoading(true);
+    setSkillModelsError(null);
+    try {
+      const formData = new FormData();
+      formData.append("authorization", authorization.trim());
+      formData.append("cookie", cookie.trim());
+      formData.append("scene", "8");
+      const response = await fetch("/api/homework-review/skill-models", {
+        method: "POST",
+        body: formData,
+        cache: "no-store",
+        signal,
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response, "读取 Skills 批阅模型失败"));
+      }
+      const payload = await response.json();
+      const models = Array.isArray(payload.models) ? payload.models as SkillModelOption[] : [];
+      if (models.length === 0) {
+        throw new Error("平台未返回可用的 Skills 批阅模型");
+      }
+      if (requestId !== skillModelRequestIdRef.current) return;
+      setSkillModels(models);
+      setSkillModelName((current) => (
+        models.some((item) => item.code === current)
+          ? current
+          : String(payload.defaultModel || models.find((item) => item.isDefault)?.code || models[0].code)
+      ));
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      if (requestId !== skillModelRequestIdRef.current) return;
+      setSkillModels([]);
+      setSkillModelsError(error instanceof Error ? error.message : "读取 Skills 批阅模型失败");
+    } finally {
+      if (requestId === skillModelRequestIdRef.current) setSkillModelsLoading(false);
+    }
+  }, [authorization, cookie]);
+
+  useEffect(() => {
+    if (reviewEngine !== "skill") {
+      skillModelRequestIdRef.current += 1;
+      setSkillModelsLoading(false);
+      return;
+    }
+    if (!authorization.trim() || !cookie.trim()) {
+      skillModelRequestIdRef.current += 1;
+      setSkillModels([]);
+      setSkillModelsError(null);
+      setSkillModelsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void loadSkillModels(controller.signal);
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [reviewEngine, authorization, cookie, loadSkillModels]);
 
   useEffect(() => {
     const creds = loadCredentials();
@@ -714,6 +824,7 @@ export function HomeworkReviewInterface() {
     if (loading) return;
     saveSessionState({
       mode,
+      reviewEngine,
       generatedFiles,
       generatedJobId,
       generatedOutputRoot,
@@ -728,11 +839,15 @@ export function HomeworkReviewInterface() {
       genAndReviewInputMode,
       generateTextContent,
       genAndReviewTextContent,
+      skillReference,
+      skillSubmissionRequirement,
+      skillModelName,
     });
   }, [mode, generatedFiles, generatedJobId, generatedOutputRoot, genPhase,
     generateLogs, reviewLogs, genAndReviewLogs, reviewResult, genAndReviewResult,
     selectedLevels, generateInputMode, genAndReviewInputMode,
-    generateTextContent, genAndReviewTextContent, loading]);
+    generateTextContent, genAndReviewTextContent, reviewEngine, skillReference,
+    skillSubmissionRequirement, skillModelName, loading]);
 
   const appendLog = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
@@ -948,43 +1063,53 @@ export function HomeworkReviewInterface() {
     const startForm = new FormData();
     startForm.append("authorization", authorization.trim());
     startForm.append("cookie", cookie.trim());
-    startForm.append("instance_nid", instanceNid.trim());
     startForm.append("attempts", String(Math.max(1, attempts)));
-    startForm.append("output_format", outputFormat);
-    startForm.append("local_parse", String(localParse));
     startForm.append("max_concurrency", String(clampReviewConcurrency(maxConcurrency)));
-    if (llm.apiKey) startForm.append("llm_api_key", llm.apiKey);
-    if (llm.apiUrl) startForm.append("llm_api_url", llm.apiUrl);
-    if (llm.model) startForm.append("llm_model", MODEL_NAME_MAPPING[llm.model] || llm.model);
+    let startPath = "start";
+    if (reviewEngine === "skill") {
+      startPath = "start-skill";
+      startForm.append("skill_version_id", parsedSkillReference.skillVersionId);
+      startForm.append("skill_nid", parsedSkillReference.skillNid);
+      startForm.append("submission_requirement", skillSubmissionRequirement.trim());
+      startForm.append("student_submission", "见附件");
+      startForm.append("model_name", skillModelName.trim());
+    } else {
+      startForm.append("instance_nid", instanceNid.trim());
+      startForm.append("output_format", outputFormat);
+      startForm.append("local_parse", String(localParse));
+      if (llm.apiKey) startForm.append("llm_api_key", llm.apiKey);
+      if (llm.apiUrl) startForm.append("llm_api_url", llm.apiUrl);
+      if (llm.model) startForm.append("llm_model", MODEL_NAME_MAPPING[llm.model] || llm.model);
 
-    const skippedNames = reviewTargets
-      .filter((file) => skipLLMFiles.has(getUploadedFileKey(file)))
-      .map((file) => storedNameByKey.get(getUploadedFileKey(file)) || file.name);
-    if (skippedNames.length > 0) {
-      startForm.append("skip_llm_files", JSON.stringify(skippedNames));
-    }
+      const skippedNames = reviewTargets
+        .filter((file) => skipLLMFiles.has(getUploadedFileKey(file)))
+        .map((file) => storedNameByKey.get(getUploadedFileKey(file)) || file.name);
+      if (skippedNames.length > 0) {
+        startForm.append("skip_llm_files", JSON.stringify(skippedNames));
+      }
 
-    if (fileGroups.size > 0) {
-      const groups: Record<string, string[]> = {};
-      fileGroups.forEach((group) => {
-        const names = group.fileKeys
-          .map((key) => storedNameByKey.get(key))
-          .filter((value): value is string => Boolean(value));
-        if (names.length > 1) groups[group.name] = names;
-      });
-      if (Object.keys(groups).length > 0) {
-        startForm.append("file_groups", JSON.stringify(groups));
+      if (fileGroups.size > 0) {
+        const groups: Record<string, string[]> = {};
+        fileGroups.forEach((group) => {
+          const names = group.fileKeys
+            .map((key) => storedNameByKey.get(key))
+            .filter((value): value is string => Boolean(value));
+          if (names.length > 1) groups[group.name] = names;
+        });
+        if (Object.keys(groups).length > 0) {
+          startForm.append("file_groups", JSON.stringify(groups));
+        }
       }
     }
 
     const startResponse = await fetch(
-      `/api/homework-review/jobs/${encodeURIComponent(jobId)}/start`,
+      `/api/homework-review/jobs/${encodeURIComponent(jobId)}/${startPath}`,
       { method: "POST", body: startForm, signal },
     );
     if (!startResponse.ok) {
       throw new Error(await readApiError(startResponse, "启动后台批阅失败"));
     }
-    appendLog(`✅ ${reviewTargets.length} 份作业已全部提交，后台并发上限 ${clampReviewConcurrency(maxConcurrency)}`);
+    appendLog(`✅ ${reviewTargets.length} 份作业已全部提交到${reviewEngine === "skill" ? " Skills 测试" : "传统批阅"}队列，并发上限 ${clampReviewConcurrency(maxConcurrency)}`);
 
     let cursor = 0;
     let pollFailures = 0;
@@ -1070,10 +1195,10 @@ export function HomeworkReviewInterface() {
     const hasPastedText = pastedText.trim().length > 0;
     // 批阅模式：支持从 generatedFiles（服务器路径）或 files（上传文件）开始
     const hasUploadedFiles = files.length > 0;
-    const hasGeneratedFiles = mode === "review" && generatedFiles.length > 0;
+    const hasGeneratedFiles = mode === "review" && reviewEngine === "traditional" && generatedFiles.length > 0;
 
     if (mode === "review" && !hasUploadedFiles && !hasGeneratedFiles) {
-      setError("请先选择作业文件（或从「生成答案」Tab 生成后切换过来）");
+      setError(reviewEngine === "skill" ? "请先选择用于 Skills 测试的学生作业文件" : "请先选择作业文件（或从「生成答案」Tab 生成后切换过来）");
       return;
     }
     if (isGenerateMode && !usingTextInput && !hasUploadedFiles) {
@@ -1102,9 +1227,35 @@ export function HomeworkReviewInterface() {
 
     // 仅生成答案模式只需 LLM Key，不需要智慧树认证
     const needsAuth = mode === "review" || mode === "generate-and-review";
-    if (needsAuth && (!authorization.trim() || !cookie.trim() || !instanceNid.trim())) {
+    if (needsAuth && (!authorization.trim() || !cookie.trim())) {
       setError("请填写完整的智慧树平台认证信息");
       return;
+    }
+    if (needsAuth && (mode === "generate-and-review" || reviewEngine === "traditional") && !instanceNid.trim()) {
+      setError("请填写作业链接或 Instance NID");
+      return;
+    }
+    if (mode === "review" && reviewEngine === "skill") {
+      if (!parsedSkillReference.skillVersionId) {
+        setError("请填写 Skills 预览链接或 Skill Version ID");
+        return;
+      }
+      if (!skillSubmissionRequirement.trim()) {
+        setError("请填写所有学生共用的作业要求");
+        return;
+      }
+      if (!skillModelName.trim()) {
+        setError("请选择 Skills 批阅模型");
+        return;
+      }
+      if (skillModelsLoading) {
+        setError("Skills 批阅模型正在加载，请稍候");
+        return;
+      }
+      if (!skillModels.some((item) => item.code === skillModelName)) {
+        setError("请先刷新并选择平台当前可用的 Skills 批阅模型");
+        return;
+      }
     }
 
     // 生成答案模式需要 LLM Key
@@ -1146,14 +1297,14 @@ export function HomeworkReviewInterface() {
       setElapsedSeconds((prev) => prev + 1);
     }, 1000);
 
-    const modeLabels = { generate: "生成学生答案", review: "批阅评测", "generate-and-review": "生成并评测" };
+    const modeLabels = { generate: "生成学生答案", review: reviewEngine === "skill" ? " Skills 批量测试" : "批阅评测", "generate-and-review": "生成并评测" };
     appendLog(`🚀 开始${modeLabels[mode]}...`);
 
     try {
       if (mode === "review" && hasUploadedFiles) {
         const completedResult = await runUploadedReviewJob(files, llm);
         setResult(completedResult);
-        appendLog("🎉 批阅全部完成！");
+        appendLog(reviewEngine === "skill" ? "🎉 Skills 批量测试全部完成！" : "🎉 批阅全部完成！");
 
         const failureSummary = summarizeReviewFailures(completedResult.summary);
         if (failureSummary.total > 0 && failureSummary.failed > 0) {
@@ -1722,11 +1873,50 @@ export function HomeworkReviewInterface() {
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900">智慧树平台认证</h2>
-              <p className="text-xs text-slate-500">从浏览器开发者工具获取认证信息，本地保存不上传</p>
+              <p className="text-xs text-slate-500">认证信息仅用于调用智慧树接口，不写入服务端任务状态</p>
             </div>
           </div>
 
           <div className="space-y-4">
+            {mode === "review" && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">批阅引擎</label>
+                <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReviewEngine("traditional");
+                      setReviewResult(null);
+                      setReviewError(null);
+                      setReviewLogs([]);
+                    }}
+                    disabled={loading}
+                    className={clsx(
+                      "rounded-lg px-3 py-2 text-sm font-semibold transition",
+                      reviewEngine === "traditional" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800",
+                    )}
+                  >
+                    传统作业批阅
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReviewEngine("skill");
+                      setReviewResult(null);
+                      setReviewError(null);
+                      setReviewLogs([]);
+                    }}
+                    disabled={loading}
+                    className={clsx(
+                      "rounded-lg px-3 py-2 text-sm font-semibold transition",
+                      reviewEngine === "skill" ? "bg-white text-violet-700 shadow-sm" : "text-slate-500 hover:text-slate-800",
+                    )}
+                  >
+                    Skills 批阅测试
+                  </button>
+                </div>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Authorization</label>
               <input
@@ -1747,31 +1937,114 @@ export function HomeworkReviewInterface() {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">作业链接 / Instance NID</label>
-              <input
-                type="text"
-                value={instanceInput}
-                onChange={(e) => handleInstanceInputChange(e.target.value)}
-                placeholder="请粘贴智慧树作业批阅页面完整链接，或直接填写 XLRNIzbkox"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              />
-              {instanceInput.trim() && (
-                <div className={clsx("mt-1 text-xs", instanceNid ? "text-emerald-600" : "text-red-500")}>
-                  {instanceNid
-                    ? `已提取 Instance NID：${instanceNid}`
-                    : "未从链接中识别到 Instance NID，请确认链接包含 instanceNid/instanceId 参数"}
+            {mode === "review" && reviewEngine === "skill" ? (
+              <div className="space-y-4 rounded-2xl border border-violet-200 bg-violet-50/50 p-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Skills 预览链接 / Skill Version ID</label>
+                  <input
+                    type="text"
+                    value={skillReference}
+                    onChange={(e) => setSkillReference(e.target.value)}
+                    placeholder="粘贴 preview-skill 链接，或填写 mn8XwXQrEF"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                  />
+                  {skillReference.trim() && (
+                    <div className={clsx("mt-1 text-xs", parsedSkillReference.skillVersionId ? "text-emerald-600" : "text-red-500")}>
+                      {parsedSkillReference.skillVersionId
+                        ? `已提取 Version ID：${parsedSkillReference.skillVersionId}${parsedSkillReference.skillNid ? `；Skill NID：${parsedSkillReference.skillNid}` : ""}`
+                        : "链接中缺少 skillVersionId"}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            {/* LLM 信息提示 */}
-            <div className="flex items-start gap-2 bg-indigo-50 text-indigo-700 text-xs rounded-lg px-3 py-2">
-              <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              <span>
-                LLM 配置自动复用全局设置（右上角 ⚙️ 设置），当前模型：
-                <strong>{llmInfo.model || "未配置"}</strong>
-              </span>
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">所有学生共用的作业要求</label>
+                  <textarea
+                    value={skillSubmissionRequirement}
+                    onChange={(e) => setSkillSubmissionRequirement(e.target.value)}
+                    rows={8}
+                    placeholder="粘贴实验报告要求、评分标准、格式要求等完整内容..."
+                    className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                  />
+                  <div className="mt-1 text-right text-[11px] text-slate-400">{skillSubmissionRequirement.trim().length} 字</div>
+                </div>
+                <div>
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <label className="block text-sm font-medium text-slate-700">Skills 批阅模型</label>
+                    <button
+                      type="button"
+                      onClick={() => void loadSkillModels()}
+                      disabled={skillModelsLoading || !authorization.trim() || !cookie.trim()}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-violet-600 hover:text-violet-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                    >
+                      <RefreshCw className={clsx("h-3.5 w-3.5", skillModelsLoading && "animate-spin")} />
+                      刷新模型
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <select
+                    value={skillModelName}
+                    onChange={(e) => setSkillModelName(e.target.value)}
+                      disabled={skillModelsLoading || skillModels.length === 0}
+                      className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2 pr-10 text-sm focus:border-transparent focus:ring-2 focus:ring-violet-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                    >
+                      <option value="">
+                        {skillModelsLoading
+                          ? "正在加载模型..."
+                          : authorization.trim() && cookie.trim()
+                            ? "请选择批阅模型"
+                            : "请先填写 Authorization 和 Cookie"}
+                      </option>
+                      {skillModels.map((model) => (
+                        <option key={model.code} value={model.code}>
+                          {model.description || model.code}{model.isDefault ? "（默认）" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {skillModelsLoading && (
+                      <Loader2 className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-violet-500" />
+                    )}
+                  </div>
+                  {skillModelsError ? (
+                    <p className="mt-1 text-xs text-red-600">{skillModelsError}</p>
+                  ) : skillModelName ? (
+                    <p className="mt-1 text-xs text-emerald-600">
+                      执行时使用模型代码：{skillModelName}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex items-start gap-2 text-xs text-violet-700">
+                  <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>每份学生作业上传一次，再按评测次数生成独立 taskId；系统持续轮询报告并统计均值与方差。</span>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">作业链接 / Instance NID</label>
+                  <input
+                    type="text"
+                    value={instanceInput}
+                    onChange={(e) => handleInstanceInputChange(e.target.value)}
+                    placeholder="请粘贴智慧树作业批阅页面完整链接，或直接填写 XLRNIzbkox"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  {instanceInput.trim() && (
+                    <div className={clsx("mt-1 text-xs", instanceNid ? "text-emerald-600" : "text-red-500")}>
+                      {instanceNid
+                        ? `已提取 Instance NID：${instanceNid}`
+                        : "未从链接中识别到 Instance NID，请确认链接包含 instanceNid/instanceId 参数"}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-start gap-2 bg-indigo-50 text-indigo-700 text-xs rounded-lg px-3 py-2">
+                  <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>
+                    LLM 配置自动复用全局设置（右上角 ⚙️ 设置），当前模型：
+                    <strong>{llmInfo.model || "未配置"}</strong>
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1785,13 +2058,13 @@ export function HomeworkReviewInterface() {
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900">
-                {mode === "generate" ? "生成学生答案" : mode === "review" ? "上传作业文件" : "生成并评测"}
+                {mode === "generate" ? "生成学生答案" : mode === "review" ? (reviewEngine === "skill" ? "Skills 批量测试" : "上传作业文件") : "生成并评测"}
               </h2>
               <p className="text-xs text-slate-500">
                 {mode === "generate"
                   ? "上传空白题卷或直接粘贴文字，使用 LLM 生成多等级学生答案（无需智慧树认证）"
                   : mode === "review"
-                    ? "上传学生作业文档，自动解析并批阅"
+                    ? (reviewEngine === "skill" ? "批量上传学生作业，通过指定 Skill 重复批阅并统计稳定性" : "上传学生作业文档，自动解析并批阅")
                     : "上传空白题卷或直接粘贴文字，自动生成多等级答案并评测"}
               </p>
             </div>
@@ -1959,7 +2232,9 @@ export function HomeworkReviewInterface() {
                 });
               };
               const groupedKeys = new Set<string>();
-              fileGroups.forEach(g => g.fileKeys.forEach(k => groupedKeys.add(k)));
+              if (reviewEngine === "traditional") {
+                fileGroups.forEach(g => g.fileKeys.forEach(k => groupedKeys.add(k)));
+              }
               const ungroupedFiles = files.filter(f => !groupedKeys.has(getUploadedFileKey(f)));
 
               const renderFileRow = (file: File, inGroup = false) => {
@@ -1976,7 +2251,7 @@ export function HomeworkReviewInterface() {
                     )}
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      {!inGroup && mode === "review" && (
+                      {!inGroup && mode === "review" && reviewEngine === "traditional" && (
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -1995,7 +2270,7 @@ export function HomeworkReviewInterface() {
                       <div className="text-sm text-slate-700 truncate">{file.name}</div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                      {mode === "review" && (
+                      {mode === "review" && reviewEngine === "traditional" && (
                         <label className="flex items-center gap-1 cursor-pointer select-none" title="跳过 LLM 校验">
                           <input
                             type="checkbox"
@@ -2027,7 +2302,7 @@ export function HomeworkReviewInterface() {
 
               return (
                 <div className="mt-4 space-y-2 max-h-72 overflow-auto">
-                  {mode === "review" && (
+                  {mode === "review" && reviewEngine === "traditional" && (
                     <div className="sticky top-0 z-10 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
                       <span className="font-semibold">已选择 {files.length} / {MAX_REVIEW_FILES} 份作业</span>
                       <label
@@ -2053,7 +2328,7 @@ export function HomeworkReviewInterface() {
                     </div>
                   )}
                   {/* 已分组的文件 */}
-                  {Array.from(fileGroups.entries()).map(([gid, group]) => {
+                  {reviewEngine === "traditional" && Array.from(fileGroups.entries()).map(([gid, group]) => {
                     const groupFiles = group.fileKeys
                       .map(k => files.find(f => getUploadedFileKey(f) === k))
                       .filter(Boolean) as File[];
@@ -2088,7 +2363,7 @@ export function HomeworkReviewInterface() {
 
                   {/* 合并按钮 + 清空 */}
                   <div className="flex items-center gap-3">
-                    {mode === "review" && selectedForGroup.size >= 2 && (
+                    {mode === "review" && reviewEngine === "traditional" && selectedForGroup.size >= 2 && (
                       <button
                         className="text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg px-3 py-1.5"
                         onClick={() => {
@@ -2118,7 +2393,7 @@ export function HomeworkReviewInterface() {
             })()}
 
             {/* 批阅模式下：显示从「生成答案」Tab 带过来的文件 */}
-            {mode === "review" && generatedFiles.length > 0 && files.length === 0 && (
+            {mode === "review" && reviewEngine === "traditional" && generatedFiles.length > 0 && files.length === 0 && (
               <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -2301,15 +2576,21 @@ export function HomeworkReviewInterface() {
                     <input
                       type="number"
                       min={1}
+                      max={mode === "review" && reviewEngine === "skill" ? 20 : undefined}
                       value={attempts}
                       onChange={(e) => setAttempts(Number(e.target.value))}
                       className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                     />
+                    {mode === "review" && reviewEngine === "skill" && (
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        总运行次数 = 学生作业份数 × 评测次数，单份最多 20 次。
+                      </p>
+                    )}
                   </div>
                 )}
 
                 {/* 输出格式（批阅时才需要） */}
-                {(mode === "review" || mode === "generate-and-review") && (
+                {(mode === "generate-and-review" || (mode === "review" && reviewEngine === "traditional")) && (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">输出格式</label>
                     <select
@@ -2336,17 +2617,19 @@ export function HomeworkReviewInterface() {
 
                     {showAdvanced && (
                       <div className="space-y-3 pl-2 border-l-2 border-slate-100">
-                        <div className="flex items-center gap-2">
-                          <input
-                            id="localParse"
-                            type="checkbox"
-                            checked={localParse}
-                            onChange={(e) => setLocalParse(e.target.checked)}
-                          />
-                          <label htmlFor="localParse" className="text-sm text-slate-700">
-                            使用本地解析（跳过云端 OCR）
-                          </label>
-                        </div>
+                        {(mode === "generate-and-review" || reviewEngine === "traditional") && (
+                          <div className="flex items-center gap-2">
+                            <input
+                              id="localParse"
+                              type="checkbox"
+                              checked={localParse}
+                              onChange={(e) => setLocalParse(e.target.checked)}
+                            />
+                            <label htmlFor="localParse" className="text-sm text-slate-700">
+                              使用本地解析（跳过云端 OCR）
+                            </label>
+                          </div>
+                        )}
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">最大并发数</label>
                           <input
@@ -2410,12 +2693,14 @@ export function HomeworkReviewInterface() {
                     {loading ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        {genPhase === "generating" ? "生成中" : genPhase === "reviewing" ? "批阅中" : "处理中"} ({formatTime(elapsedSeconds)})
+                        {genPhase === "generating" ? "生成中" : genPhase === "reviewing" ? "批阅中" : mode === "review" && reviewEngine === "skill" ? "Skills 批阅中" : "处理中"} ({formatTime(elapsedSeconds)})
                       </>
                     ) : mode === "generate" ? (
                       "生成学生答案"
                     ) : mode === "generate-and-review" ? (
                       "生成并评测"
+                    ) : reviewEngine === "skill" ? (
+                      "开始 Skills 批量测试"
                     ) : (
                       "开始批阅"
                     )}
@@ -2569,8 +2854,14 @@ export function HomeworkReviewInterface() {
                 <ScoreTableView scoreTable={scoreTable} />
               )}
 
-              {/* 输出文件下载 */}
-              <OutputFilesSection result={result} downloadLink={downloadLink} />
+              {result.summary?.engine === "skill" && (
+                <SkillReviewDetails summary={result.summary} />
+              )}
+
+              {/* 传统批阅会生成可下载文件；Skills 结果直接在页面展示 */}
+              {result.summary?.engine !== "skill" && (
+                <OutputFilesSection result={result} downloadLink={downloadLink} />
+              )}
             </div>
           );
         })()}
@@ -2834,7 +3125,7 @@ export function HomeworkReviewInterface() {
 }
 
       /* 分数单元格，低分标红高分标绿 */
-      function ScoreCell({value, fullMark}: {value: number | null; fullMark: number }) {
+function ScoreCell({value, fullMark}: {value: number | null; fullMark: number }) {
   if (value == null) return <span className="text-slate-300">—</span>;
   const ratio = fullMark > 0 ? value / fullMark : 0;
       return (
@@ -2849,6 +3140,133 @@ export function HomeworkReviewInterface() {
         {value}
       </span>
       );
+}
+
+function SkillReviewDetails({ summary }: { summary: any }) {
+  const results: any[] = Array.isArray(summary?.results) ? summary.results : [];
+  return (
+    <div className="bg-white rounded-3xl shadow-sm border border-violet-200 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-8 py-5 border-b border-violet-100 bg-violet-50/50">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">Skills 测试报告明细</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Version {summary.skillVersionId} · 模型 {summary.modelName} · 成功 {summary.succeededRuns}/{summary.totalRuns} 次
+          </p>
+        </div>
+        <span className={clsx(
+          "rounded-full px-3 py-1 text-xs font-semibold",
+          summary.failedRuns > 0 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700",
+        )}>
+          {summary.failedRuns > 0 ? `${summary.failedRuns} 次失败` : "全部成功"}
+        </span>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {results.map((item, index) => (
+          <details key={`${item.taskId || item.fileName}-${item.attemptIndex}-${index}`} className="group px-6 py-4">
+            <summary className="flex cursor-pointer list-none flex-wrap items-center gap-3 text-sm">
+              <span className={clsx(
+                "inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-bold",
+                item.success ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700",
+              )}>
+                {item.success ? "成功" : "失败"}
+              </span>
+              <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">{item.fileName}</span>
+              <span className="text-xs text-slate-500">第 {item.attemptIndex} 次</span>
+              <span className="font-bold text-indigo-700">
+                {item.totalScore ?? "—"}{item.fullMark != null ? ` / ${item.fullMark}` : ""}
+              </span>
+              <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
+            </summary>
+            <div className="mt-4 space-y-4 pl-9">
+              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                <span>Task ID：<code className="font-mono">{item.taskId || "—"}</code></span>
+                <span>状态：{item.reportStatus || "—"}</span>
+                {item.finishedAt && <span>完成：{item.finishedAt}</span>}
+                {item.reportUrl && (
+                  <a href={item.reportUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-violet-600 hover:text-violet-800">
+                    打开平台报告 ↗
+                  </a>
+                )}
+              </div>
+              {item.error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{item.error}</div>
+              )}
+              {Array.isArray(item.items) && item.items.length > 0 && (
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-50 text-slate-600">
+                      <tr>
+                        <th className="px-3 py-2 text-left">评分项</th>
+                        <th className="w-24 px-3 py-2 text-center">得分</th>
+                        <th className="px-3 py-2 text-left">评语</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {item.items.map((scoreItem: any, scoreIndex: number) => (
+                        <tr key={`${scoreItem.itemIndex ?? scoreIndex}-${scoreIndex}`}>
+                          <td className="px-3 py-2 font-medium text-slate-700">{scoreItem.itemName}</td>
+                          <td className="px-3 py-2 text-center font-bold text-indigo-700">{scoreItem.itemScore ?? "—"}/{scoreItem.itemFullMark ?? "—"}</td>
+                          <td className="px-3 py-2 leading-relaxed text-slate-600">{scoreItem.comment || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {Array.isArray(item.sections) && item.sections.filter((section: any) => section.title).length > 0 && (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {item.sections.filter((section: any) => section.title).map((section: any) => (
+                    <div key={section.surfaceId} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="mb-2 text-sm font-semibold text-slate-800">{section.title}</div>
+                      <div className="space-y-2">
+                        {(section.cards || []).map((card: any, cardIndex: number) => (
+                          <div key={cardIndex} className="rounded-lg bg-white p-2 text-xs text-slate-600">
+                            {card.subtitle && <div className="font-semibold text-slate-700">{card.subtitle}</div>}
+                            {card.description && <div className="mt-1 leading-relaxed">{card.description}</div>}
+                          </div>
+                        ))}
+                        {(section.entries || []).map((entry: any, entryIndex: number) => (
+                          <div key={`entry-${entryIndex}`} className="rounded-lg border border-slate-100 bg-white p-3 text-xs text-slate-600">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="font-semibold text-slate-800">{entry.title || `验算项 ${entryIndex + 1}`}</div>
+                              {entry.status?.label && (
+                                <span className={clsx(
+                                  "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                                  entry.status.type === "success"
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : entry.status.type === "danger"
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-amber-100 text-amber-700",
+                                )}>
+                                  {entry.status.label}
+                                </span>
+                              )}
+                            </div>
+                            {entry.description && <div className="mt-1 leading-relaxed">{entry.description}</div>}
+                            {(entry.sideA || entry.sideB) && (
+                              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                {[entry.sideA, entry.sideB].filter(Boolean).map((side: any, sideIndex: number) => (
+                                  <div key={sideIndex} className="rounded-md bg-slate-50 p-2">
+                                    <div className="font-semibold text-slate-700">{side.label || (sideIndex === 0 ? "学生值" : "验算值")}</div>
+                                    {side.title && <div className="mt-1 text-slate-700">{side.title}</div>}
+                                    {side.description && <div className="mt-1 leading-relaxed text-slate-500">{side.description}</div>}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </details>
+        ))}
+      </div>
+    </div>
+  );
 }
 
       /* ─────────────────────────────────────────────────────────────────────
@@ -2915,12 +3333,13 @@ export function HomeworkReviewInterface() {
       const failureSummary = summarizeReviewFailures(result.summary);
       const hasFailures = failureSummary.total > 0 && failureSummary.failed > 0;
       const allFailed = hasFailures && failureSummary.failed === failureSummary.total;
+      const isSkillReview = result.summary?.engine === "skill";
 
       return (
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8">
           <div className={clsx("flex items-center gap-2 mb-3", allFailed ? "text-red-600" : "text-emerald-600")}>
             {allFailed ? <AlertCircle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
-            <span className="font-semibold text-lg">{allFailed ? "批阅失败" : "批阅完成"}</span>
+            <span className="font-semibold text-lg">{allFailed ? (isSkillReview ? "Skills 测试失败" : "批阅失败") : (isSkillReview ? "Skills 测试完成" : "批阅完成")}</span>
           </div>
           <div className="text-sm text-slate-500 mb-4">
             Job ID: <span className="font-mono">{result.jobId}</span>
@@ -2943,7 +3362,9 @@ export function HomeworkReviewInterface() {
                 {failureSummary.messages.join("；") || "未知错误"}
               </div>
               <div className="mt-1 text-xs text-red-600">
-                若提示“智能体配置错误”，请确认链接中提取的 Instance NID 是否对应当前作业，并更新 Authorization/Cookie 后重试。
+                {isSkillReview
+                  ? "请检查 Skill Version ID、批阅模型和 Authorization/Cookie 后重试。"
+                  : "若提示“智能体配置错误”，请确认链接中提取的 Instance NID 是否对应当前作业，并更新 Authorization/Cookie 后重试。"}
               </div>
             </div>
           )}

@@ -2014,7 +2014,7 @@ export function HomeworkReviewInterface() {
                 </div>
                 <div className="flex items-start gap-2 text-xs text-violet-700">
                   <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <span>每份学生作业上传一次，再按评测次数生成独立 taskId；系统持续轮询报告并统计均值与方差。</span>
+                  <span>每份学生作业上传一次，再按评测次数生成独立 taskId；系统持续轮询报告并统计均值与方差，直到平台返回终态。</span>
                 </div>
               </div>
             ) : (

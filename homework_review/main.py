@@ -300,7 +300,6 @@ async def execute_skill_attempt(
     submission_requirement: str,
     student_submission: str,
     poll_interval_seconds: int,
-    poll_timeout_seconds: int,
 ) -> Dict[str, Any]:
     task_id = make_skill_task_id()
     report_url = platform_report_url(
@@ -362,8 +361,6 @@ async def execute_skill_attempt(
                 }
 
             elapsed = int(time.monotonic() - started_at)
-            if elapsed >= poll_timeout_seconds:
-                raise TimeoutError(f"等待批阅报告超过 {poll_timeout_seconds} 秒")
             if elapsed >= next_wait_log:
                 append_review_job_log(
                     job,
@@ -400,7 +397,6 @@ async def execute_async_skill_review_job(
     attempts: int,
     max_concurrency: int,
     poll_interval_seconds: int,
-    poll_timeout_seconds: int,
 ) -> None:
     job = get_review_job(job_id)
     job["status"] = "running"
@@ -472,7 +468,6 @@ async def execute_async_skill_review_job(
                         submission_requirement=submission_requirement,
                         student_submission=student_submission,
                         poll_interval_seconds=poll_interval_seconds,
-                        poll_timeout_seconds=poll_timeout_seconds,
                     )
             results.append(result)
             completed_runs += 1
@@ -1061,7 +1056,6 @@ async def start_skill_review_job(
     attempts: int = Form(1),
     max_concurrency: int = Form(3),
     poll_interval_seconds: int = Form(5),
-    poll_timeout_seconds: int = Form(1200),
 ):
     """启动多份学生作业的 Skills 批量测试。"""
     job = get_review_job(job_id)
@@ -1087,7 +1081,6 @@ async def start_skill_review_job(
     normalized_attempts = min(20, max(1, attempts))
     concurrency = clamp_review_concurrency(max_concurrency)
     poll_interval = min(30, max(2, poll_interval_seconds))
-    poll_timeout = min(3600, max(60, poll_timeout_seconds))
     job["status"] = "queued"
     job["engine"] = "skill"
     job["configuredConcurrency"] = concurrency
@@ -1107,7 +1100,6 @@ async def start_skill_review_job(
         attempts=normalized_attempts,
         max_concurrency=concurrency,
         poll_interval_seconds=poll_interval,
-        poll_timeout_seconds=poll_timeout,
     ))
     REVIEW_JOB_TASKS.add(task)
     job["_task"] = task

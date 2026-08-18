@@ -4,7 +4,7 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import {
   Upload, X, CheckCircle2, Loader2, FileDown, AlertCircle,
   Key, ChevronDown, ChevronUp, Settings2, Info, Terminal,
-  Table2, FolderOpen, Clock, Trash2, Eye, EyeOff, RefreshCw, Type
+  Table2, FolderOpen, Clock, Trash2, Eye, EyeOff, RefreshCw, Type, Sparkles
 } from "lucide-react";
 import clsx from "clsx";
 import { MODEL_NAME_MAPPING } from "@/lib/config";
@@ -13,6 +13,7 @@ import {
   LLM_SETTINGS_UPDATED_EVENT,
   loadLLMSettingsFromStorage,
 } from "@/lib/llm/settings";
+import { useAuth } from "./AuthProvider";
 
 const STORAGE_KEY = "homework-review-credentials";
 const HISTORY_KEY = "homework-review-history";
@@ -146,6 +147,38 @@ interface SkillModelOption {
   isDefault?: boolean;
 }
 
+interface SkillPackageUploadResult {
+  skillNid: string;
+  skillVersionId: string;
+  name: string;
+  cnName?: string;
+  description?: string;
+  iconUrl?: string;
+  typeTagId: number;
+  metadataUpdated: boolean;
+  previewUrl: string;
+}
+
+interface GeneratedSkillPackageResponse {
+  zipFileName: string;
+  zipBase64: string;
+  skillName: string;
+  displayName: string;
+  description: string;
+  submissionRequirement: string;
+  upload: SkillPackageUploadResult | null;
+  uploadError?: string | null;
+  model?: string;
+}
+
+interface GeneratedStudentSample {
+  name: string;
+  contentType: string;
+  base64: string;
+  level: string;
+  size: number;
+}
+
 interface ReviewResult {
   jobId: string;
   outputFiles: string[];
@@ -216,6 +249,15 @@ function splitSmallReviewFiles(files: File[]): File[][] {
 async function readApiError(response: Response, fallback: string): Promise<string> {
   const payload = await response.json().catch(() => null);
   return payload?.detail || payload?.error || payload?.message || `${fallback}（HTTP ${response.status}）`;
+}
+
+function base64ToFile(base64: string, fileName: string, contentType: string): File {
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new File([bytes], fileName, { type: contentType, lastModified: Date.now() });
 }
 
 function loadCredentials(): Credentials {
@@ -542,24 +584,40 @@ function parseHomeworkInstanceNid(input: string): string {
   return "";
 }
 
-function parseCorrectionSkillReference(input: string): { skillNid: string; skillVersionId: string } {
+function parseCorrectionSkillReference(input: string): { skillNid: string; skillVersionId: string; skillType: string } {
   const text = input.trim().replace(/^['"]|['"]$/g, "");
-  if (!text) return { skillNid: "", skillVersionId: "" };
+  if (!text) return { skillNid: "", skillVersionId: "", skillType: "1" };
   if (/^[A-Za-z0-9_-]{6,80}$/.test(text)) {
-    return { skillNid: "", skillVersionId: text };
+    return { skillNid: "", skillVersionId: text, skillType: "1" };
   }
   try {
     const url = new URL(text);
     return {
       skillNid: url.searchParams.get("skillNid")?.trim() || "",
       skillVersionId: url.searchParams.get("skillVersionId")?.trim() || "",
+      skillType: url.searchParams.get("type")?.trim() || "1",
     };
   } catch {
-    return { skillNid: "", skillVersionId: "" };
+    return { skillNid: "", skillVersionId: "", skillType: "1" };
   }
 }
 
 export function HomeworkReviewInterface() {
+  const { session } = useAuth();
+  const reviewAccessTokenRef = useRef(session?.access_token || "");
+
+  useEffect(() => {
+    reviewAccessTokenRef.current = session?.access_token || "";
+  }, [session?.access_token]);
+
+  const getReviewAuthHeaders = useCallback((): HeadersInit => {
+    const token = reviewAccessTokenRef.current;
+    if (!token) {
+      throw new Error("请先登录账号，再使用批量作业批阅功能");
+    }
+    return { Authorization: `Bearer ${token}` };
+  }, []);
+
   // 从 sessionStorage 恢复上次会话状态
   const saved = useRef(loadSessionState());
 
@@ -659,6 +717,8 @@ export function HomeworkReviewInterface() {
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
+  const skillPackageInputRef = useRef<HTMLInputElement>(null);
+  const skillMaterialInputRef = useRef<HTMLInputElement>(null);
 
   // 智慧树认证
   const [authorization, setAuthorization] = useState("");
@@ -670,6 +730,23 @@ export function HomeworkReviewInterface() {
   // 作业批阅 Skills 测试配置
   const [skillReference, setSkillReference] = useState(saved.current?.skillReference || "");
   const [skillSubmissionRequirement, setSkillSubmissionRequirement] = useState(saved.current?.skillSubmissionRequirement || "");
+  const [skillRequirementGenerating, setSkillRequirementGenerating] = useState(false);
+  const [skillRequirementError, setSkillRequirementError] = useState<string | null>(null);
+  const [skillPackageFile, setSkillPackageFile] = useState<File | null>(null);
+  const [skillPackageUploading, setSkillPackageUploading] = useState(false);
+  const [skillPackageError, setSkillPackageError] = useState<string | null>(null);
+  const [skillPackageResult, setSkillPackageResult] = useState<SkillPackageUploadResult | null>(null);
+  const [skillMaterialFiles, setSkillMaterialFiles] = useState<File[]>([]);
+  const [skillMaterialText, setSkillMaterialText] = useState("");
+  const [skillBuilding, setSkillBuilding] = useState(false);
+  const [skillBuildError, setSkillBuildError] = useState<string | null>(null);
+  const [generatedSkillDownloadUrl, setGeneratedSkillDownloadUrl] = useState("");
+  const [generatedSkillFileName, setGeneratedSkillFileName] = useState("");
+  const [studentSampleCount, setStudentSampleCount] = useState(3);
+  const [studentSamplesAutoStart, setStudentSamplesAutoStart] = useState(true);
+  const [studentSamplesGenerating, setStudentSamplesGenerating] = useState(false);
+  const [studentSamplesError, setStudentSamplesError] = useState<string | null>(null);
+  const [generatedSampleLevels, setGeneratedSampleLevels] = useState<string[]>([]);
   const [skillModelName, setSkillModelName] = useState(saved.current?.skillModelName || "");
   const [skillModels, setSkillModels] = useState<SkillModelOption[]>([]);
   const [skillModelsLoading, setSkillModelsLoading] = useState(false);
@@ -760,6 +837,224 @@ export function HomeworkReviewInterface() {
     }
   }, [authorization, cookie]);
 
+  const generateSkillSubmissionRequirement = async (skillOverride?: {
+    skillVersionId: string;
+    skillType?: string;
+  }) => {
+    const targetSkillVersionId = skillOverride?.skillVersionId || parsedSkillReference.skillVersionId;
+    const targetSkillType = skillOverride?.skillType || parsedSkillReference.skillType || "1";
+    if (!authorization.trim() || !cookie.trim()) {
+      setSkillRequirementError("请先填写 Authorization 和 Cookie");
+      return;
+    }
+    if (!targetSkillVersionId) {
+      setSkillRequirementError("请先填写 Skills 预览链接或 Skill Version ID");
+      return;
+    }
+
+    setSkillRequirementGenerating(true);
+    setSkillRequirementError(null);
+    try {
+      const formData = new FormData();
+      formData.append("authorization", authorization.trim());
+      formData.append("cookie", cookie.trim());
+      formData.append("skill_version_id", targetSkillVersionId);
+      formData.append("type", targetSkillType);
+      const response = await fetch("/api/homework-review/skill-overview", {
+        method: "POST",
+        body: formData,
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response, "AI 生成作业要求失败"));
+      }
+      const payload = await response.json();
+      const requirement = String(payload.requirement || "").trim();
+      if (!requirement) {
+        throw new Error("平台未生成有效的作业要求");
+      }
+      setSkillSubmissionRequirement(requirement);
+    } catch (error) {
+      setSkillRequirementError(error instanceof Error ? error.message : "AI 生成作业要求失败");
+    } finally {
+      setSkillRequirementGenerating(false);
+    }
+  };
+
+  const uploadAndPrepareSkillPackage = async () => {
+    if (!authorization.trim() || !cookie.trim()) {
+      setSkillPackageError("请先填写 Authorization 和 Cookie");
+      return;
+    }
+    if (!skillPackageFile) {
+      setSkillPackageError("请先选择生成完成的作业批阅 Skill ZIP");
+      return;
+    }
+
+    setSkillPackageUploading(true);
+    setSkillPackageError(null);
+    setSkillPackageResult(null);
+    try {
+      saveCredentials({ authorization, cookie, instanceNid });
+      const formData = new FormData();
+      formData.append("authorization", authorization.trim());
+      formData.append("cookie", cookie.trim());
+      formData.append("zipFile", skillPackageFile, skillPackageFile.name);
+      const response = await fetch("/api/homework-review/skill-package", {
+        method: "POST",
+        body: formData,
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response, "上传 Skills 技能包失败"));
+      }
+      const payload = await response.json() as SkillPackageUploadResult;
+      if (!payload.skillNid || !payload.skillVersionId || payload.typeTagId !== 1) {
+        throw new Error("平台未返回可测试的批阅类型 Skill 信息");
+      }
+
+      const previewUrl = payload.previewUrl || (
+        `https://pds.polymas.com/im-capability-square/preview-skill?skillNid=${encodeURIComponent(payload.skillNid)}`
+        + `&skillVersionId=${encodeURIComponent(payload.skillVersionId)}&versionStatus=0&type=1&tab=preview`
+      );
+      const normalized = { ...payload, previewUrl };
+      setSkillPackageResult(normalized);
+      setSkillReference(previewUrl);
+      setSkillSubmissionRequirement("");
+      await generateSkillSubmissionRequirement({
+        skillVersionId: payload.skillVersionId,
+        skillType: "1",
+      });
+    } catch (error) {
+      setSkillPackageError(error instanceof Error ? error.message : "上传 Skills 技能包失败");
+    } finally {
+      setSkillPackageUploading(false);
+    }
+  };
+
+  const generateAndUploadSkillPackage = async () => {
+    if (!authorization.trim() || !cookie.trim()) {
+      setSkillBuildError("请先填写 Authorization 和 Cookie");
+      return;
+    }
+    if (skillMaterialFiles.length === 0 && !skillMaterialText.trim()) {
+      setSkillBuildError("请上传课程材料或填写教师补充说明");
+      return;
+    }
+    if (!llmInfo.apiKey.trim() || !llmInfo.model.trim()) {
+      setSkillBuildError("请先在右上角设置中配置 AgentEval 作业批阅模型和 API Key");
+      return;
+    }
+
+    setSkillBuilding(true);
+    setSkillBuildError(null);
+    setSkillPackageError(null);
+    setSkillPackageResult(null);
+    try {
+      saveCredentials({ authorization, cookie, instanceNid });
+      const formData = new FormData();
+      skillMaterialFiles.forEach((file) => formData.append("materials", file, file.name));
+      formData.append("material_text", skillMaterialText.trim());
+      formData.append("authorization", authorization.trim());
+      formData.append("cookie", cookie.trim());
+      formData.append("llm_api_key", llmInfo.apiKey);
+      formData.append("llm_api_url", llmInfo.apiUrl);
+      formData.append("llm_model", llmInfo.model);
+      const response = await fetch("/api/homework-review/skill-package/generate", {
+        method: "POST",
+        body: formData,
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response, "AI 生成作业批阅 Skill 失败"));
+      }
+      const payload = await response.json() as GeneratedSkillPackageResponse;
+      if (!payload.zipBase64 || !payload.zipFileName) {
+        throw new Error("后端未返回生成完成的 Skill ZIP");
+      }
+
+      const generatedFile = base64ToFile(payload.zipBase64, payload.zipFileName, "application/zip");
+      setSkillPackageFile(generatedFile);
+      setGeneratedSkillFileName(payload.zipFileName);
+      setGeneratedSkillDownloadUrl(URL.createObjectURL(generatedFile));
+      setSkillSubmissionRequirement(payload.submissionRequirement || "");
+
+      if (payload.upload) {
+        setSkillPackageResult(payload.upload);
+        setSkillReference(payload.upload.previewUrl);
+      } else {
+        setSkillPackageError(
+          `Skill ZIP 已生成，自动上传或类型转换未完成：${payload.uploadError || "请点击下方“上传并接入测试”重试"}`,
+        );
+      }
+    } catch (error) {
+      setSkillBuildError(error instanceof Error ? error.message : "AI 生成作业批阅 Skill 失败");
+    } finally {
+      setSkillBuilding(false);
+    }
+  };
+
+  const generateStudentSamples = async () => {
+    if (!skillSubmissionRequirement.trim()) {
+      setStudentSamplesError("请先生成或填写所有学生共用的作业要求");
+      return;
+    }
+    if (!llmInfo.apiKey.trim() || !llmInfo.model.trim()) {
+      setStudentSamplesError("请先在右上角设置中配置 AgentEval 作业批阅模型和 API Key");
+      return;
+    }
+
+    setStudentSamplesGenerating(true);
+    setStudentSamplesError(null);
+    setGeneratedSampleLevels([]);
+    let filesToStart: File[] | null = null;
+    try {
+      const formData = new FormData();
+      formData.append("submission_requirement", skillSubmissionRequirement.trim());
+      formData.append(
+        "assignment_title",
+        skillPackageResult?.cnName || skillPackageResult?.name || "课程作业",
+      );
+      formData.append("count", String(studentSampleCount));
+      formData.append("llm_api_key", llmInfo.apiKey);
+      formData.append("llm_api_url", llmInfo.apiUrl);
+      formData.append("llm_model", llmInfo.model);
+      const response = await fetch("/api/homework-review/student-samples", {
+        method: "POST",
+        body: formData,
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response, "AI 生成学生作业失败"));
+      }
+      const payload = await response.json();
+      const generated = Array.isArray(payload.files) ? payload.files as GeneratedStudentSample[] : [];
+      if (generated.length === 0) {
+        throw new Error("后端未返回学生作业 DOCX");
+      }
+      const generatedFiles = generated.map((item) => (
+        base64ToFile(item.base64, item.name, item.contentType)
+      ));
+      const generatedNames = new Set(generatedFiles.map((file) => file.name));
+      setReviewFiles((current) => [
+        ...current.filter((file) => !generatedNames.has(file.name)),
+        ...generatedFiles,
+      ]);
+      setGeneratedSampleLevels(generated.map((item) => item.level));
+      const timestamp = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+      setReviewLogs((current) => [
+        ...current,
+        `[${timestamp}] 🤖 已生成 ${generatedFiles.length} 份匿名学生 DOCX，并加入 Skills 测试列表`,
+      ]);
+      if (studentSamplesAutoStart) filesToStart = generatedFiles;
+    } catch (error) {
+      setStudentSamplesError(error instanceof Error ? error.message : "AI 生成学生作业失败");
+    } finally {
+      setStudentSamplesGenerating(false);
+    }
+    if (filesToStart) await startReview(filesToStart);
+  };
+
   useEffect(() => {
     if (reviewEngine !== "skill") {
       skillModelRequestIdRef.current += 1;
@@ -783,6 +1078,12 @@ export function HomeworkReviewInterface() {
       controller.abort();
     };
   }, [reviewEngine, authorization, cookie, loadSkillModels]);
+
+  useEffect(() => {
+    return () => {
+      if (generatedSkillDownloadUrl) URL.revokeObjectURL(generatedSkillDownloadUrl);
+    };
+  }, [generatedSkillDownloadUrl]);
 
   useEffect(() => {
     const creds = loadCredentials();
@@ -973,7 +1274,10 @@ export function HomeworkReviewInterface() {
       let lastError: unknown = null;
       for (let retry = 0; retry <= 2; retry += 1) {
         try {
-          const response = await fetch(url, { ...init, signal });
+          const headers = new Headers(init.headers);
+          const authHeaders = getReviewAuthHeaders();
+          new Headers(authHeaders).forEach((value, key) => headers.set(key, value));
+          const response = await fetch(url, { ...init, headers, signal });
           if (!response.ok) {
             throw new Error(await readApiError(response, fallbackMessage));
           }
@@ -992,7 +1296,11 @@ export function HomeworkReviewInterface() {
     };
 
     appendLog(`🛠️ 正在创建批量任务（上限 ${MAX_REVIEW_FILES} 份）...`);
-    const createResponse = await fetch("/api/homework-review/jobs", { method: "POST", signal });
+    const createResponse = await fetch("/api/homework-review/jobs", {
+      method: "POST",
+      headers: getReviewAuthHeaders(),
+      signal,
+    });
     if (!createResponse.ok) {
       throw new Error(await readApiError(createResponse, "创建批阅任务失败"));
     }
@@ -1104,7 +1412,7 @@ export function HomeworkReviewInterface() {
 
     const startResponse = await fetch(
       `/api/homework-review/jobs/${encodeURIComponent(jobId)}/${startPath}`,
-      { method: "POST", body: startForm, signal },
+      { method: "POST", headers: getReviewAuthHeaders(), body: startForm, signal },
     );
     if (!startResponse.ok) {
       throw new Error(await readApiError(startResponse, "启动后台批阅失败"));
@@ -1117,7 +1425,7 @@ export function HomeworkReviewInterface() {
       try {
         const statusResponse = await fetch(
           `/api/homework-review/jobs/${encodeURIComponent(jobId)}?cursor=${cursor}`,
-          { cache: "no-store", signal },
+          { cache: "no-store", headers: getReviewAuthHeaders(), signal },
         );
         if (!statusResponse.ok) {
           throw new Error(await readApiError(statusResponse, "读取批阅进度失败"));
@@ -1162,7 +1470,11 @@ export function HomeworkReviewInterface() {
       try {
         const response = await fetch(
           `/api/homework-review/jobs/${encodeURIComponent(jobId)}`,
-          { method: "DELETE", signal: cancelController.signal },
+          {
+            method: "DELETE",
+            headers: getReviewAuthHeaders(),
+            signal: cancelController.signal,
+          },
         );
         backendCancelled = response.ok;
         if (!response.ok) {
@@ -1189,12 +1501,13 @@ export function HomeworkReviewInterface() {
     setCancelling(false);
   };
 
-  const startReview = async () => {
+  const startReview = async (reviewTargetsOverride?: File[]) => {
     const isGenerateMode = mode === "generate" || mode === "generate-and-review";
     const usingTextInput = isGenerateMode && inputMode === "text";
     const hasPastedText = pastedText.trim().length > 0;
     // 批阅模式：支持从 generatedFiles（服务器路径）或 files（上传文件）开始
-    const hasUploadedFiles = files.length > 0;
+    const activeUploadedFiles = reviewTargetsOverride || files;
+    const hasUploadedFiles = activeUploadedFiles.length > 0;
     const hasGeneratedFiles = mode === "review" && reviewEngine === "traditional" && generatedFiles.length > 0;
 
     if (mode === "review" && !hasUploadedFiles && !hasGeneratedFiles) {
@@ -1302,7 +1615,7 @@ export function HomeworkReviewInterface() {
 
     try {
       if (mode === "review" && hasUploadedFiles) {
-        const completedResult = await runUploadedReviewJob(files, llm);
+        const completedResult = await runUploadedReviewJob(activeUploadedFiles, llm);
         setResult(completedResult);
         appendLog(reviewEngine === "skill" ? "🎉 Skills 批量测试全部完成！" : "🎉 批阅全部完成！");
 
@@ -1322,7 +1635,7 @@ export function HomeworkReviewInterface() {
           addHistoryItem({
             id: generateHistoryId(),
             timestamp: new Date().toISOString(),
-            fileNames: files.map((file) => file.name),
+            fileNames: activeUploadedFiles.map((file) => file.name),
             attempts: finalTable.attempts,
             jobId: completedResult.jobId,
             scoreTable: finalTable,
@@ -1392,12 +1705,12 @@ export function HomeworkReviewInterface() {
       } else {
         // 批阅模式 + 用户上传的文件
         apiUrl = "/api/homework-review";
-        files.forEach((file) => formData.append("files", file));
+        activeUploadedFiles.forEach((file) => formData.append("files", file));
         formData.append("output_format", outputFormat);
         formData.append("local_parse", String(localParse));
         formData.append("max_concurrency", String(clampReviewConcurrency(maxConcurrency)));
         // 传递每文件跳过LLM校验标记
-        const skipNames = files.filter(f => skipLLMFiles.has(getUploadedFileKey(f))).map(f => f.name);
+        const skipNames = activeUploadedFiles.filter(f => skipLLMFiles.has(getUploadedFileKey(f))).map(f => f.name);
         if (skipNames.length > 0) {
           formData.append("skip_llm_files", JSON.stringify(skipNames));
         }
@@ -1407,7 +1720,7 @@ export function HomeworkReviewInterface() {
           fileGroups.forEach((group) => {
             // 把 fileKey 转回文件名
             const fileNames = group.fileKeys.map(key => {
-              const f = files.find(f => getUploadedFileKey(f) === key);
+              const f = activeUploadedFiles.find(f => getUploadedFileKey(f) === key);
               return f?.name || key;
             }).filter(Boolean);
             if (fileNames.length > 1) {
@@ -1807,6 +2120,27 @@ export function HomeworkReviewInterface() {
     return parts[parts.length - 1] || file;
   };
 
+  const fetchOutputFile = (file: string) => fetch(downloadLink(file), {
+    cache: "no-store",
+    headers: getReviewAuthHeaders(),
+  });
+
+  const downloadOutputFile = async (file: string) => {
+    const response = await fetchOutputFile(file);
+    if (!response.ok) {
+      throw new Error(await readApiError(response, "下载批阅结果失败"));
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = displayName(file).split("/").pop() || "批阅结果";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+  };
+
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = s % 60;
@@ -1939,6 +2273,174 @@ export function HomeworkReviewInterface() {
             </div>
             {mode === "review" && reviewEngine === "skill" ? (
               <div className="space-y-4 rounded-2xl border border-violet-200 bg-violet-50/50 p-4">
+                <div className="rounded-xl border border-violet-200 bg-white p-3">
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">AI 生成、上传并接入作业批阅 Skill</div>
+                      <div className="mt-0.5 text-xs text-slate-500">
+                        复用 AgentEval 全局大模型，生成合规 ZIP 后自动上传并改为批阅类型
+                      </div>
+                    </div>
+                    {skillPackageResult?.metadataUpdated && (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        已设为批阅类型
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    ref={skillMaterialInputRef}
+                    type="file"
+                    multiple
+                    accept=".docx,.pdf,.txt,.md,.csv,.xlsx"
+                    className="hidden"
+                    onChange={(event) => {
+                      setSkillMaterialFiles(Array.from(event.target.files || []));
+                      setSkillBuildError(null);
+                    }}
+                  />
+                  <div className="space-y-2 rounded-xl bg-violet-50/70 p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={() => skillMaterialInputRef.current?.click()}
+                        disabled={skillBuilding}
+                        className="inline-flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-violet-200 bg-white px-3 py-2 text-left text-xs text-slate-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <FolderOpen className="h-4 w-4 shrink-0 text-violet-600" />
+                        <span className="truncate">
+                          {skillMaterialFiles.length > 0
+                            ? `已选择 ${skillMaterialFiles.length} 份课程材料`
+                            : "选择题目要求、评分标准、教师样本等材料"}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void generateAndUploadSkillPackage()}
+                        disabled={
+                          skillBuilding
+                          || (!skillMaterialText.trim() && skillMaterialFiles.length === 0)
+                          || !authorization.trim()
+                          || !cookie.trim()
+                          || !llmInfo.apiKey.trim()
+                        }
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      >
+                        {skillBuilding
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <Sparkles className="h-4 w-4" />}
+                        {skillBuilding ? "正在生成并上传..." : "AI 生成 Skill ZIP 并上传"}
+                      </button>
+                    </div>
+                    {skillMaterialFiles.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {skillMaterialFiles.map((file) => (
+                          <span key={`${file.name}-${file.size}`} className="max-w-full truncate rounded-md bg-white px-2 py-1 text-[11px] text-slate-600">
+                            {file.name}
+                          </span>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSkillMaterialFiles([]);
+                            if (skillMaterialInputRef.current) skillMaterialInputRef.current.value = "";
+                          }}
+                          className="rounded-md px-2 py-1 text-[11px] text-red-500 hover:bg-red-50"
+                        >
+                          清空材料
+                        </button>
+                      </div>
+                    )}
+                    <textarea
+                      value={skillMaterialText}
+                      onChange={(event) => {
+                        setSkillMaterialText(event.target.value);
+                        setSkillBuildError(null);
+                      }}
+                      rows={4}
+                      placeholder="可补充：当前作业要求、评分标准、必交/可选关系、教师尺度说明；也可只粘贴文字直接生成"
+                      className="w-full resize-y rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs text-slate-700 focus:border-transparent focus:ring-2 focus:ring-violet-500"
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                      <span className={skillBuildError ? "text-red-600" : "text-violet-700"}>
+                        {skillBuildError || `生成模型：${llmInfo.model || "未配置"}`}
+                      </span>
+                      {generatedSkillDownloadUrl && (
+                        <a
+                          href={generatedSkillDownloadUrl}
+                          download={generatedSkillFileName || "assignment-grading-skill.zip"}
+                          className="inline-flex items-center gap-1 font-semibold text-violet-700 hover:text-violet-900"
+                        >
+                          <FileDown className="h-3.5 w-3.5" />
+                          下载已生成 ZIP
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                  <div className="my-3 flex items-center gap-3 text-[11px] text-slate-400">
+                    <span className="h-px flex-1 bg-slate-200" />
+                    已有 ZIP 时手动上传
+                    <span className="h-px flex-1 bg-slate-200" />
+                  </div>
+                  <input
+                    ref={skillPackageInputRef}
+                    type="file"
+                    accept=".zip,application/zip"
+                    className="hidden"
+                    onChange={(event) => {
+                      const selected = event.target.files?.[0] || null;
+                      setSkillPackageFile(selected);
+                      setSkillPackageError(null);
+                      setSkillPackageResult(null);
+                    }}
+                  />
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => skillPackageInputRef.current?.click()}
+                      disabled={skillPackageUploading}
+                      className="inline-flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Upload className="h-4 w-4 shrink-0 text-violet-600" />
+                      <span className="truncate">{skillPackageFile?.name || "选择课程作业批阅 Skill ZIP"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void uploadAndPrepareSkillPackage()}
+                      disabled={
+                        skillPackageUploading
+                        || !skillPackageFile
+                        || !authorization.trim()
+                        || !cookie.trim()
+                      }
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {skillPackageUploading
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <Sparkles className="h-4 w-4" />}
+                      {skillPackageUploading ? "上传并配置中..." : "上传并接入测试"}
+                    </button>
+                  </div>
+                  {skillPackageError && (
+                    <p className="mt-2 text-xs text-red-600">{skillPackageError}</p>
+                  )}
+                  {skillPackageResult && (
+                    <div className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                      <div className="font-semibold">{skillPackageResult.cnName || skillPackageResult.name}</div>
+                      <div className="mt-0.5 break-all text-[11px] text-emerald-700">
+                        Skill NID：{skillPackageResult.skillNid}；Version ID：{skillPackageResult.skillVersionId}
+                      </div>
+                      <a
+                        href={skillPackageResult.previewUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 inline-block font-medium text-violet-700 hover:text-violet-900"
+                      >
+                        打开平台预览
+                      </a>
+                    </div>
+                  )}
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Skills 预览链接 / Skill Version ID</label>
                   <input
@@ -1957,15 +2459,116 @@ export function HomeworkReviewInterface() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">所有学生共用的作业要求</label>
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <label className="block text-sm font-medium text-slate-700">所有学生共用的作业要求</label>
+                    <button
+                      type="button"
+                      onClick={() => void generateSkillSubmissionRequirement()}
+                      disabled={
+                        skillRequirementGenerating
+                        || !authorization.trim()
+                        || !cookie.trim()
+                        || !parsedSkillReference.skillVersionId
+                      }
+                      className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {skillRequirementGenerating
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Sparkles className="h-3.5 w-3.5" />}
+                      {skillRequirementGenerating
+                        ? "生成中..."
+                        : skillSubmissionRequirement.trim()
+                          ? "AI 重新生成"
+                          : "AI 生成"}
+                    </button>
+                  </div>
                   <textarea
                     value={skillSubmissionRequirement}
-                    onChange={(e) => setSkillSubmissionRequirement(e.target.value)}
+                    onChange={(e) => {
+                      setSkillSubmissionRequirement(e.target.value);
+                      setSkillRequirementError(null);
+                    }}
                     rows={8}
                     placeholder="粘贴实验报告要求、评分标准、格式要求等完整内容..."
                     className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500 focus:border-transparent"
                   />
-                  <div className="mt-1 text-right text-[11px] text-slate-400">{skillSubmissionRequirement.trim().length} 字</div>
+                  <div className="mt-1 flex items-start justify-between gap-3">
+                    <span className={clsx("text-[11px]", skillRequirementError ? "text-red-600" : "text-slate-400")}>
+                      {skillRequirementError || "AI 生成后仍可手动修改"}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-slate-400">{skillSubmissionRequirement.trim().length} 字</span>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-3">
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">缺少学生作业？AI 生成测试 DOCX</div>
+                      <div className="mt-0.5 text-xs text-slate-500">
+                        按当前作业要求生成不同质量档位的匿名作业，并直接加入下方 Skills 测试列表
+                      </div>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[11px] font-medium text-sky-700">
+                      {llmInfo.model || "模型未配置"}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <label className="flex items-center gap-2 text-xs text-slate-600">
+                      生成数量
+                      <select
+                        value={studentSampleCount}
+                        onChange={(event) => setStudentSampleCount(Number(event.target.value))}
+                        disabled={studentSamplesGenerating}
+                        className="rounded-lg border border-sky-200 bg-white px-2 py-1.5 text-xs focus:border-transparent focus:ring-2 focus:ring-sky-500"
+                      >
+                        {[1, 2, 3, 4, 5].map((count) => (
+                          <option key={count} value={count}>{count} 份</option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void generateStudentSamples()}
+                      disabled={
+                        studentSamplesGenerating
+                        || loading
+                        || !skillSubmissionRequirement.trim()
+                        || !llmInfo.apiKey.trim()
+                      }
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {studentSamplesGenerating
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <Sparkles className="h-4 w-4" />}
+                      {studentSamplesGenerating
+                        ? "正在生成 DOCX..."
+                        : studentSamplesAutoStart
+                          ? "AI 生成并直接测试"
+                          : "AI 生成并加入测试"}
+                    </button>
+                  </div>
+                  <label className="mt-2 flex items-center gap-2 text-xs text-sky-800">
+                    <input
+                      type="checkbox"
+                      checked={studentSamplesAutoStart}
+                      onChange={(event) => setStudentSamplesAutoStart(event.target.checked)}
+                      disabled={studentSamplesGenerating || loading}
+                      className="rounded border-sky-300 text-sky-600 focus:ring-sky-500"
+                    />
+                    生成完成后立即开始 Skills 批量测试
+                  </label>
+                  {studentSamplesError ? (
+                    <p className="mt-2 text-xs text-red-600">{studentSamplesError}</p>
+                  ) : generatedSampleLevels.length > 0 ? (
+                    <p className="mt-2 text-xs text-emerald-700">
+                      已加入 {generatedSampleLevels.length} 份匿名 DOCX；内部覆盖档位：{generatedSampleLevels.join("、")}。档位标签不会写入文件名或正文。
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-sky-700">
+                      {studentSamplesAutoStart
+                        ? "生成后会直接提交；测试次数、模型和并发设置保持不变。"
+                        : "生成后加入列表，可检查文件后再点击下方开始测试。"}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <div className="mb-1 flex items-center justify-between gap-3">
@@ -2681,7 +3284,7 @@ export function HomeworkReviewInterface() {
                     {cancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
                   </button>
                   <button
-                    onClick={startReview}
+                    onClick={() => void startReview()}
                     disabled={loading}
                     className={clsx(
                       "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition",
@@ -2860,7 +3463,11 @@ export function HomeworkReviewInterface() {
 
               {/* 传统批阅会生成可下载文件；Skills 结果直接在页面展示 */}
               {result.summary?.engine !== "skill" && (
-                <OutputFilesSection result={result} downloadLink={downloadLink} />
+                <OutputFilesSection
+                  result={result}
+                  fetchOutputFile={fetchOutputFile}
+                  downloadOutputFile={downloadOutputFile}
+                />
               )}
             </div>
           );
@@ -3275,15 +3882,18 @@ function SkillReviewDetails({ summary }: { summary: any }) {
 
       function OutputFilesSection({
         result,
-        downloadLink,
+        fetchOutputFile,
+        downloadOutputFile,
 }: {
         result: ReviewResult;
-  downloadLink: (file: string) => string;
+  fetchOutputFile: (file: string) => Promise<Response>;
+  downloadOutputFile: (file: string) => Promise<void>;
 }) {
   const [showAllFiles, setShowAllFiles] = useState(false);
       const [previewingJson, setPreviewingJson] = useState<string | null>(null);
       const [jsonContent, setJsonContent] = useState<any>(null);
         const [jsonLoading, setJsonLoading] = useState(false);
+        const [downloadError, setDownloadError] = useState<string | null>(null);
 
   /** 从绝对路径提取「上级目录/文件名」用于显示，方便区分不同等级 */
   const displayName = (file: string) => {
@@ -3305,7 +3915,7 @@ function SkillReviewDetails({ summary }: { summary: any }) {
         setJsonLoading(true);
         setJsonContent(null);
         try {
-      const response = await fetch(downloadLink(file));
+      const response = await fetchOutputFile(file);
         if (!response.ok) {
           const errorBody = await response.json().catch(() => null);
           const detail = errorBody?.detail || errorBody?.error;
@@ -3319,6 +3929,15 @@ function SkillReviewDetails({ summary }: { summary: any }) {
           });
     } finally {
           setJsonLoading(false);
+    }
+  };
+
+  const handleDownload = async (file: string) => {
+    setDownloadError(null);
+    try {
+      await downloadOutputFile(file);
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "下载批阅结果失败");
     }
   };
 
@@ -3355,6 +3974,12 @@ function SkillReviewDetails({ summary }: { summary: any }) {
             )}
           </div>
 
+          {downloadError && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {downloadError}
+            </div>
+          )}
+
           {hasFailures && (
             <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               <div className="font-semibold">{allFailed ? "所有批阅请求都失败了" : "部分批阅请求失败"}</div>
@@ -3373,12 +3998,11 @@ function SkillReviewDetails({ summary }: { summary: any }) {
           {importantFiles.length > 0 && (
             <div className="space-y-2 mb-4">
               {importantFiles.map((file) => (
-                <a
+                <button
+                  type="button"
                   key={file}
-                  href={downloadLink(file)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between bg-indigo-50 rounded-lg px-4 py-3 text-sm text-indigo-700 font-medium hover:bg-indigo-100 transition border border-indigo-100"
+                  onClick={() => void handleDownload(file)}
+                  className="flex w-full items-center justify-between bg-indigo-50 rounded-lg px-4 py-3 text-left text-sm text-indigo-700 font-medium hover:bg-indigo-100 transition border border-indigo-100"
                 >
                   <span className="truncate flex items-center gap-2">
                     <FileDown className="w-4 h-4 flex-shrink-0" />
@@ -3387,7 +4011,7 @@ function SkillReviewDetails({ summary }: { summary: any }) {
                   <span className="text-xs bg-indigo-200 text-indigo-800 px-2 py-0.5 rounded-full flex-shrink-0 ml-2">
                     下载
                   </span>
-                </a>
+                </button>
               ))}
             </div>
           )}
@@ -3420,15 +4044,14 @@ function SkillReviewDetails({ summary }: { summary: any }) {
                               <Eye className={clsx("w-3.5 h-3.5", previewingJson === file ? "text-indigo-600" : "text-slate-400")} />
                             </button>
                           )}
-                          <a
-                            href={downloadLink(file)}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => void handleDownload(file)}
                             className="p-1 rounded hover:bg-slate-200 transition"
                             title="下载"
                           >
                             <FileDown className="w-3.5 h-3.5 text-slate-400" />
-                          </a>
+                          </button>
                         </div>
                       </div>
                       {/* JSON预览内容 */}

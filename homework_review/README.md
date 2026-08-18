@@ -5,6 +5,9 @@
 本系统提供**自动化作业批阅**功能，支持：
 - **云端 OCR 解析** + **LLM 智能校验**（A+B 方案）
 - **作业批阅 Skills 批量测试**，支持多份学生作业、多次重复批阅和稳定性统计
+- **AgentEval LLM 自动生成作业批阅 Skill ZIP**，支持从题目、评分标准、教师说明和教师样本一键生成
+- **作业批阅 Skill 技能包接入**，上传后自动校验、切换为批阅类型并回填测试配置
+- **AI 生成匿名学生 DOCX 测试作业**，自动覆盖多个质量档位并加入 Skills 批量测试
 - 批量处理 Word 文档作业
 - 多次评测并生成统计数据
 - 自动生成 Excel 评分表（含均值、方差）
@@ -18,7 +21,9 @@
 | `llm_answer_corrector.py` | LLM 答案校验模块 |
 | `local_parser.py` | 本地 Word 解析模块（备用） |
 | `skill_review_service.py` | Skills 附件上传、批阅执行、报告轮询与结果标准化 |
+| `skill_generation_service.py` | AgentEval LLM 调用、Skill 蓝图校验、ZIP 组装与学生 DOCX 生成 |
 | `main.py` | Web API 与传统 / Skills 异步批阅任务调度 |
+| `review_job_control.py` | Supabase 登录校验、任务归属和跨用户公平并发控制 |
 | `.env.example` | 环境变量配置示例 |
 | `requirements.txt` | Python 依赖包列表 |
 
@@ -44,9 +49,16 @@ AUTHORIZATION=your_authorization_token
 COOKIE=your_cookie_string
 INSTANCE_NID=your_instance_nid
 
-# LLM API 配置（用于答案校验）
+# LLM API 配置（用于答案校验、Skill ZIP 与学生作业生成）
 LLM_API_KEY=your_llm_api_key
 LLM_API_URL=http://llm-service.polymas.com/api/openai/v1/chat/completions
+LLM_MODEL=your_llm_model
+
+# AgentEval 登录校验（与前端使用同一个 Supabase 项目）
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key
+# 旧版 HS256 项目可选；未配置时通过 Supabase Auth API 校验
+SUPABASE_JWT_SECRET=
 ```
 
 ## 使用方式
@@ -141,7 +153,7 @@ payload = {
 }
 ```
 
-### 4. 并发控制
+### 4. 用户隔离与并发控制
 
 默认最大并发数为 5，服务端硬上限为 10。文件数只表示队列长度，不会自动放大并发：
 
@@ -156,17 +168,60 @@ Web 端大批量任务使用短请求异步流程：
 3. `POST /api/review/jobs/{job_id}/start` 进入后台队列。
 4. `GET /api/review/jobs/{job_id}` 读取日志和最终汇总结果。
 
-同一服务实例每次执行 1 个批阅 Job，其余 Job 排队，避免多用户同时提交时叠加放大并发。
+异步 Job 接口要求前端携带 Supabase Access Token。后端将 Job 绑定到令牌中的用户 ID，上传、启动、轮询、取消和结果下载都会复核归属；其他用户访问同一 Job ID 时按任务不存在处理。
+
+单个 Railway 实例采用两层调度：
+
+- 同一用户默认同时执行 1 个完整 Job，后续 Job 只进入该用户自己的队列。
+- 不同用户的 Skills Job 可同时推进，不再共用“整批任务全局锁”。
+- 每一次 Skills 批阅请求进入跨用户公平队列：全局默认 10 个名额、每用户默认 3 个名额，新加入的用户优先获得下一个释放的名额。
+- 学生附件上传使用独立队列：全局默认 4 个名额、每用户默认 2 个名额。
+- 传统批阅子进程使用独立的全局上限，默认 1 个，不占用 Skills 请求名额。
+
+Railway 可通过以下环境变量按实例规格调节：
+
+```ini
+MAX_ACTIVE_REVIEW_JOBS_PER_USER=1
+MAX_ACTIVE_TRADITIONAL_REVIEW_JOBS=1
+MAX_GLOBAL_SKILL_ATTEMPTS=10
+MAX_SKILL_ATTEMPTS_PER_USER=3
+MAX_GLOBAL_SKILL_UPLOADS=4
+MAX_SKILL_UPLOADS_PER_USER=2
+REVIEW_AUTH_CACHE_SECONDS=60
+```
+
+当前 Job 状态与结果保存在单个服务进程和临时目录中，因此 Railway 保持 1 个副本。若以后扩成多个副本，需要先把 Job 状态、任务队列和结果文件迁移到共享存储。
 
 ### 5. 作业批阅 Skills 批量测试
 
-Web 端在“作业批阅”页面选择“Skills 批阅测试”，填写：
+Web 端在“作业批阅”页面选择“Skills 批阅测试”。自动化入口支持上传 DOCX、PDF、TXT、Markdown、CSV 或 XLSX 课程材料，也可以直接粘贴教师说明。系统使用 AgentEval 全局设置中的作业批阅模型：
+
+1. 提取课程材料，生成结构化批阅蓝图。
+2. 校验技能名、评分类型、分值合计、缺项规则和评价项；失败时将校验问题回送模型重生成。
+3. 以“唯一根目录 + README.md + SKILL.md + references/”组装 ZIP，且在上传前再做一次平台合同校验。
+4. 自动上传、设为批阅类型、回填预览链接与所有学生共用的作业要求。
+5. 即使平台上传或类型转换失败，生成完成的 ZIP 仍保留在前端，可下载或点击手动重试。
+
+平台测试配置需要：
 
 - 同一登录会话的 `Authorization` 和 `Cookie`
 - Skills 预览链接（会自动提取 `skillVersionId` 和 `skillNid`），或直接填写 `skillVersionId`
-- 所有学生共用的 `submissionRequirement`
+- 所有学生共用的 `submissionRequirement`：可手动填写，也可点击“AI 生成”从 Skill 概览自动生成后继续编辑
 - 从平台 `GET /flow/bot/v1/list/model?scene=8` 加载并选择批阅模型
 - 每份作业的评测次数与最大并发数
+
+也可以直接选择生成器产出的课程作业批阅 Skill ZIP，点击“上传并接入测试”。系统自动执行：
+
+1. 校验 ZIP 只有一个根目录，且根目录名与 `SKILL.md` frontmatter 的 `name` 一致。
+2. 校验根目录包含 `README.md`、`SKILL.md`，只允许 `references/`、`scripts/`，阻止缓存、`agents/`、`assets/` 和模板占位内容。
+3. 调用 `POST /ai-biz/v1/skill/create/unify/agentSkill`，使用 `type=2`、`source=BUILTIN` 上传。
+4. 通过 `skill/cardList` 精确读取刚上传技能的中文名、描述、图标等原值。
+5. 调用 `POST /ai-biz/v1/skill/metadata/save`，仅将 `typeTagId` 设为 `1`，保留其他元数据。
+6. 自动回填 `skillNid`、`skillVersionId` 和预览链接，并尝试生成所有学生共用的作业要求；用户仍可修改后再开始批量测试。
+
+其中 `cardList` 不承担测试或结果展示，只作为上传后保存类型时的元数据保护步骤，避免中文名、描述和图标被空值覆盖。
+
+没有学生测试作业时，可在同一区域选择 1–5 份并点击“AI 生成并直接测试”。后端会按当前作业要求生成不同完成质量的简单 DOCX；档位仅用于内部测试覆盖，不写入文件名或作业正文。产物生成后直接进入学生作业列表，默认沿用当前模型、评测次数和并发配置立即开始 Skills 批量测试；取消勾选“生成完成后立即开始”可先检查文件再手动测试。
 
 后台流程：
 
@@ -189,6 +244,27 @@ POST /api/review/jobs/{job_id}/start-skill
 ```text
 POST /api/review/skill-models
 ```
+
+“AI 生成作业要求”通过同源代理读取：
+
+```text
+POST /api/review/skill-overview
+```
+
+技能包上传与类型转换通过同源代理执行：
+
+```text
+POST /api/review/skill-package
+```
+
+AgentEval LLM 生成与自动上传、学生 DOCX 生成分别使用：
+
+```text
+POST /api/review/skill-package/generate
+POST /api/review/student-samples/generate
+```
+
+后端调用平台 `POST /ai-biz/v1/correction-skill/overview`，将 Skill 描述、总分、逐项评分标准和评价输出项整理成可编辑文本。
 
 后端使用同一组 `Authorization` 和 `Cookie` 请求平台的 `scene=8` 模型列表，优先选中 `defaultFlag=1` 的模型，并将模型 `code` 作为执行接口的 `modelName`。
 

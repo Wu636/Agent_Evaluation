@@ -36,6 +36,8 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
     const headers = new Headers();
     const contentType = request.headers.get("content-type");
     if (contentType) headers.set("content-type", contentType);
+    const authorization = request.headers.get("authorization");
+    if (authorization) headers.set("authorization", authorization);
 
     const body = request.method === "GET" || request.method === "HEAD"
       ? undefined
@@ -51,6 +53,8 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
     const responseHeaders = new Headers();
     const upstreamContentType = upstream.headers.get("content-type");
     if (upstreamContentType) responseHeaders.set("content-type", upstreamContentType);
+    const contentDisposition = upstream.headers.get("content-disposition");
+    if (contentDisposition) responseHeaders.set("content-disposition", contentDisposition);
     responseHeaders.set("cache-control", "no-store");
 
     return new Response(upstream.body, {

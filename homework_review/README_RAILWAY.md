@@ -24,7 +24,7 @@
 1. **`api_server.py`** - FastAPI服务
    - `/api/generate` - 生成学生答案
    - `/api/review` - 批阅评测
-   - `/api/review/jobs` - 最多 150 份的异步批量任务（分包上传、后台队列、进度轮询）
+   - `/api/review/jobs` - 最多 150 份的异步批量任务（登录用户隔离、分包上传、公平队列、进度轮询）
    - 流式SSE响应
    - CORS配置
 
@@ -57,7 +57,19 @@ git push origin main
 2. New Project → Deploy from GitHub
 3. 选择仓库
 4. **重要**：设置Root Directory为 `homework_review`
-5. 添加环境变量（从 `.env` 复制）
+5. 添加环境变量（从 `.env.example` 复制）。除智慧树与 LLM 配置外，异步任务至少需要：
+
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key
+MAX_ACTIVE_REVIEW_JOBS_PER_USER=1
+MAX_GLOBAL_SKILL_ATTEMPTS=10
+MAX_SKILL_ATTEMPTS_PER_USER=3
+MAX_GLOBAL_SKILL_UPLOADS=4
+MAX_SKILL_UPLOADS_PER_USER=2
+```
+
+`SUPABASE_URL` 和 `SUPABASE_ANON_KEY` 必须与前端登录使用的 Supabase 项目一致。当前任务状态保存在进程内存，Railway 保持单副本；10 人团队通过用户级隔离和请求级公平并发共享这一实例。
 6. 部署完成，获取URL
 
 ### 3. 配置Vercel前端

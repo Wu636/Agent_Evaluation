@@ -15,28 +15,59 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Query
+from fastapi import Depends, FastAPI, File, Form, Header, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
+from dotenv import load_dotenv
 
 try:
+    from .review_job_control import (
+        FairUserConcurrencyLimiter,
+        ReviewAuthConfigurationError,
+        ReviewAuthenticationError,
+        SupabaseTokenVerifier,
+        extract_bearer_token,
+    )
+    from .skill_generation_service import (
+        encode_file_base64,
+        generate_grading_skill_zip,
+        generate_student_sample_docx_files,
+    )
     from .skill_review_service import (
+        build_submission_requirement_from_overview,
         build_skill_score_table,
         compact_skill_report,
         execute_correction_skill,
+        get_correction_skill_overview,
         get_correction_skill_report,
         list_correction_skill_models,
         platform_report_url,
+        upload_and_prepare_grading_skill,
         upload_student_attachment,
     )
 except ImportError:
+    from review_job_control import (
+        FairUserConcurrencyLimiter,
+        ReviewAuthConfigurationError,
+        ReviewAuthenticationError,
+        SupabaseTokenVerifier,
+        extract_bearer_token,
+    )
+    from skill_generation_service import (
+        encode_file_base64,
+        generate_grading_skill_zip,
+        generate_student_sample_docx_files,
+    )
     from skill_review_service import (
+        build_submission_requirement_from_overview,
         build_skill_score_table,
         compact_skill_report,
         execute_correction_skill,
+        get_correction_skill_overview,
         get_correction_skill_report,
         list_correction_skill_models,
         platform_report_url,
+        upload_and_prepare_grading_skill,
         upload_student_attachment,
     )
 
@@ -55,38 +86,83 @@ app.add_middleware(
 SCRIPT_DIR = Path(__file__).parent
 GENERATE_SCRIPT = SCRIPT_DIR / "generate_and_review_service.py"
 REVIEW_SCRIPT = SCRIPT_DIR / "review_service.py"
+env_file = SCRIPT_DIR / ".env"
+if not env_file.exists():
+    env_file.touch()
+load_dotenv(env_file)
 
 MAX_REVIEW_FILES = 150
 DEFAULT_REVIEW_CONCURRENCY = 5
 MAX_REVIEW_CONCURRENCY = 10
-MAX_ACTIVE_REVIEW_JOBS = 1
 REVIEW_UPLOAD_CHUNK_SIZE = 1024 * 1024
+MAX_SKILL_PACKAGE_BYTES = 50 * 1024 * 1024
+MAX_SKILL_MATERIAL_FILES = 20
+MAX_SKILL_MATERIAL_BYTES = 80 * 1024 * 1024
 
-# Asynchronous review jobs intentionally live in the service process and /tmp.
-# The opaque job id is the only handle exposed to the browser; credentials are
-# passed straight to the worker environment and are never written to job state.
+def env_int(name: str, default: int, *, minimum: int = 1, maximum: int = 100) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return min(maximum, max(minimum, value))
+
+
+MAX_ACTIVE_REVIEW_JOBS_PER_USER = env_int("MAX_ACTIVE_REVIEW_JOBS_PER_USER", 1, maximum=5)
+MAX_ACTIVE_TRADITIONAL_REVIEW_JOBS = env_int("MAX_ACTIVE_TRADITIONAL_REVIEW_JOBS", 1, maximum=5)
+MAX_GLOBAL_SKILL_ATTEMPTS = env_int("MAX_GLOBAL_SKILL_ATTEMPTS", 10, maximum=50)
+MAX_SKILL_ATTEMPTS_PER_USER = env_int("MAX_SKILL_ATTEMPTS_PER_USER", 3, maximum=10)
+MAX_GLOBAL_SKILL_UPLOADS = env_int("MAX_GLOBAL_SKILL_UPLOADS", 4, maximum=20)
+MAX_SKILL_UPLOADS_PER_USER = env_int("MAX_SKILL_UPLOADS_PER_USER", 2, maximum=10)
+
+# A single Railway process owns the transient task state. Every job is bound to
+# a verified Supabase user id, while request-level limiters rotate fairly across
+# users instead of locking the entire Skills batch behind one global semaphore.
 REVIEW_JOBS: Dict[str, Dict[str, Any]] = {}
 REVIEW_JOB_TASKS: set[asyncio.Task] = set()
-REVIEW_JOB_SEMAPHORE = asyncio.Semaphore(MAX_ACTIVE_REVIEW_JOBS)
+REVIEW_OWNER_SEMAPHORES: Dict[str, asyncio.Semaphore] = {}
+TRADITIONAL_REVIEW_JOB_SEMAPHORE = asyncio.Semaphore(MAX_ACTIVE_TRADITIONAL_REVIEW_JOBS)
+SKILL_ATTEMPT_LIMITER = FairUserConcurrencyLimiter(
+    MAX_GLOBAL_SKILL_ATTEMPTS,
+    MAX_SKILL_ATTEMPTS_PER_USER,
+)
+SKILL_UPLOAD_LIMITER = FairUserConcurrencyLimiter(
+    MAX_GLOBAL_SKILL_UPLOADS,
+    MAX_SKILL_UPLOADS_PER_USER,
+)
+SUPABASE_TOKEN_VERIFIER = SupabaseTokenVerifier.from_env()
 SYSTEM_TEMP_ROOT = Path(tempfile.gettempdir()).resolve()
 REVIEW_JOBS_ROOT = SYSTEM_TEMP_ROOT / "homework_review_jobs"
 REVIEW_JOBS_ROOT.mkdir(parents=True, exist_ok=True)
-
-# 确保.env文件存在（子脚本会尝试加载它，不存在会报错）
-env_file = SCRIPT_DIR / ".env"
-if not env_file.exists():
-    env_file.touch()
-
 
 def clamp_review_concurrency(value: int) -> int:
     return min(MAX_REVIEW_CONCURRENCY, max(1, int(value)))
 
 
-def get_review_job(job_id: str) -> Dict[str, Any]:
+async def require_review_user(
+    authorization_header: Optional[str] = Header(None, alias="Authorization"),
+) -> str:
+    try:
+        token = extract_bearer_token(authorization_header)
+        return await asyncio.to_thread(SUPABASE_TOKEN_VERIFIER.verify, token)
+    except ReviewAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except ReviewAuthConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def get_review_job(job_id: str, owner_id: Optional[str] = None) -> Dict[str, Any]:
     job = REVIEW_JOBS.get(job_id)
-    if not job:
+    if not job or (owner_id is not None and job.get("ownerId") != owner_id):
         raise HTTPException(status_code=404, detail="批阅任务不存在或服务已重启")
     return job
+
+
+def get_review_owner_semaphore(owner_id: str) -> asyncio.Semaphore:
+    semaphore = REVIEW_OWNER_SEMAPHORES.get(owner_id)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(MAX_ACTIVE_REVIEW_JOBS_PER_USER)
+        REVIEW_OWNER_SEMAPHORES[owner_id] = semaphore
+    return semaphore
 
 
 def resolve_temp_file(path: str) -> Path:
@@ -97,6 +173,20 @@ def resolve_temp_file(path: str) -> Path:
     except ValueError as exc:
         raise HTTPException(status_code=403, detail="只允许访问临时文件") from exc
     return resolved
+
+
+def resolve_review_job_artifact(job: Dict[str, Any], file_name: str) -> Path:
+    """Resolve a result artifact strictly inside this job's output directory."""
+    output_root = Path(job["outputRoot"]).resolve()
+    requested = Path(file_name)
+    candidate = requested.resolve() if requested.is_absolute() else (output_root / requested).resolve()
+    try:
+        candidate.relative_to(output_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="结果文件路径超出当前批阅任务") from exc
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail="结果文件不存在")
+    return candidate
 
 
 def append_review_job_log(job: Dict[str, Any], message: str, level: str = "info") -> None:
@@ -237,14 +327,24 @@ async def execute_async_review_job(
         if not result_payload:
             raise RuntimeError("批阅结果缺少完成标记")
 
-        output_root = Path(job["outputRoot"])
-        absolute_files = [str(output_root / item) for item in result_payload.get("output_files", [])]
+        output_root = Path(job["outputRoot"]).resolve()
+        relative_files: List[str] = []
+        for item in result_payload.get("output_files", []):
+            requested = Path(str(item))
+            candidate = requested.resolve() if requested.is_absolute() else (output_root / requested).resolve()
+            try:
+                relative_name = candidate.relative_to(output_root)
+            except ValueError:
+                append_review_job_log(job, f"⚠️ 已忽略输出目录之外的结果文件：{item}", "warn")
+                continue
+            if candidate.is_file():
+                relative_files.append(str(relative_name))
         job["result"] = {
             "jobId": job_id,
-            "outputFiles": absolute_files,
+            "outputFiles": relative_files,
             "summary": result_payload.get("result", {}),
             "scoreTable": result_payload.get("score_table"),
-            "downloadBaseUrl": "/api/homework-review/download",
+            "downloadBaseUrl": f"/api/homework-review/jobs/{job_id}/artifacts",
         }
         job["status"] = "completed"
         append_review_job_log(job, "🎉 全部批阅完成")
@@ -267,14 +367,19 @@ async def execute_async_review_job(
 
 
 async def run_async_review_job(job_id: str, **settings: Any) -> None:
-    """Keep aggregate platform pressure bounded even when users submit together."""
+    """Serialize jobs per user and cap only the resource-heavy legacy worker."""
     job = get_review_job(job_id)
-    if REVIEW_JOB_SEMAPHORE.locked():
-        append_review_job_log(job, "⏳ 已进入全局队列，当前有其他批阅任务在执行")
-    async with REVIEW_JOB_SEMAPHORE:
-        if job.get("cancelRequested"):
-            return
-        await execute_async_review_job(job_id, **settings)
+    owner_id = job["ownerId"]
+    owner_semaphore = get_review_owner_semaphore(owner_id)
+    if owner_semaphore.locked():
+        append_review_job_log(job, "⏳ 你已有一个批阅任务在执行，本任务在个人队列中等待")
+    async with owner_semaphore:
+        if TRADITIONAL_REVIEW_JOB_SEMAPHORE.locked():
+            append_review_job_log(job, "⏳ 传统批阅工作进程繁忙，本任务等待可用资源")
+        async with TRADITIONAL_REVIEW_JOB_SEMAPHORE:
+            if job.get("cancelRequested"):
+                return
+            await execute_async_review_job(job_id, **settings)
 
 
 SKILL_SUCCESS_STATES = {"SUCCESS"}
@@ -399,6 +504,7 @@ async def execute_async_skill_review_job(
     poll_interval_seconds: int,
 ) -> None:
     job = get_review_job(job_id)
+    owner_id = job["ownerId"]
     job["status"] = "running"
     job["engine"] = "skill"
     total_runs = len(job["files"]) * attempts
@@ -415,17 +521,18 @@ async def execute_async_skill_review_job(
     async def upload_one(file_index: int, file_path: str) -> None:
         file_name = Path(file_path).name
         async with semaphore:
-            try:
-                uploaded[file_index] = await asyncio.to_thread(
-                    upload_student_attachment,
-                    file_path,
-                    authorization,
-                    cookie,
-                )
-                append_review_job_log(job, f"☁️ 「{file_name}」已上传到智慧树资源服务")
-            except Exception as exc:
-                upload_errors[file_index] = str(exc)
-                append_review_job_log(job, f"❌ 「{file_name}」上传失败：{exc}", "error")
+            async with SKILL_UPLOAD_LIMITER.slot(owner_id):
+                try:
+                    uploaded[file_index] = await asyncio.to_thread(
+                        upload_student_attachment,
+                        file_path,
+                        authorization,
+                        cookie,
+                    )
+                    append_review_job_log(job, f"☁️ 「{file_name}」已上传到智慧树资源服务")
+                except Exception as exc:
+                    upload_errors[file_index] = str(exc)
+                    append_review_job_log(job, f"❌ 「{file_name}」上传失败：{exc}", "error")
 
     try:
         await asyncio.gather(*[
@@ -454,21 +561,22 @@ async def execute_async_skill_review_job(
                 }
             else:
                 async with semaphore:
-                    result = await execute_skill_attempt(
-                        job=job,
-                        file_name=file_name,
-                        file_index=file_index,
-                        attempt_index=attempt_index,
-                        attachment=uploaded[file_index],
-                        authorization=authorization,
-                        cookie=cookie,
-                        skill_version_id=skill_version_id,
-                        skill_nid=skill_nid,
-                        model_name=model_name,
-                        submission_requirement=submission_requirement,
-                        student_submission=student_submission,
-                        poll_interval_seconds=poll_interval_seconds,
-                    )
+                    async with SKILL_ATTEMPT_LIMITER.slot(owner_id):
+                        result = await execute_skill_attempt(
+                            job=job,
+                            file_name=file_name,
+                            file_index=file_index,
+                            attempt_index=attempt_index,
+                            attachment=uploaded[file_index],
+                            authorization=authorization,
+                            cookie=cookie,
+                            skill_version_id=skill_version_id,
+                            skill_nid=skill_nid,
+                            model_name=model_name,
+                            submission_requirement=submission_requirement,
+                            student_submission=student_submission,
+                            poll_interval_seconds=poll_interval_seconds,
+                        )
             results.append(result)
             completed_runs += 1
             if result.get("success"):
@@ -525,9 +633,11 @@ async def execute_async_skill_review_job(
 
 async def run_async_skill_review_job(job_id: str, **settings: Any) -> None:
     job = get_review_job(job_id)
-    if REVIEW_JOB_SEMAPHORE.locked():
-        append_review_job_log(job, "⏳ 已进入全局队列，当前有其他批阅任务在执行")
-    async with REVIEW_JOB_SEMAPHORE:
+    owner_id = job["ownerId"]
+    owner_semaphore = get_review_owner_semaphore(owner_id)
+    if owner_semaphore.locked():
+        append_review_job_log(job, "⏳ 你已有一个批阅任务在执行，本任务在个人队列中等待")
+    async with owner_semaphore:
         if job.get("cancelRequested"):
             return
         await execute_async_skill_review_job(job_id, **settings)
@@ -575,6 +685,214 @@ async def get_skill_review_models(
         "scene": normalized_scene,
         "models": models,
         "defaultModel": default_model,
+    }
+
+
+@app.post("/api/review/skill-overview")
+async def generate_skill_submission_requirement(
+    authorization: str = Form(...),
+    cookie: str = Form(...),
+    skill_version_id: str = Form(...),
+    skill_type: str = Form("1", alias="type"),
+):
+    """根据 Skill 概览生成所有学生共用的可编辑作业要求。"""
+    if not authorization.strip() or not cookie.strip():
+        raise HTTPException(status_code=400, detail="请填写完整的智慧树认证信息")
+    if not skill_version_id.strip():
+        raise HTTPException(status_code=400, detail="请填写 Skill Version ID")
+
+    normalized_type = skill_type.strip() or "1"
+    try:
+        overview = await asyncio.to_thread(
+            get_correction_skill_overview,
+            skill_version_id.strip(),
+            authorization.strip(),
+            cookie.strip(),
+            skill_type=normalized_type,
+        )
+        requirement = build_submission_requirement_from_overview(overview)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    data = overview.get("data") or {}
+    skill = data.get("skill") or {}
+    scoring = data.get("scoring") or {}
+    return {
+        "requirement": requirement,
+        "skillName": skill.get("name"),
+        "fullMark": scoring.get("fullMark"),
+        "extractionStatus": skill.get("extractionStatus"),
+    }
+
+
+@app.post("/api/review/skill-package")
+async def upload_grading_skill_package(
+    zip_file: UploadFile = File(..., alias="zipFile"),
+    authorization: str = Form(...),
+    cookie: str = Form(...),
+):
+    """校验并上传技能包，随后自动将其改为批阅类型 Skill。"""
+    if not authorization.strip() or not cookie.strip():
+        raise HTTPException(status_code=400, detail="请填写完整的智慧树认证信息")
+    if not zip_file.filename or not zip_file.filename.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="请选择 .zip 作业批阅技能包")
+
+    with tempfile.TemporaryDirectory(prefix="grading_skill_upload_") as temp_dir:
+        target = Path(temp_dir) / safe_upload_name(zip_file.filename)
+        total_bytes = 0
+        try:
+            with target.open("wb") as output:
+                while True:
+                    chunk = await zip_file.read(REVIEW_UPLOAD_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    total_bytes += len(chunk)
+                    if total_bytes > MAX_SKILL_PACKAGE_BYTES:
+                        raise HTTPException(status_code=413, detail="技能包不能超过 50 MB")
+                    output.write(chunk)
+        finally:
+            await zip_file.close()
+
+        try:
+            result = await asyncio.to_thread(
+                upload_and_prepare_grading_skill,
+                str(target),
+                authorization.strip(),
+                cookie.strip(),
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return result
+
+
+@app.post("/api/review/skill-package/generate")
+async def generate_upload_grading_skill_package(
+    materials: Optional[List[UploadFile]] = File(None),
+    material_text: str = Form(""),
+    authorization: str = Form(...),
+    cookie: str = Form(...),
+    llm_api_key: str = Form(""),
+    llm_api_url: str = Form(""),
+    llm_model: str = Form(""),
+):
+    """使用 AgentEval LLM 生成 Skill ZIP，并自动上传和切换为批阅类型。"""
+    if not authorization.strip() or not cookie.strip():
+        raise HTTPException(status_code=400, detail="请填写完整的智慧树认证信息")
+    valid_materials = [item for item in (materials or []) if item.filename]
+    if not valid_materials and not material_text.strip():
+        raise HTTPException(status_code=400, detail="请上传课程材料或填写教师补充说明")
+    if len(valid_materials) > MAX_SKILL_MATERIAL_FILES:
+        raise HTTPException(status_code=400, detail=f"课程材料最多 {MAX_SKILL_MATERIAL_FILES} 个文件")
+
+    effective_api_key = llm_api_key.strip() or os.getenv("LLM_API_KEY", "")
+    effective_api_url = llm_api_url.strip() or os.getenv("LLM_API_URL", "")
+    effective_model = llm_model.strip() or os.getenv("LLM_MODEL", "")
+    if not effective_api_key or not effective_model:
+        raise HTTPException(status_code=400, detail="请先在 AgentEval 全局设置中配置 LLM API Key 和作业批阅模型")
+
+    with tempfile.TemporaryDirectory(prefix="grading_skill_generate_") as temp_dir:
+        temp_root = Path(temp_dir)
+        material_dir = temp_root / "materials"
+        output_dir = temp_root / "output"
+        material_dir.mkdir(parents=True, exist_ok=True)
+        material_paths: List[Path] = []
+        total_bytes = 0
+        try:
+            for upload in valid_materials:
+                target = unique_upload_path(material_dir, upload.filename or "material")
+                with target.open("wb") as output:
+                    while True:
+                        chunk = await upload.read(REVIEW_UPLOAD_CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        total_bytes += len(chunk)
+                        if total_bytes > MAX_SKILL_MATERIAL_BYTES:
+                            raise HTTPException(status_code=413, detail="课程材料总大小不能超过 80 MB")
+                        output.write(chunk)
+                material_paths.append(target)
+        finally:
+            for upload in valid_materials:
+                await upload.close()
+
+        try:
+            generated = await asyncio.to_thread(
+                generate_grading_skill_zip,
+                material_paths=material_paths,
+                material_text=material_text,
+                output_dir=output_dir,
+                api_key=effective_api_key,
+                api_url=effective_api_url,
+                model=effective_model,
+            )
+            zip_path = Path(generated.pop("zipPath"))
+            zip_base64 = await asyncio.to_thread(encode_file_base64, zip_path)
+
+            uploaded = None
+            upload_error = None
+            try:
+                uploaded = await asyncio.to_thread(
+                    upload_and_prepare_grading_skill,
+                    str(zip_path),
+                    authorization.strip(),
+                    cookie.strip(),
+                )
+            except Exception as exc:
+                upload_error = str(exc)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {
+        **generated,
+        "zipBase64": zip_base64,
+        "upload": uploaded,
+        "uploadError": upload_error,
+        "model": effective_model,
+    }
+
+
+@app.post("/api/review/student-samples/generate")
+async def generate_skill_student_samples(
+    submission_requirement: str = Form(...),
+    assignment_title: str = Form("课程作业"),
+    count: int = Form(3),
+    llm_api_key: str = Form(""),
+    llm_api_url: str = Form(""),
+    llm_model: str = Form(""),
+):
+    """使用 AgentEval LLM 生成匿名多档学生作业 DOCX，供 Skills 直接测试。"""
+    if len(submission_requirement.strip()) < 20:
+        raise HTTPException(status_code=400, detail="请先生成或填写完整的学生作业要求")
+    normalized_count = min(5, max(1, count))
+    effective_api_key = llm_api_key.strip() or os.getenv("LLM_API_KEY", "")
+    effective_api_url = llm_api_url.strip() or os.getenv("LLM_API_URL", "")
+    effective_model = llm_model.strip() or os.getenv("LLM_MODEL", "")
+    if not effective_api_key or not effective_model:
+        raise HTTPException(status_code=400, detail="请先在 AgentEval 全局设置中配置 LLM API Key 和作业批阅模型")
+
+    with tempfile.TemporaryDirectory(prefix="grading_student_samples_") as temp_dir:
+        try:
+            files = await asyncio.to_thread(
+                generate_student_sample_docx_files,
+                assignment_title=assignment_title.strip() or "课程作业",
+                submission_requirement=submission_requirement.strip(),
+                count=normalized_count,
+                output_dir=Path(temp_dir),
+                api_key=effective_api_key,
+                api_url=effective_api_url,
+                model=effective_model,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {
+        "count": len(files),
+        "files": files,
+        "model": effective_model,
     }
 
 
@@ -795,7 +1113,7 @@ async def generate_answers(
 
 
 @app.post("/api/review/jobs", status_code=201)
-async def create_review_job():
+async def create_review_job(review_user_id: str = Depends(require_review_user)):
     """Create an upload session for a long-running review job."""
     job_id = uuid.uuid4().hex
     job_dir = REVIEW_JOBS_ROOT / job_id
@@ -806,6 +1124,7 @@ async def create_review_job():
     now = datetime.now(timezone.utc).isoformat()
     REVIEW_JOBS[job_id] = {
         "jobId": job_id,
+        "ownerId": review_user_id,
         "status": "uploading",
         "files": [],
         "uploadedNames": [],
@@ -834,9 +1153,10 @@ async def upload_review_job_files(
     files: List[UploadFile] = File(...),
     upload_batch_id: str = Form(...),
     file_keys: Optional[str] = Form(None),
+    review_user_id: str = Depends(require_review_user),
 ):
     """Upload one idempotent chunk of files into an asynchronous job."""
-    job = get_review_job(job_id)
+    job = get_review_job(job_id, review_user_id)
     if job["status"] != "uploading":
         raise HTTPException(status_code=409, detail="当前任务已结束上传阶段")
 
@@ -902,9 +1222,10 @@ async def upload_review_job_chunk(
     original_name: str = Form(...),
     chunk_index: int = Form(...),
     total_chunks: int = Form(...),
+    review_user_id: str = Depends(require_review_user),
 ):
     """Append one idempotent chunk for a large file."""
-    job = get_review_job(job_id)
+    job = get_review_job(job_id, review_user_id)
     if job["status"] != "uploading":
         raise HTTPException(status_code=409, detail="当前任务已结束上传阶段")
     if not upload_id.strip() or total_chunks < 1 or chunk_index < 0 or chunk_index >= total_chunks:
@@ -994,9 +1315,10 @@ async def start_review_job(
     llm_model: Optional[str] = Form(None),
     skip_llm_files: Optional[str] = Form(None),
     file_groups: Optional[str] = Form(None),
+    review_user_id: str = Depends(require_review_user),
 ):
     """Start the worker and return immediately; progress is read by polling."""
-    job = get_review_job(job_id)
+    job = get_review_job(job_id, review_user_id)
     if job["status"] in {"queued", "running", "completed"}:
         return {"jobId": job_id, "status": job["status"]}
     if job["status"] == "cancelled":
@@ -1056,9 +1378,10 @@ async def start_skill_review_job(
     attempts: int = Form(1),
     max_concurrency: int = Form(3),
     poll_interval_seconds: int = Form(5),
+    review_user_id: str = Depends(require_review_user),
 ):
     """启动多份学生作业的 Skills 批量测试。"""
-    job = get_review_job(job_id)
+    job = get_review_job(job_id, review_user_id)
     if job["status"] in {"queued", "running", "completed"}:
         return {"jobId": job_id, "status": job["status"]}
     if job["status"] == "cancelled":
@@ -1120,9 +1443,12 @@ async def start_skill_review_job(
 
 
 @app.delete("/api/review/jobs/{job_id}")
-async def cancel_review_job(job_id: str):
+async def cancel_review_job(
+    job_id: str,
+    review_user_id: str = Depends(require_review_user),
+):
     """Cancel an upload, queued job, or running review process."""
-    job = get_review_job(job_id)
+    job = get_review_job(job_id, review_user_id)
     if job["status"] == "cancelled":
         return {"jobId": job_id, "status": "cancelled"}
     if job["status"] in {"completed", "failed"}:
@@ -1139,14 +1465,29 @@ async def cancel_review_job(job_id: str):
     return {"jobId": job_id, "status": "cancelled"}
 
 
+@app.get("/api/review/jobs/{job_id}/artifacts")
+async def download_review_job_artifact(
+    job_id: str,
+    file: str = Query(..., min_length=1),
+    review_user_id: str = Depends(require_review_user),
+):
+    """Download one completed result after checking the job owner."""
+    job = get_review_job(job_id, review_user_id)
+    if job["status"] != "completed":
+        raise HTTPException(status_code=409, detail="批阅任务尚未完成")
+    artifact = resolve_review_job_artifact(job, file)
+    return FileResponse(path=str(artifact), filename=artifact.name)
+
+
 @app.get("/api/review/jobs/{job_id}")
 async def get_review_job_status(
     job_id: str,
     cursor: int = Query(0, ge=0),
     log_limit: int = Query(250, ge=1, le=1000),
+    review_user_id: str = Depends(require_review_user),
 ):
     """Return a compact status snapshot and logs after the supplied cursor."""
-    job = get_review_job(job_id)
+    job = get_review_job(job_id, review_user_id)
     end = min(len(job["logs"]), cursor + log_limit)
     response: Dict[str, Any] = {
         "jobId": job_id,

@@ -57,9 +57,20 @@ COOKIE=hike-polymas-identity=1; themeVariables=...
 INSTANCE_NID=XLRNIzbkox
 
 # LLM配置
-LLM_API_KEY=sk-Js9xmWBzrIw5fZ6YlQ3PvUy7VaK2SHF9WciaMHHTK1f5WoR8
+LLM_API_KEY=your_llm_api_key
 LLM_API_URL=http://llm-service.polymas.com/api/openai/v1/chat/completions
 LLM_MODEL=claude-sonnet-4-20250514
+
+# AgentEval 登录校验（与前端使用同一个 Supabase 项目）
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# 10 人共享单实例的默认公平并发参数
+MAX_ACTIVE_REVIEW_JOBS_PER_USER=1
+MAX_GLOBAL_SKILL_ATTEMPTS=10
+MAX_SKILL_ATTEMPTS_PER_USER=3
+MAX_GLOBAL_SKILL_UPLOADS=4
+MAX_SKILL_UPLOADS_PER_USER=2
 
 # Railway会自动设置 PORT 变量
 ```
@@ -100,17 +111,9 @@ Railway提供：
 - ✅ 部署历史
 - ✅ 自动健康检查（访问 /health）
 
-## 💰 费用说明
+## 💰 实例方案
 
-**Railway免费套餐：**
-- $5/月免费额度
-- 512MB内存
-- 8个服务
-- 无休眠（与Heroku不同）
-
-**升级到Hobby计划（$5/月）：**
-- 8GB内存
-- 更多计算资源
+当前实现面向单个 Railway 副本，不需要 Redis 或第二个服务，适合先使用现有免费实例。Railway 套餐和赠送额度会调整，部署前以项目控制台显示为准。扩展为多个副本之前，需要把内存中的 Job 状态和 `/tmp` 结果迁移到共享存储。
 
 ## 🔧 本地测试
 
@@ -123,10 +126,10 @@ cd homework_review
 pip install -r requirements.txt
 
 # 启动服务
-python api_server.py
+python main.py
 
 # 或使用uvicorn
-uvicorn api_server:app --reload --port 8000
+uvicorn main:app --reload --port 8000
 
 # 访问 http://localhost:8000
 # 查看API文档：http://localhost:8000/docs
@@ -147,7 +150,7 @@ uvicorn api_server:app --reload --port 8000
 - 定期清理避免磁盘占用
 
 ### 4. CORS错误
-检查 `api_server.py` 中的 CORS配置是否包含你的Vercel域名
+检查 `main.py` 中的 CORS 配置是否包含你的 Vercel 域名
 
 ## 🔄 更新部署
 

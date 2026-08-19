@@ -203,6 +203,13 @@ interface ReviewJobSnapshot {
   result?: ReviewResult;
 }
 
+interface CancelActiveReviewJobResult {
+  jobId: string;
+  status: "cancelled";
+  engine: "traditional" | "skill";
+  message: string;
+}
+
 interface Credentials {
   authorization: string;
   cookie: string;
@@ -765,6 +772,7 @@ export function HomeworkReviewInterface() {
   const activeReviewJobIdRef = useRef<string | null>(null);
   const cancelRequestedRef = useRef(false);
   const [cancelling, setCancelling] = useState(false);
+  const [endingOccupiedReviewJob, setEndingOccupiedReviewJob] = useState(false);
   // 标记是否自动衔接批阅（生成并评测模式），防止 startReview 的 finally 过早清理
   const autoReviewTakenOverRef = useRef(false);
 
@@ -1499,6 +1507,32 @@ export function HomeworkReviewInterface() {
     }
     appendLog(backendCancelled ? "✅ 本次批阅已取消" : "⚠️ 页面已停止等待，请查看后端日志确认任务状态");
     setCancelling(false);
+  };
+
+  const handleEndOccupiedReviewJob = async () => {
+    if (endingOccupiedReviewJob) return;
+    if (!confirm("确定结束当前账号正在执行的批阅任务？后面正在排队的新任务会保留，并在执行槽释放后自动开始。")) return;
+
+    setEndingOccupiedReviewJob(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/homework-review/jobs/active", {
+        method: "DELETE",
+        headers: getReviewAuthHeaders(),
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response, "结束占用中的批阅任务失败"));
+      }
+      const payload = await response.json() as CancelActiveReviewJobResult;
+      appendLog(`✅ ${payload.message}（Job ID: ${payload.jobId}）`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "结束占用中的批阅任务失败";
+      setError(message);
+      appendLog(`⚠️ ${message}`);
+    } finally {
+      setEndingOccupiedReviewJob(false);
+    }
   };
 
   const startReview = async (reviewTargetsOverride?: File[]) => {
@@ -3419,7 +3453,23 @@ export function HomeworkReviewInterface() {
                   </span>
                 )}
               </div>
-              <span className="text-xs text-slate-500">{logs.length} 条</span>
+              <div className="flex items-center gap-3">
+                {mode === "review" && (
+                  <button
+                    type="button"
+                    onClick={() => void handleEndOccupiedReviewJob()}
+                    disabled={endingOccupiedReviewJob}
+                    title="结束当前账号最早的正在执行任务，保留后面排队的任务"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-red-400/40 bg-red-500/10 px-2.5 py-1.5 text-xs font-semibold text-red-300 transition hover:bg-red-500/20 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {endingOccupiedReviewJob
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Trash2 className="h-3.5 w-3.5" />}
+                    {endingOccupiedReviewJob ? "正在结束..." : "结束占用中的任务"}
+                  </button>
+                )}
+                <span className="text-xs text-slate-500">{logs.length} 条</span>
+              </div>
             </div>
             <div className="px-5 py-4 max-h-80 overflow-y-auto font-mono text-xs leading-relaxed space-y-0.5">
               {logs.map((line, i) => (

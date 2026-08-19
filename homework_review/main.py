@@ -233,6 +233,36 @@ async def terminate_review_job_process(job: Dict[str, Any]) -> None:
         await process.wait()
 
 
+def review_job_summary(job: Dict[str, Any]) -> Dict[str, Any]:
+    """Return only the fields needed by the active-job recovery UI."""
+    return {
+        "jobId": job["jobId"],
+        "status": job["status"],
+        "engine": job.get("engine") or "traditional",
+        "uploadedCount": len(job.get("files") or []),
+        "createdAt": job["createdAt"],
+        "updatedAt": job["updatedAt"],
+    }
+
+
+async def cancel_review_job_state(job: Dict[str, Any], message: str) -> None:
+    """Cancel a job and wait briefly for its per-user execution slot to release."""
+    job["cancelRequested"] = True
+    await terminate_review_job_process(job)
+    job["status"] = "cancelled"
+    job["error"] = None
+    append_review_job_log(job, message, "warn")
+
+    task = job.get("_task")
+    if task is None or task.done() or task is asyncio.current_task():
+        return
+    task.cancel()
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=3)
+    except (asyncio.CancelledError, asyncio.TimeoutError):
+        pass
+
+
 async def execute_async_review_job(
     job_id: str,
     *,
@@ -1442,6 +1472,53 @@ async def start_skill_review_job(
     }
 
 
+@app.get("/api/review/jobs/active")
+async def get_active_review_jobs(
+    review_user_id: str = Depends(require_review_user),
+):
+    """List this user's running and queued jobs so stale page state can recover."""
+    active_jobs = [
+        job
+        for job in REVIEW_JOBS.values()
+        if job.get("ownerId") == review_user_id
+        and job.get("status") in {"running", "queued"}
+    ]
+    active_jobs.sort(
+        key=lambda item: (
+            0 if item.get("status") == "running" else 1,
+            str(item.get("createdAt") or ""),
+        )
+    )
+    return {
+        "jobs": [review_job_summary(job) for job in active_jobs],
+        "runningCount": sum(1 for job in active_jobs if job.get("status") == "running"),
+        "queuedCount": sum(1 for job in active_jobs if job.get("status") == "queued"),
+    }
+
+
+@app.delete("/api/review/jobs/active")
+async def cancel_active_review_job(
+    review_user_id: str = Depends(require_review_user),
+):
+    """Cancel the oldest running job while leaving later queued jobs intact."""
+    running_jobs = [
+        job
+        for job in REVIEW_JOBS.values()
+        if job.get("ownerId") == review_user_id and job.get("status") == "running"
+    ]
+    if not running_jobs:
+        raise HTTPException(status_code=404, detail="当前账号没有正在执行的批阅任务")
+
+    target = min(running_jobs, key=lambda item: str(item.get("createdAt") or ""))
+    await cancel_review_job_state(target, "⏹️ 用户手动结束了占用中的批阅任务")
+    return {
+        "jobId": target["jobId"],
+        "status": "cancelled",
+        "engine": target.get("engine") or "traditional",
+        "message": "正在执行的批阅任务已结束，个人队列已释放",
+    }
+
+
 @app.delete("/api/review/jobs/{job_id}")
 async def cancel_review_job(
     job_id: str,
@@ -1454,14 +1531,7 @@ async def cancel_review_job(
     if job["status"] in {"completed", "failed"}:
         raise HTTPException(status_code=409, detail=f"任务已{'完成' if job['status'] == 'completed' else '失败'}")
 
-    job["cancelRequested"] = True
-    await terminate_review_job_process(job)
-    task = job.get("_task")
-    if task is not None and not task.done():
-        task.cancel()
-    job["status"] = "cancelled"
-    job["error"] = None
-    append_review_job_log(job, "⏹️ 用户已取消本次批阅", "warn")
+    await cancel_review_job_state(job, "⏹️ 用户已取消本次批阅")
     return {"jobId": job_id, "status": "cancelled"}
 
 

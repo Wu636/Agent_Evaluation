@@ -13,6 +13,7 @@ import {
 } from "@/lib/llm/settings";
 import { diagnoseTrainingScript } from "@/lib/training-generator/script-tools";
 import { ParsedTaskConfig, parseRubricMarkdown, parseTaskConfig, parseTrainingScript, serializeTrainingScriptMarkdown } from "@/lib/training-injector/parser";
+import { TrainingInjectionOptions } from "@/components/TrainingInjectionOptions";
 
 interface InjectConfigModalProps {
     isOpen: boolean;
@@ -1691,57 +1692,16 @@ export function InjectConfigModal({
                                     )}
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 border-t border-slate-100">
-                                    {/* 左侧：注入内容 */}
-                                    <div className="space-y-3">
-                                        <label className="text-xs font-medium text-slate-700 block">注入内容</label>
-                                        <label className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${!effectiveScriptMd ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-50'}`}>
-                                            <input
-                                                type="checkbox"
-                                                checked={injectScript}
-                                                onChange={(e) => setInjectScript(e.target.checked)}
-                                                disabled={!effectiveScriptMd}
-                                                className="rounded text-indigo-600 focus:ring-indigo-500"
-                                            />
-                                            <span className="text-sm font-medium text-slate-700">训练剧本配置节点</span>
-                                            {!effectiveScriptMd && <span className="text-xs text-slate-400 ml-auto">未生成</span>}
-                                        </label>
-                                        <label className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${!effectiveRubricMd ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-50'}`}>
-                                            <input
-                                                type="checkbox"
-                                                checked={injectRubric}
-                                                onChange={(e) => setInjectRubric(e.target.checked)}
-                                                disabled={!effectiveRubricMd}
-                                                className="rounded text-indigo-600 focus:ring-indigo-500"
-                                            />
-                                            <span className="text-sm font-medium text-slate-700">任务评分标准</span>
-                                            {!effectiveRubricMd && <span className="text-xs text-slate-400 ml-auto">未生成</span>}
-                                        </label>
-                                    </div>
-
-                                    {/* 右侧：注入模式 */}
-                                    {injectScript && (
-                                        <div className="space-y-3">
-                                            <label className="text-xs font-medium text-slate-700 block">节点注入模式</label>
-                                            <div className="flex flex-col gap-2">
-                                                <label className={`p-2 border rounded-lg cursor-pointer transition-colors ${injectMode === 'replace' ? 'border-indigo-500 bg-indigo-50/50' : 'hover:bg-slate-50 border-slate-200'}`}>
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <input type="radio" checked={injectMode === 'replace'} onChange={() => setInjectMode('replace')} className="text-indigo-600 focus:ring-indigo-500" />
-                                                        <span className="text-sm font-medium text-slate-800">全部清除后重建 (推荐)</span>
-                                                    </div>
-                                                    <p className="text-xs text-slate-500 pl-6">将会删除目标任务中所有旧的剧本节点和连线，然后完整创建新的流程。</p>
-                                                </label>
-                                                <label className={`p-2 border rounded-lg cursor-pointer transition-colors ${injectMode === 'append' ? 'border-indigo-500 bg-indigo-50/50' : 'hover:bg-slate-50 border-slate-200'}`}>
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <input type="radio" checked={injectMode === 'append'} onChange={() => setInjectMode('append')} className="text-indigo-600 focus:ring-indigo-500" />
-                                                        <span className="text-sm font-medium text-slate-800">在现有节点后追加</span>
-                                                    </div>
-                                                    <p className="text-xs text-slate-500 pl-6">保留原有的节点，只是新增节点，请稍后手动调整连线。</p>
-                                                </label>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
+                                <TrainingInjectionOptions
+                                    injectScript={injectScript}
+                                    injectRubric={injectRubric}
+                                    injectMode={injectMode}
+                                    hasScript={Boolean(effectiveScriptMd)}
+                                    hasRubric={Boolean(effectiveRubricMd)}
+                                    onInjectScriptChange={setInjectScript}
+                                    onInjectRubricChange={setInjectRubric}
+                                    onInjectModeChange={setInjectMode}
+                                />
 
                                 <div className="pt-3 border-t border-slate-100 space-y-2">
                                     <label className="text-xs font-medium text-slate-700 block">课程封面图风格（可选）</label>

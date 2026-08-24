@@ -25,7 +25,7 @@ import type {
 } from "@/lib/training-refiner/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 900;
+export const maxDuration = 300;
 
 const POLYMAS_BASE = "https://cloudapi.polymas.com/teacher-course/abilityTrain";
 

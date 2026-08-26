@@ -460,7 +460,11 @@ export async function POST(request: NextRequest) {
                         finalTrainTaskId = parsed.trainTaskId;
                         finalCourseId = finalCourseId || parsed.courseId;
                         finalLibraryFolderId = finalLibraryFolderId || parsed.libraryFolderId;
-                        console.log("[inject-route] URL parsed -> trainTaskId:", finalTrainTaskId, "courseId:", finalCourseId);
+                        // 学校定制化平台：从完整 URL 提取 origin，后续按 {origin}/cloud 推导 API 根
+                        if (parsed.apiOrigin && !credentials.apiOrigin) {
+                            credentials.apiOrigin = parsed.apiOrigin;
+                        }
+                        console.log("[inject-route] URL parsed -> trainTaskId:", finalTrainTaskId, "courseId:", finalCourseId, "apiOrigin:", credentials.apiOrigin || "(官方)");
                     }
                 }
 

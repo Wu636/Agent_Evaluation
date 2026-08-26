@@ -10,11 +10,36 @@ import type {
     DigitalHumanGender,
 } from "./voice-selection";
 
-const POLYMAS_BASE = "https://cloudapi.polymas.com/teacher-course/abilityTrain";
-const POLYMAS_AI_BASE = "https://cloudapi.polymas.com/ai-tools";
-const POLYMAS_AI_PROFILE_BASE = "https://cloudapi.polymas.com/ai-profile";
-const POLYMAS_RESOURCE_BASE = "https://cloudapi.polymas.com/basic-resource";
-const POLYMAS_TEACHING_CENTER_AI_BASE = "https://cloudapi.polymas.com/teachingCenterAi";
+const POLYMAS_CLOUDAPI_ROOT = "https://cloudapi.polymas.com";
+const POLYMAS_ABILITY_TRAIN_PATH = "teacher-course/abilityTrain";
+const POLYMAS_AI_TOOLS_PATH = "ai-tools";
+const POLYMAS_AI_PROFILE_PATH = "ai-profile";
+const POLYMAS_RESOURCE_PATH = "basic-resource";
+const POLYMAS_TEACHING_CENTER_AI_PATH = "teachingCenterAi";
+
+/**
+ * 解析当前凭证指向的平台 API 根地址。
+ * 官方平台为 https://cloudapi.polymas.com；学校定制化平台（如 https://aic.sysu.edu.cn）
+ * 将同一套服务挂载在 {origin}/cloud 前缀下（页面 origin 与 API 同域）。
+ */
+export function resolveCloudapiRoot(
+    credentials?: Pick<PolymasCredentials, "apiOrigin"> | null
+): string {
+    const raw = String(credentials?.apiOrigin || "").trim().replace(/\/+$/, "");
+    if (!raw) return POLYMAS_CLOUDAPI_ROOT;
+    try {
+        const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+        // 官方域名（含子域）始终走默认 cloudapi
+        if (/(^|\.)polymas\.com$/i.test(url.hostname)) return POLYMAS_CLOUDAPI_ROOT;
+        return `${url.origin}/cloud`;
+    } catch {
+        return POLYMAS_CLOUDAPI_ROOT;
+    }
+}
+
+function resolvePolymasApiBase(credentials: PolymasCredentials, path: string): string {
+    return `${resolveCloudapiRoot(credentials)}/${path}`;
+}
 const DEFAULT_SCRIPT_MODEL_ID = "Doubao-Seed-2.0-pro";
 const DEFAULT_DIGITAL_HUMAN_USER_NID =
     process.env.POLYMAS_DIGITAL_HUMAN_USER_NID || "XnRLWOeg6H";
@@ -285,7 +310,7 @@ async function getLoginUserNid(credentials: PolymasCredentials): Promise<string>
     if (cached) return cached;
 
     const promise = directGetRequestTo<PolymasLoginUserInfo>(
-        POLYMAS_TEACHING_CENTER_AI_BASE,
+        resolvePolymasApiBase(credentials, POLYMAS_TEACHING_CENTER_AI_PATH),
         "user/getLoginUserInfo",
         credentials
     ).then((result) => {
@@ -335,7 +360,7 @@ async function directRequest<T = unknown>(
     payload: Record<string, unknown>,
     credentials: PolymasCredentials
 ): Promise<{ success: boolean; data?: T; error?: string }> {
-    return directRequestTo<T>(POLYMAS_BASE, apiPath, payload, credentials);
+    return directRequestTo<T>(resolvePolymasApiBase(credentials, POLYMAS_ABILITY_TRAIN_PATH), apiPath, payload, credentials);
 }
 
 async function directRequestTo<T = unknown>(
@@ -552,7 +577,7 @@ async function requestCloudapiImageGeneration(
     timeoutMs: number
 ): Promise<ProviderProbeResult> {
     try {
-        const res = await fetchWithTimeout(`${POLYMAS_AI_BASE}/image/generate`, {
+        const res = await fetchWithTimeout(`${resolvePolymasApiBase(credentials, POLYMAS_AI_TOOLS_PATH)}/image/generate`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json; charset=utf-8",
@@ -956,7 +981,7 @@ export async function generateBackgroundImage(
     },
     credentials: PolymasCredentials
 ): Promise<BgImageResult | null> {
-    const targetUrl = `${POLYMAS_AI_BASE}/image/generate`;
+    const targetUrl = `${resolvePolymasApiBase(credentials, POLYMAS_AI_TOOLS_PATH)}/image/generate`;
     const preferredPrompt = buildBackgroundFallbackPrompt(params);
     const providerPriority = resolveImageProviderPriority(params.imageProviderPriority);
 
@@ -1037,7 +1062,7 @@ export async function generateCourseCoverImageSource(
     },
     credentials: PolymasCredentials
 ): Promise<{ fileUrl: string; fileId?: string } | null> {
-    const targetUrl = `${POLYMAS_AI_BASE}/image/generate`;
+    const targetUrl = `${resolvePolymasApiBase(credentials, POLYMAS_AI_TOOLS_PATH)}/image/generate`;
     const preferredPrompt = buildCoverFallbackPrompt(params);
     const providerPriority = resolveImageProviderPriority(params.imageProviderPriority);
 
@@ -1175,7 +1200,7 @@ export async function uploadCoverImageFromUrl(
         formData.append("size", String(fileSize));
         formData.append("file", new Blob([arrayBuffer], { type: mimeType }), fileName);
 
-        const uploadRes = await fetchWithTimeout(`${POLYMAS_RESOURCE_BASE}/file/upload`, {
+        const uploadRes = await fetchWithTimeout(`${resolvePolymasApiBase(credentials, POLYMAS_RESOURCE_PATH)}/file/upload`, {
             method: "POST",
             headers: {
                 Authorization: credentials.authorization,
@@ -1338,7 +1363,7 @@ async function uploadDigitalHumanAvatarImageFromUrl(
         formData.append("size", String(fileSize));
 
         const uploadRes = await fetchWithTimeout(
-            `${POLYMAS_RESOURCE_BASE}/file/upload?folderId=recent&hidden=false&syncLibrary=true`,
+            `${resolvePolymasApiBase(credentials, POLYMAS_RESOURCE_PATH)}/file/upload?folderId=recent&hidden=false&syncLibrary=true`,
             {
                 method: "POST",
                 headers: {
@@ -1390,7 +1415,7 @@ export async function listOwnerAvatars(
 ): Promise<OwnerAvatar[]> {
     const userNid = await resolvePolymasUserNid(credentials, params.userNid);
     const result = await directRequestTo<OwnerAvatar[]>(
-        POLYMAS_AI_PROFILE_BASE,
+        resolvePolymasApiBase(credentials, POLYMAS_AI_PROFILE_PATH),
         "ai_avatar/getOwnerAvatar",
         {
             userNid,
@@ -1421,7 +1446,7 @@ async function saveAndSyncDigitalHumanAvatar(
 ): Promise<string | null> {
     const userNid = await resolvePolymasUserNid(credentials, params.userNid);
     const result = await directRequestTo<{ avatarNid?: string }>(
-        POLYMAS_AI_PROFILE_BASE,
+        resolvePolymasApiBase(credentials, POLYMAS_AI_PROFILE_PATH),
         "ai_avatar/saveAndSyncResource",
         {
             userNid,
@@ -1705,7 +1730,7 @@ export async function listOwnerDigitalHumans(
 ): Promise<OwnerDigitalHuman[]> {
     const userNid = await resolvePolymasUserNid(credentials, params.userNid);
     const result = await directRequestTo<OwnerDigitalHuman[]>(
-        POLYMAS_AI_PROFILE_BASE,
+        resolvePolymasApiBase(credentials, POLYMAS_AI_PROFILE_PATH),
         "digital_human/owner/list",
         {
             userNid,
@@ -1733,7 +1758,7 @@ export async function listOwnerVoiceTrainings(
     credentials: PolymasCredentials
 ): Promise<OwnerVoiceTraining[]> {
     const result = await directRequestTo<OwnerVoiceTraining[]>(
-        POLYMAS_AI_PROFILE_BASE,
+        resolvePolymasApiBase(credentials, POLYMAS_AI_PROFILE_PATH),
         "ai_voice_training/list",
         {
             voiceTemplateType: params.voiceTemplateType || "ONLINE_DOUBAO",
@@ -1763,7 +1788,7 @@ export async function createCustomDigitalHuman(
 ): Promise<string | null> {
     const userNid = await resolvePolymasUserNid(credentials, params.userNid);
     const result = await directRequestTo<{ customNid?: string }>(
-        POLYMAS_AI_PROFILE_BASE,
+        resolvePolymasApiBase(credentials, POLYMAS_AI_PROFILE_PATH),
         "digital_human/custom/addAndSyncResource",
         {
             userNid,
@@ -2060,11 +2085,15 @@ export function parsePolymasUrl(urlStr: string): {
     courseId: string;
     trainTaskId: string;
     libraryFolderId: string;
+    /** 学校定制化平台 origin（非官方域名时返回，如 https://aic.sysu.edu.cn） */
+    apiOrigin?: string;
 } | null {
     try {
         // 支持用户只粘贴了查询参数或完整 URL
+        const trimmedUrl = urlStr.trim();
+        const isFullUrl = /^https?:\/\//i.test(trimmedUrl);
         const url = new URL(
-            urlStr.startsWith("http") ? urlStr : `https://example.com?${urlStr}`
+            isFullUrl ? trimmedUrl : `https://example.com?${urlStr}`
         );
         const trainTaskId =
             url.searchParams.get("trainTaskId") || "";
@@ -2082,8 +2111,15 @@ export function parsePolymasUrl(urlStr: string): {
             url.searchParams.get("libraryFolderId") ||
             "";
 
+        // 学校定制化平台：完整 URL 且非 polymas 官方域名时记录 origin，
+        // 后续 resolveCloudapiRoot 会按 {origin}/cloud 推导 API 根地址
+        const apiOrigin =
+            isFullUrl && !/(^|\.)polymas\.com$/i.test(url.hostname)
+                ? url.origin
+                : undefined;
+
         if (!trainTaskId) return null;
-        return { courseId, trainTaskId, libraryFolderId };
+        return { courseId, trainTaskId, libraryFolderId, apiOrigin };
     } catch {
         return null;
     }

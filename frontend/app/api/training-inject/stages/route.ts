@@ -24,6 +24,10 @@ export async function POST(request: NextRequest) {
             const parsed = parsePolymasUrl(trainTaskId);
             if (parsed?.trainTaskId) {
                 finalTrainTaskId = parsed.trainTaskId;
+                // 学校定制化平台：从完整 URL 提取 origin
+                if (parsed.apiOrigin && !credentials.apiOrigin) {
+                    credentials.apiOrigin = parsed.apiOrigin;
+                }
             }
         }
 

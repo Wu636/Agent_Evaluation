@@ -38,6 +38,8 @@ const BACKGROUND_IMAGE_CONCURRENCY = 2;
 interface StoredTaskContext {
     courseId: string;
     libraryFolderId: string;
+    /** 学校定制化平台 origin（官方平台为空） */
+    apiOrigin?: string;
     updatedAt: number;
 }
 
@@ -69,7 +71,7 @@ function getStoredTaskContext(trainTaskId: string): StoredTaskContext | null {
     return contexts[key] || null;
 }
 
-function persistTaskContext(trainTaskId: string, courseId?: string, libraryFolderId?: string) {
+function persistTaskContext(trainTaskId: string, courseId?: string, libraryFolderId?: string, apiOrigin?: string) {
     const key = String(trainTaskId || "").trim();
     if (!key) return;
 
@@ -77,12 +79,16 @@ function persistTaskContext(trainTaskId: string, courseId?: string, libraryFolde
     const existing = contexts[key];
     const nextCourseId = String(courseId || "").trim() || existing?.courseId || "";
     const nextLibraryFolderId = String(libraryFolderId || "").trim() || existing?.libraryFolderId || "";
+    const nextApiOrigin = apiOrigin === undefined
+        ? (existing?.apiOrigin || "")
+        : String(apiOrigin || "").trim();
 
-    if (!nextCourseId && !nextLibraryFolderId) return;
+    if (!nextCourseId && !nextLibraryFolderId && !nextApiOrigin) return;
 
     contexts[key] = {
         courseId: nextCourseId,
         libraryFolderId: nextLibraryFolderId,
+        apiOrigin: nextApiOrigin || undefined,
         updatedAt: Date.now(),
     };
     writeStoredTaskContexts(contexts);
@@ -149,6 +155,8 @@ export function InjectConfigModal({
     const [taskId, setTaskId] = useState("");
     const [courseId, setCourseId] = useState("");
     const [libraryFolderId, setLibraryFolderId] = useState("");
+    // 学校定制化平台 origin（如 https://aic.sysu.edu.cn），为空表示官方 polymas 平台
+    const [apiOrigin, setApiOrigin] = useState("");
     const [injectMode, setInjectMode] = useState<"replace" | "append">("replace");
     const [injectScript, setInjectScript] = useState(!!scriptMarkdown);
     const [injectRubric, setInjectRubric] = useState(!!rubricMarkdown);
@@ -492,6 +500,7 @@ export function InjectConfigModal({
         authorization: authorization.trim(),
         cookie: cookie.trim(),
         userNid: userNid.trim() || undefined,
+        apiOrigin: apiOrigin.trim() || undefined,
     });
 
     const buildCredentialKey = () => `${authorization.trim()}::${cookie.trim()}::${userNid.trim()}`;
@@ -637,6 +646,7 @@ export function InjectConfigModal({
                 setTaskId(parsed.trainTaskId);
                 setCourseId(parsed.courseId);
                 setLibraryFolderId(parsed.libraryFolderId || "");
+                setApiOrigin(parsed.apiOrigin || "");
             }
         }
 
@@ -644,6 +654,9 @@ export function InjectConfigModal({
         if (storedContext) {
             if (!finalCourseId) finalCourseId = storedContext.courseId || "";
             if (!finalLibraryFolderId) finalLibraryFolderId = storedContext.libraryFolderId || "";
+            if (!apiOrigin && storedContext.apiOrigin) {
+                setApiOrigin(storedContext.apiOrigin);
+            }
 
             if (!courseId.trim() && storedContext.courseId) {
                 setCourseId(storedContext.courseId);
@@ -653,8 +666,8 @@ export function InjectConfigModal({
             }
         }
 
-        if (finalTaskId && (finalCourseId || finalLibraryFolderId)) {
-            persistTaskContext(finalTaskId, finalCourseId, finalLibraryFolderId);
+        if (finalTaskId && (finalCourseId || finalLibraryFolderId || apiOrigin.trim())) {
+            persistTaskContext(finalTaskId, finalCourseId, finalLibraryFolderId, apiOrigin.trim() || undefined);
         }
 
         return { finalTaskId, finalCourseId, finalLibraryFolderId };
@@ -1576,7 +1589,9 @@ export function InjectConfigModal({
                             <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
                                 <div className="flex items-center gap-2">
                                     <Shield className="w-4 h-4 text-slate-500" />
-                                    <h3 className="font-semibold text-slate-700 text-sm">平台认证凭证 (polymas.com)</h3>
+                                    <h3 className="font-semibold text-slate-700 text-sm">
+                                        平台认证凭证 ({apiOrigin ? apiOrigin.replace(/^https?:\/\//, "") : "polymas.com"})
+                                    </h3>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
@@ -1640,6 +1655,7 @@ export function InjectConfigModal({
                                             if (!trimmed) {
                                                 setCourseId("");
                                                 setLibraryFolderId("");
+                                                setApiOrigin("");
                                                 setTaskContextHint("");
                                                 return;
                                             }
@@ -1651,15 +1667,17 @@ export function InjectConfigModal({
                                                     const storedContext = getStoredTaskContext(parsed.trainTaskId);
                                                     const resolvedCourseId = parsed.courseId || storedContext?.courseId || "";
                                                     const resolvedLibraryFolderId = parsed.libraryFolderId || storedContext?.libraryFolderId || "";
+                                                    const resolvedApiOrigin = parsed.apiOrigin || "";
                                                     setTaskId(parsed.trainTaskId);
                                                     setCourseId(resolvedCourseId);
                                                     setLibraryFolderId(resolvedLibraryFolderId);
+                                                    setApiOrigin(resolvedApiOrigin);
                                                     if (!parsed.libraryFolderId && storedContext?.libraryFolderId) {
                                                         setTaskContextHint("已从本地缓存恢复该实训的 libraryFolderId");
                                                     } else {
                                                         setTaskContextHint("");
                                                     }
-                                                    persistTaskContext(parsed.trainTaskId, resolvedCourseId, resolvedLibraryFolderId);
+                                                    persistTaskContext(parsed.trainTaskId, resolvedCourseId, resolvedLibraryFolderId, resolvedApiOrigin);
                                                     return;
                                                 }
                                             }
@@ -1668,11 +1686,13 @@ export function InjectConfigModal({
                                             if (storedContext) {
                                                 setCourseId(storedContext.courseId || "");
                                                 setLibraryFolderId(storedContext.libraryFolderId || "");
+                                                setApiOrigin(storedContext.apiOrigin || "");
                                                 setTaskContextHint("已从本地缓存恢复该实训的 libraryFolderId");
                                             } else {
                                                 // 切换到一个没有缓存的新任务时，清掉上一个任务残留的上下文
                                                 setCourseId("");
                                                 setLibraryFolderId("");
+                                                setApiOrigin("");
                                                 setTaskContextHint("");
                                             }
                                         }}
@@ -1682,6 +1702,11 @@ export function InjectConfigModal({
                                     {courseId && (
                                         <p className="text-xs text-emerald-600 mt-1.5 ml-1">
                                             ✅ 已自动解析提取出双 ID (业务 ID: {courseId})
+                                        </p>
+                                    )}
+                                    {apiOrigin && (
+                                        <p className="text-xs text-indigo-600 mt-1.5 ml-1">
+                                            ✅ 已识别学校定制化平台：{apiOrigin.replace(/^https?:\/\//, "")}，接口将自动走 {apiOrigin.replace(/^https?:\/\//, "")}/cloud，请确保上方凭证是从该平台复制的
                                         </p>
                                     )}
                                     {taskContextHint && (

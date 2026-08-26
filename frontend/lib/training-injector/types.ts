@@ -7,6 +7,12 @@ export interface PolymasCredentials {
     authorization: string;
     cookie: string;
     userNid?: string;
+    /**
+     * 学校定制化平台 origin（如 https://aic.sysu.edu.cn）。
+     * 为空时默认官方 https://cloudapi.polymas.com；
+     * 非空时同一套服务按 {apiOrigin}/cloud 前缀推导。
+     */
+    apiOrigin?: string;
 }
 
 /** 解析后的训练阶段（从 Markdown 剧本配置提取） */

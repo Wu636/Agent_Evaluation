@@ -90,6 +90,10 @@ export async function POST(request: NextRequest) {
                 finalTrainTaskId = parsed.trainTaskId;
                 finalCourseId = finalCourseId || parsed.courseId;
                 finalLibraryFolderId = finalLibraryFolderId || parsed.libraryFolderId;
+                // 学校定制化平台：从完整 URL 提取 origin
+                if (parsed.apiOrigin && !credentials.apiOrigin) {
+                    credentials.apiOrigin = parsed.apiOrigin;
+                }
             }
         }
 

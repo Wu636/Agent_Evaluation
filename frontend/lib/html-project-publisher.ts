@@ -91,6 +91,21 @@ export function isJavaScriptFile(path: string): boolean {
   return /\.(?:cjs|mjs|js)$/i.test(path);
 }
 
+/** Image/video/audio types the platform accepts even without a static reference. */
+export function isWebMediaFile(path: string): boolean {
+  return /\.(?:png|jpe?g|gif|webp|avif|svg|ico|bmp|mp4|webm|ogv|mov|m4v|mp3|wav|ogg|m4a|aac|flac)$/i.test(path);
+}
+
+/** Returns quoted string literals seen in JavaScript source, using the same rules as rewriteJavaScriptReferences. */
+export function findJavaScriptReferences(content: string): string[] {
+  const references = new Set<string>();
+  rewriteJavaScriptReferences(content, (reference) => {
+    references.add(reference.trim());
+    return reference;
+  });
+  return [...references].filter(Boolean);
+}
+
 function splitReference(reference: string): { pathname: string; suffix: string } {
   const match = reference.match(/^([^?#]*)([?#][\s\S]*)?$/);
   return { pathname: match?.[1] || reference, suffix: match?.[2] || "" };

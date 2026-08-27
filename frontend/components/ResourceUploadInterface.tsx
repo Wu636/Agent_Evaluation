@@ -28,11 +28,13 @@ import {
   createProjectFileIndex,
   findCssReferences,
   findHtmlReferences,
+  findJavaScriptReferences,
   injectRuntimeAssetResolver,
   isCssFile,
   isHtmlFile,
   isJavaScriptFile,
   isLocalProjectReference,
+  isWebMediaFile,
   type ProjectAsset,
   resolveProjectReference,
   rewriteCssReferences,
@@ -316,10 +318,22 @@ export function ResourceUploadInterface() {
 
     let sourceHtml = "";
     const missingReferences = new Set<string>();
+    const referencedPaths = new Set<string>();
+    const markReferenced = (references: string[], sourcePath: string) => {
+      for (const reference of references) {
+        if (!isLocalProjectReference(reference)) continue;
+        const target = resolveProjectReference(reference, sourcePath, projectIndex);
+        if (target) referencedPaths.add(target.path);
+      }
+    };
     try {
       for (const htmlAsset of projectHtmlFiles) {
         const html = await htmlAsset.file.text();
         if (htmlAsset.path === entry.path) sourceHtml = html;
+        // Upload selection needs every path the page may use, including
+        // inline-script strings; the missing-reference check below stays
+        // stricter because script strings produce too many false positives.
+        markReferenced(findHtmlReferences(html), htmlAsset.path);
         // Inline scripts contain selectors, event names and ordinary labels in
         // quotes. Only explicit HTML/CSS references are safe to treat as
         // required files during preflight; known JS paths are still rewritten
@@ -333,12 +347,16 @@ export function ResourceUploadInterface() {
       }
       for (const stylesheet of projectAssets.filter((asset) => isCssFile(asset.path))) {
         const css = await stylesheet.file.text();
+        markReferenced(findCssReferences(css), stylesheet.path);
         for (const reference of findCssReferences(css)) {
           if (!isLocalProjectReference(reference)) continue;
           if (!resolveProjectReference(reference, stylesheet.path, projectIndex)) {
             missingReferences.add(`${stylesheet.path} → ${reference}`);
           }
         }
+      }
+      for (const script of projectAssets.filter((asset) => isJavaScriptFile(asset.path))) {
+        markReferenced(findJavaScriptReferences(await script.file.text()), script.path);
       }
     } catch {
       setProjectPhase("error");
@@ -362,9 +380,23 @@ export function ResourceUploadInterface() {
       warnings.add(`发现 ${references.length} 个未匹配的显式本地引用，已保留原路径并继续发布：${examples}${remainder}。若页面对应内容显示异常，请检查这些路径。`);
     }
     let replacementCount = 0;
-    const rawAssets = projectAssets.filter((asset) => !isHtmlFile(asset.path) && !isCssFile(asset.path) && !isJavaScriptFile(asset.path));
-    const cssAssets = projectAssets.filter((asset) => isCssFile(asset.path));
-    const scriptAssets = projectAssets.filter((asset) => isJavaScriptFile(asset.path));
+    // Only publish files the page actually uses. Unreferenced development
+    // files (README, package.json, .gitignore, server scripts, tests, docs)
+    // are rejected by the platform as illegal file types and would abort the
+    // whole publish, so they are skipped instead of uploaded.
+    const isUploadedRawAsset = (asset: ProjectAsset) =>
+      !isHtmlFile(asset.path) && !isCssFile(asset.path) && !isJavaScriptFile(asset.path)
+      && (referencedPaths.has(asset.path) || isWebMediaFile(asset.path));
+    const rawAssets = projectAssets.filter(isUploadedRawAsset);
+    const cssAssets = projectAssets.filter((asset) => isCssFile(asset.path) && referencedPaths.has(asset.path));
+    const scriptAssets = projectAssets.filter((asset) => isJavaScriptFile(asset.path) && referencedPaths.has(asset.path));
+    const skippedAssets = projectAssets.filter((asset) =>
+      !isHtmlFile(asset.path) && !referencedPaths.has(asset.path) && !isUploadedRawAsset(asset));
+    if (skippedAssets.length > 0) {
+      const examples = skippedAssets.slice(0, 6).map((asset) => asset.path).join("；");
+      const remainder = skippedAssets.length > 6 ? `；另有 ${skippedAssets.length - 6} 个` : "";
+      warnings.add(`已跳过 ${skippedAssets.length} 个未被页面引用、平台也不支持上传的文件（${examples}${remainder}），发布结果不含这些文件。`);
+    }
     const secondaryHtmlAssets = projectHtmlFiles.filter((asset) => asset.path !== entry.path);
     const totalOperations = Math.max(1, rawAssets.length + cssAssets.length + scriptAssets.length + secondaryHtmlAssets.length + 1);
     let completedOperations = 0;
@@ -605,7 +637,7 @@ export function ResourceUploadInterface() {
           <input ref={directoryInputRef} type="file" multiple className="hidden" onChange={onDirectoryChange} />
           <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm leading-6 text-slate-700">
             <p className="flex items-center gap-2 font-semibold text-indigo-900"><ListChecks className="h-4 w-4" />一键发布静态 HTML 项目</p>
-            <p className="mt-1">选择项目根目录后，系统会先上传图片、视频、音频、JS 等资源，再重写 CSS 与入口 HTML 中的静态本地路径，最终输出可分享的 HTML 链接。无法确定的引用会原样保留并显示诊断，不会阻断整个项目发布。</p>
+            <p className="mt-1">选择项目根目录后，系统会先上传被页面引用的图片、视频、音频、JS 等资源，再重写 CSS 与入口 HTML 中的静态本地路径，最终输出可分享的 HTML 链接。无法确定的引用会原样保留并显示诊断，不会阻断整个项目发布；未被引用的开发文件（如 README、package.json、服务端脚本、测试）会自动跳过，避免平台文件类型限制阻断发布。</p>
           </div>
           <div className="mt-4 flex min-h-48 flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/70 px-5 text-center">
             <div className="mb-3 rounded-xl bg-white p-3 shadow-sm"><FolderUp className="h-7 w-7 text-indigo-600" /></div>

@@ -25,6 +25,8 @@ const MAX_REVIEW_CONCURRENCY = 10;
 const REVIEW_UPLOAD_BATCH_FILES = 10;
 const REVIEW_UPLOAD_REQUEST_BYTES = Math.floor(3.5 * 1024 * 1024);
 const REVIEW_FILE_CHUNK_BYTES = 3 * 1024 * 1024;
+// 批阅上传支持的格式：文档/图片/Excel 表格/视频/音频
+const REVIEW_ACCEPT_EXTENSIONS = ".doc,.docx,.pdf,.ppt,.pptx,.png,.jpg,.jpeg,.xls,.xlsx,.csv,.mp4,.mov,.avi,.mkv,.flv,.wmv,.mp3,.wav,.m4a,.aac,.flac,.ogg";
 const REVIEW_JOB_POLL_MS = 2000;
 
 const LEVEL_OPTIONS = ["优秀的回答", "良好的回答", "中等的回答", "合格的回答", "较差的回答"];
@@ -2783,7 +2785,7 @@ export function HomeworkReviewInterface() {
                 ref={inputRef}
                 type="file"
                 multiple={mode === "review"}
-                accept={mode === "review" ? ".doc,.docx,.pdf,.ppt,.pptx,.png,.jpg,.jpeg" : mode === "generate" ? ".docx,.pdf" : ".doc,.docx,.pdf"}
+                accept={mode === "review" ? REVIEW_ACCEPT_EXTENSIONS : mode === "generate" ? ".docx,.pdf" : ".doc,.docx,.pdf"}
                 className="hidden"
                 onChange={(e) => handleFilesSelected(e.target.files)}
               />
@@ -2826,7 +2828,7 @@ export function HomeworkReviewInterface() {
                   </div>
                   <div className="text-sm text-slate-600">
                     {mode === "review"
-                      ? `支持 doc/docx/pdf/ppt/pptx/png/jpg，可一次提交最多 ${MAX_REVIEW_FILES} 份`
+                      ? `支持 doc/docx/pdf/ppt/pptx/png/jpg/xls/xlsx/csv 及常见音视频(mp4/mov/mp3/wav等)，可一次提交最多 ${MAX_REVIEW_FILES} 份`
                       : mode === "generate"
                         ? "支持 docx/pdf 格式的题卷文件，也支持切换到“粘贴文字”直接生成"
                         : "支持 doc/docx/pdf 格式的题卷文件，也支持切换到“粘贴文字”直接生成"

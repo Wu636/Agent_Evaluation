@@ -45,7 +45,9 @@ import {
 
 const CREDENTIAL_STORAGE_KEY = "polymas-resource-uploader-credentials";
 const SHARED_CREDENTIAL_STORAGE_KEY = "training-injector-credentials";
-const PART_SIZE = 3 * 1024 * 1024;
+const PLATFORM_UPLOAD_URL = "https://cloudapi.polymas.com/basic-resource/file/upload";
+// The serverless proxy route rejects bodies above 4 MB; direct uploads skip it.
+const MAX_PROXY_BYTES = 4 * 1024 * 1024;
 
 type UploadStatus = "queued" | "uploading" | "success" | "error";
 type UploadMode = "resource" | "project";
@@ -65,6 +67,15 @@ interface UploadResponse {
   success?: boolean;
   error?: string;
   data?: { fileId?: string; ossUrl?: string };
+}
+
+interface PlatformUploadResponse {
+  success?: boolean;
+  code?: number;
+  msg?: string;
+  message?: string;
+  error?: string;
+  data?: { fileId?: string; ossUrl?: string; fileUrl?: string };
 }
 
 interface ProjectResult {
@@ -229,40 +240,85 @@ export function ResourceUploadInterface() {
     }
   };
 
+  // The platform stores every chunk request as a standalone object instead
+  // of merging parts server-side, so multi-part uploads leave only the last
+  // part on OSS. CORS is open on the upload endpoint, therefore the browser
+  // posts each file in a single request directly to the platform.
+  const uploadDirectToPlatform = async (
+    file: File,
+    onProgress?: (progress: number) => void,
+  ): Promise<NonNullable<UploadResponse["data"]>> => {
+    const body = new FormData();
+    body.append("identifyCode", fileId());
+    body.append("name", file.name);
+    body.append("chunk", "0");
+    body.append("chunks", "1");
+    body.append("size", String(file.size));
+    body.append("file", file, file.name);
+
+    const response = await fetch(PLATFORM_UPLOAD_URL, {
+      method: "POST",
+      headers: { Authorization: authorization.trim() },
+      // Browsers cannot set the Cookie header; include mode lets the current
+      // platform session cookies ride along automatically.
+      credentials: "include",
+      body,
+    });
+    const payload = await response.json().catch(() => ({})) as PlatformUploadResponse;
+    const data = payload.data && typeof payload.data === "object" ? payload.data : {};
+    const ossUrl = data.ossUrl || data.fileUrl || "";
+    if (!response.ok || !(payload.success === true || payload.code === 200)) {
+      throw new Error(String(payload.msg || payload.message || payload.error || `平台上传失败（HTTP ${response.status}）。`));
+    }
+    if (!ossUrl) {
+      throw new Error("平台已接收文件，但没有返回 ossUrl。请确认当前账号拥有资源上传权限后重试。");
+    }
+    onProgress?.(100);
+    return { ossUrl, fileId: data.fileId || "" };
+  };
+
+  const uploadViaProxy = async (
+    file: File,
+    onProgress?: (progress: number) => void,
+  ): Promise<NonNullable<UploadResponse["data"]>> => {
+    const body = new FormData();
+    body.append("file", file, file.name);
+    body.append("name", file.name);
+    body.append("identifyCode", fileId());
+    body.append("chunk", "0");
+    body.append("chunks", "1");
+    body.append("size", String(file.size));
+    body.append("authorization", authorization.trim());
+    body.append("cookie", cookie.trim());
+
+    const response = await fetch("/api/resource-upload", { method: "POST", body });
+    const payload = await response.json().catch(() => ({})) as UploadResponse;
+    if (!response.ok || !payload.success) {
+      throw new Error(payload.error || `上传失败（HTTP ${response.status}）。`);
+    }
+    if (!payload.data?.ossUrl) {
+      throw new Error("平台已接收文件，但没有返回 ossUrl。请确认当前账号拥有资源上传权限后重试。");
+    }
+    onProgress?.(100);
+    return payload.data;
+  };
+
   const uploadFileToOss = async (
     file: File,
     onProgress?: (progress: number) => void,
   ): Promise<NonNullable<UploadResponse["data"]>> => {
-    const chunks = Math.max(1, Math.ceil(file.size / PART_SIZE));
-    const identifyCode = fileId();
-    let lastData: UploadResponse["data"];
-
-    for (let chunk = 0; chunk < chunks; chunk += 1) {
-      const start = chunk * PART_SIZE;
-      const part = file.slice(start, Math.min(start + PART_SIZE, file.size), file.type);
-      const body = new FormData();
-      body.append("file", part, file.name);
-      body.append("name", file.name);
-      body.append("identifyCode", identifyCode);
-      body.append("chunk", String(chunk));
-      body.append("chunks", String(chunks));
-      body.append("size", String(file.size));
-      body.append("authorization", authorization.trim());
-      body.append("cookie", cookie.trim());
-
-      const response = await fetch("/api/resource-upload", { method: "POST", body });
-      const payload = await response.json().catch(() => ({})) as UploadResponse;
-      if (!response.ok || !payload.success) {
-        throw new Error(payload.error || `第 ${chunk + 1} 个分片上传失败（HTTP ${response.status}）。`);
+    try {
+      return await uploadDirectToPlatform(file, onProgress);
+    } catch (error) {
+      // TypeError means the browser blocked or failed the cross-origin
+      // request entirely; the platform response itself is not retried via
+      // the proxy because it would return the same result.
+      if (!(error instanceof TypeError)) throw error;
+      if (file.size > MAX_PROXY_BYTES) {
+        throw new Error("浏览器直连平台上传失败，且文件超过 4 MB 无法改走服务器中转。请检查浏览器网络设置后重试。");
       }
-      lastData = payload.data;
-      onProgress?.(Math.round(((chunk + 1) / chunks) * 100));
+      return uploadViaProxy(file, onProgress);
     }
-
-    if (!lastData?.ossUrl) {
-      throw new Error("平台已接收文件，但没有返回 ossUrl。请确认当前账号拥有资源上传权限后重试。");
-    }
-    return lastData;
   };
 
   const uploadOne = async (item: UploadItem) => {
@@ -603,7 +659,7 @@ export function ResourceUploadInterface() {
             <div className="mb-3 rounded-xl bg-white p-3 shadow-sm"><UploadCloud className="h-7 w-7 text-indigo-600" /></div>
             <p className="font-semibold text-slate-800">拖放文件到这里，或点击选择文件</p>
             <p className="mt-1 text-sm text-slate-500">HTML、图片、视频、音频和其他资源均可上传</p>
-            <p className="mt-3 text-xs text-slate-400">大文件会自动按 3 MB 分片传输，单文件上限 1 GB</p>
+            <p className="mt-3 text-xs text-slate-400">文件由浏览器直传平台 OSS，无需分片中转</p>
           </div>
 
           {notice && <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{notice}</div>}

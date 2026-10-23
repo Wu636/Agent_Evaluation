@@ -90,7 +90,7 @@ export const RECOMMENDED_LLM_MODEL_PROFILES: LLMModelProfiles = {
   default: "claude-sonnet-4-6",
   evaluation: "claude-opus-4-6",
   homeworkReview: "claude-sonnet-4-6",
-  trainingGenerate: "claude-sonnet-4-6",
+  trainingGenerate: "claude-opus-4-8",
   trainingOptimize: "claude-opus-4-6",
   trainingInject: "claude-sonnet-4-6",
 };

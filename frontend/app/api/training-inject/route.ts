@@ -17,6 +17,7 @@ import {
     createCustomDigitalHuman,
     listOwnerDigitalHumans,
     editScriptStep,
+    editScriptStepDetailDTO,
     createScriptFlow,
     createScoreItem,
     editConfiguration,
@@ -28,7 +29,9 @@ import {
     parsePolymasUrl,
     listOwnerVoiceTrainings,
 } from "@/lib/training-injector/api";
-import { InjectProgressEvent, ParsedFlowConfig, ParsedFlowEdge, PolymasCredentials, PolymasScriptStep } from "@/lib/training-injector/types";
+import { InjectProgressEvent, ParsedFlowConfig, PolymasCredentials, PolymasScriptStep } from "@/lib/training-injector/types";
+import { planStepLayout } from "@/lib/training-injector/layout";
+import { resolveScriptFlowPlan } from "@/lib/training-injector/flow-plan";
 import {
     getDigitalHumanGenderLabel,
     getDigitalHumanAgeGroupLabel,
@@ -248,145 +251,6 @@ function isDefaultFlow(value: unknown): boolean {
     return value === 1 || value === true || String(value || "").trim() === "1";
 }
 
-const FLOW_START_ALIASES = new Set(["start", "script_start", "开始", "起点", "训练开始"]);
-const FLOW_END_ALIASES = new Set(["end", "script_end", "__end__", "task_complete", "结束", "训练结束", "本次实训到此结束"]);
-const CHINESE_ORDINALS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
-
-type ResolvedFlowEndpoint = number | "START" | "END" | null;
-
-function normalizeFlowEndpointKey(value: unknown): string {
-    return String(value || "")
-        .trim()
-        .replace(/^["'“”`]+|["'“”`]+$/g, "")
-        .replace(/^第\s*([0-9一二三四五六七八九十]+)\s*阶段/u, "阶段$1")
-        .replace(/^stage[_\s-]*(\d+)$/i, "阶段$1")
-        .replace(/^step[_\s-]*(\d+)$/i, "阶段$1")
-        .replace(/^module[_\s-]*(\d+)$/i, "阶段$1")
-        .replace(/\s+/g, "")
-        .toLowerCase();
-}
-
-function getStepFlowReferenceKeys(step: any, index: number): string[] {
-    const stageNumber = index + 1;
-    const chineseNumber = CHINESE_ORDINALS[stageNumber] || String(stageNumber);
-    const stepName = String(step?.stepName || "").trim();
-    return Array.from(new Set([
-        `阶段${stageNumber}`,
-        `第${stageNumber}阶段`,
-        `阶段${chineseNumber}`,
-        `第${chineseNumber}阶段`,
-        `stage${stageNumber}`,
-        `step${stageNumber}`,
-        `module${stageNumber}`,
-        `module_${stageNumber}`,
-        stepName,
-        normalizeStageNameForAppend(stepName),
-    ].map(normalizeFlowEndpointKey).filter(Boolean)));
-}
-
-function resolveFlowEndpoint(value: unknown, steps: any[]): ResolvedFlowEndpoint {
-    const key = normalizeFlowEndpointKey(value);
-    if (!key) return null;
-    if (FLOW_START_ALIASES.has(key)) return "START";
-    if (FLOW_END_ALIASES.has(key)) return "END";
-
-    for (let index = 0; index < steps.length; index++) {
-        if (getStepFlowReferenceKeys(steps[index], index).includes(key)) {
-            return index;
-        }
-    }
-
-    return null;
-}
-
-function resolveScriptFlowEdges(flowConfig: ParsedFlowConfig, steps: any[]): Array<{
-    from: Exclude<ResolvedFlowEndpoint, null>;
-    to: Exclude<ResolvedFlowEndpoint, null>;
-    edge: ParsedFlowEdge;
-}> {
-    if (flowConfig.flowType !== "graph") return [];
-
-    return flowConfig.edges
-        .map((edge) => ({
-            from: resolveFlowEndpoint(edge.from, steps),
-            to: resolveFlowEndpoint(edge.to, steps),
-            edge,
-        }))
-        .filter((item): item is {
-            from: Exclude<ResolvedFlowEndpoint, null>;
-            to: Exclude<ResolvedFlowEndpoint, null>;
-            edge: ParsedFlowEdge;
-        } => item.from !== null && item.to !== null && item.from !== item.to);
-}
-
-function buildGraphStepPositions(
-    steps: any[],
-    resolvedEdges: Array<{ from: Exclude<ResolvedFlowEndpoint, null>; to: Exclude<ResolvedFlowEndpoint, null> }>,
-    baseX: number,
-    baseY: number,
-    xGap: number
-): Array<{ x: number; y: number }> {
-    const incoming = new Map<number, number>();
-    const outgoing = new Map<number, number[]>();
-
-    steps.forEach((_, index) => {
-        incoming.set(index, 0);
-        outgoing.set(index, []);
-    });
-
-    resolvedEdges.forEach(({ from, to }) => {
-        if (typeof from !== "number" || typeof to !== "number") return;
-        outgoing.set(from, [...(outgoing.get(from) || []), to]);
-        incoming.set(to, (incoming.get(to) || 0) + 1);
-    });
-
-    const layers = new Array(steps.length).fill(-1);
-    const entryIndexes = steps
-        .map((_, index) => index)
-        .filter((index) => (incoming.get(index) || 0) === 0);
-    const queue = (entryIndexes.length > 0 ? entryIndexes : [0]).filter((index) => index < steps.length);
-    queue.forEach((index) => {
-        layers[index] = 0;
-    });
-
-    let guard = 0;
-    while (queue.length > 0 && guard < steps.length * steps.length) {
-        guard += 1;
-        const current = queue.shift()!;
-        const nextLayer = (layers[current] >= 0 ? layers[current] : 0) + 1;
-        for (const next of outgoing.get(current) || []) {
-            if (layers[next] < nextLayer) {
-                layers[next] = nextLayer;
-                queue.push(next);
-            }
-        }
-    }
-
-    steps.forEach((_, index) => {
-        if (layers[index] < 0) {
-            layers[index] = index;
-        }
-    });
-
-    const layerGroups = new Map<number, number[]>();
-    layers.forEach((layer, index) => {
-        layerGroups.set(layer, [...(layerGroups.get(layer) || []), index]);
-    });
-
-    const positions = new Array(steps.length).fill(null).map((_, index) => ({ x: baseX + index * xGap, y: baseY }));
-    Array.from(layerGroups.entries()).forEach(([layer, indexes]) => {
-        indexes.forEach((stepIndex, rank) => {
-            const yOffset = (rank - (indexes.length - 1) / 2) * 220;
-            positions[stepIndex] = {
-                x: baseX + layer * xGap,
-                y: baseY + yOffset,
-            };
-        });
-    });
-
-    return positions;
-}
-
 export async function POST(request: NextRequest) {
     const encoder = new TextEncoder();
 
@@ -482,7 +346,8 @@ export async function POST(request: NextRequest) {
                 if (scriptMarkdown) {
                     let steps: any[] = [];
                     let taskConfig: any = null;
-                    let flowConfig: ParsedFlowConfig = parseTrainingScriptFlowConfig(scriptMarkdown);
+                    const markdownFlowConfig = parseTrainingScriptFlowConfig(scriptMarkdown);
+                    let flowConfig: ParsedFlowConfig = markdownFlowConfig;
                     const hasLLM = !!(llmSettings?.apiKey && llmSettings?.apiUrl && llmSettings?.model);
 
                     if (extractionMode === "llm" && hasLLM) {
@@ -492,7 +357,9 @@ export async function POST(request: NextRequest) {
                             const extracted = await extractScriptConfig(scriptMarkdown, llmSettings);
                             steps = extracted.steps;
                             taskConfig = extracted.taskConfig;
-                            flowConfig = extracted.flowConfig?.flowType === "graph" ? extracted.flowConfig : flowConfig;
+                            flowConfig = markdownFlowConfig.flowType === "graph"
+                                ? markdownFlowConfig
+                                : extracted.flowConfig?.flowType === "graph" ? extracted.flowConfig : flowConfig;
                             send({ type: "progress", phase: "script", message: "AI 提取成功！", current: 1, total: 1 });
                         } catch (err) {
                             console.warn("LLM 剧本提取失败，回退到正则解析:", err);
@@ -504,7 +371,7 @@ export async function POST(request: NextRequest) {
                     if (steps.length === 0) {
                         send({ type: "progress", phase: "script", message: "正在解析训练剧本配置...", current: 0, total: 1 });
                         steps = parseTrainingScript(scriptMarkdown);
-                        flowConfig = parseTrainingScriptFlowConfig(scriptMarkdown);
+                        flowConfig = markdownFlowConfig;
                     }
 
                     // 提取任务名称/描述：regex 和 hybrid 模式优先用正则
@@ -521,7 +388,9 @@ export async function POST(request: NextRequest) {
                         try {
                             const extracted = await extractScriptConfig(scriptMarkdown, llmSettings);
                             taskConfig = extracted.taskConfig;
-                            flowConfig = extracted.flowConfig?.flowType === "graph" ? extracted.flowConfig : flowConfig;
+                            flowConfig = markdownFlowConfig.flowType === "graph"
+                                ? markdownFlowConfig
+                                : extracted.flowConfig?.flowType === "graph" ? extracted.flowConfig : flowConfig;
                         } catch (err) {
                             console.warn("LLM 任务名提取失败，继续:", err);
                         }
@@ -550,6 +419,17 @@ export async function POST(request: NextRequest) {
                         send({ type: "error", message: "训练剧本中未找到任何阶段，提取失败" });
                         controller.close();
                         return;
+                    }
+
+                    if (flowConfig.flowType === "graph" && injectMode === "append") {
+                        send({ type: "error", message: "这份剧本包含非线性分支；“追加”模式会按顺序串联阶段。请选“全部清除后重建”，再注入完整分支。" });
+                        controller.close();
+                        return;
+                    }
+                    // 在封面生成、旧流程删除等任何平台写操作前核对所有分支。
+                    const resolvedGraphEdges = resolveScriptFlowPlan(flowConfig, steps);
+                    if (flowConfig.flowType === "graph") {
+                        send({ type: "progress", phase: "script", message: `已校验非线性流程：${steps.length} 个阶段、${resolvedGraphEdges.length} 条指定连线`, current: 0, total: steps.length });
                     }
 
                     // 3.1 课程封面图：先生成源图，再走上传接口，最终用于 trainTaskCover
@@ -697,6 +577,8 @@ export async function POST(request: NextRequest) {
                         controller.close();
                         return;
                     }
+                    const startStep = existingSteps.find((step) => step.stepId === startId)!;
+                    const endStep = existingSteps.find((step) => step.stepId === endId)!;
 
                     const startIdsWithDefaultFlow = new Set(
                         existingFlows
@@ -759,28 +641,16 @@ export async function POST(request: NextRequest) {
                         }
                     }
 
-                    if (injectMode === "append" && flowConfig.flowType === "graph") {
-                        send({
-                            type: "progress",
-                            phase: "script",
-                            message: "检测到非线性跳转关系；追加模式下将按线性方式接入新增阶段，避免误连已存在节点",
-                            current: 0,
-                            total: Math.max(steps.length, 1),
-                        });
-                        flowConfig = { flowType: "linear", edges: [] };
-                    }
-
-                    // 创建节点
-                    const X_START = 100;
-                    const Y_START = 300;
-                    const X_GAP = 400;
-                    const baseX = appendAnchorPosition ? appendAnchorPosition.x + X_GAP : X_START;
-                    const baseY = appendAnchorPosition ? appendAnchorPosition.y : Y_START;
-                    const resolvedGraphEdges = resolveScriptFlowEdges(flowConfig, steps);
-                    const useGraphFlow = flowConfig.flowType === "graph" && resolvedGraphEdges.length > 0;
-                    const plannedPositions = useGraphFlow
-                        ? buildGraphStepPositions(steps, resolvedGraphEdges, baseX, baseY, X_GAP)
-                        : [];
+                    // 以平台现有 START/END 坐标和实际连线关系规划节点位置。
+                    const useGraphFlow = flowConfig.flowType === "graph";
+                    const plannedLayout = planStepLayout({
+                        stepCount: steps.length,
+                        steps,
+                        edges: useGraphFlow ? resolvedGraphEdges : [],
+                        startPosition: startStep.positionDTO,
+                        endPosition: endStep.positionDTO,
+                        appendAnchorPosition,
+                    });
                     const createdStepIds: string[] = [];
                     const customDigitalHumanCache = new Map<string, ResolvedDigitalHumanConfig>();
                     const existingDigitalHumanByExactKey = new Map<string, ResolvedDigitalHumanConfig>();
@@ -962,7 +832,7 @@ export async function POST(request: NextRequest) {
                             total: steps.length,
                         });
 
-                        const position = plannedPositions[i] || { x: baseX + i * X_GAP, y: baseY };
+                        const position = plannedLayout.positions[i];
                         const trainerName = step.trainerName || "训练引导员";
                         const requestedAgentId = cleanDigitalHumanValue(step.agentId);
                         const requestedAvatarNid = cleanDigitalHumanValue(step.avatarNid);
@@ -1384,12 +1254,17 @@ export async function POST(request: NextRequest) {
                         fromId: string,
                         toId: string,
                         condition: string,
-                        transitionPrompt: string
+                        transitionPrompt: string,
+                        explicitDefault?: number | boolean | string,
                     ): Promise<boolean> => {
                         const key = `${fromId}__${toId}__${condition}`;
                         if (createdFlowKeys.has(key)) return false;
-                        createdFlowKeys.add(key);
-                        const shouldBeDefault = !startIdsWithDefaultFlow.has(fromId);
+                        const shouldBeDefault = explicitDefault === undefined
+                            ? !startIdsWithDefaultFlow.has(fromId)
+                            : isDefaultFlow(explicitDefault);
+                        if (shouldBeDefault && startIdsWithDefaultFlow.has(fromId)) {
+                            throw new Error(`连线默认分支冲突：节点 ${fromId} 已有默认连线，请检查非线性跳转关系的 isDefault。`);
+                        }
 
                         const ok = await createScriptFlow(
                             finalTrainTaskId,
@@ -1400,13 +1275,15 @@ export async function POST(request: NextRequest) {
                             credentials,
                             { isDefault: shouldBeDefault }
                         );
-                        if (ok) {
-                            flowsCreated++;
-                            if (shouldBeDefault) {
-                                startIdsWithDefaultFlow.add(fromId);
-                            }
+                        if (!ok) {
+                            throw new Error(`创建节点连线失败：${fromId} → ${toId}，跳转条件 ${condition || "（空）"}。已停止注入，请检查平台返回。`);
                         }
-                        return ok;
+                        createdFlowKeys.add(key);
+                        flowsCreated++;
+                        if (shouldBeDefault) {
+                            startIdsWithDefaultFlow.add(fromId);
+                        }
+                        return true;
                     };
 
                     if (useGraphFlow) {
@@ -1426,7 +1303,8 @@ export async function POST(request: NextRequest) {
                                     startId,
                                     createdStepIds[to],
                                     edge.condition || "",
-                                    edge.transitionPrompt || ""
+                                    edge.transitionPrompt || "",
+                                    edge.isDefault,
                                 );
                             }
                         } else {
@@ -1461,7 +1339,8 @@ export async function POST(request: NextRequest) {
                                 fromId,
                                 toId,
                                 edge.condition || steps[from]?.flowCondition || "下一步",
-                                edge.transitionPrompt || ""
+                                edge.transitionPrompt || "",
+                                edge.isDefault,
                             );
                         }
 
@@ -1476,6 +1355,12 @@ export async function POST(request: NextRequest) {
                                 step.flowCondition || "训练结束",
                                 step.transitionPrompt || ""
                             );
+                        }
+                        const storedFlowKeys = new Set((await queryScriptFlows(finalTrainTaskId, credentials))
+                            .map((flow) => `${flow.scriptStepStartId}__${flow.scriptStepEndId}__${flow.flowCondition || ""}`));
+                        const missingFlowKeys = [...createdFlowKeys].filter((key) => !storedFlowKeys.has(key));
+                        if (missingFlowKeys.length > 0) {
+                            throw new Error(`平台连线回读校验失败：提交了 ${createdFlowKeys.size} 条，仍缺少 ${missingFlowKeys.length} 条。请刷新平台核对后重试；本次不会报告注入成功。`);
                         }
                     } else {
                         // START/已有最后节点 → 第一个新增节点
@@ -1506,6 +1391,40 @@ export async function POST(request: NextRequest) {
                             lastStep.flowCondition || "训练结束",
                             lastStep.transitionPrompt || ""
                         );
+                    }
+
+                    // 边界卡片放到整个图谱的左右两侧，避免 END 被新卡片覆盖。
+                    const moveStart = injectMode === "replace" || !appendAnchorStepId;
+                    const boundaryMoves = moveStart
+                        ? [
+                            { step: startStep, position: plannedLayout.startPosition },
+                            { step: endStep, position: plannedLayout.endPosition },
+                        ]
+                        : [{ step: endStep, position: plannedLayout.endPosition }];
+                    send({
+                        type: "progress",
+                        phase: "script",
+                        message: moveStart
+                            ? "正在将开始和结束卡片放到流程两侧..."
+                            : "正在将结束卡片移到新增流程右侧...",
+                        current: steps.length,
+                        total: steps.length,
+                    });
+                    for (const { step, position } of boundaryMoves) {
+                        const moved = await editScriptStepDetailDTO(
+                            finalTrainTaskId,
+                            step.stepId,
+                            step.stepDetailDTO,
+                            finalCourseId,
+                            finalLibraryFolderId,
+                            position,
+                            credentials
+                        );
+                        if (!moved) {
+                            send({ type: "error", message: `卡片布局写入失败：${step.stepDetailDTO.nodeType} 位置未更新` });
+                            controller.close();
+                            return;
+                        }
                     }
 
                     send({ type: "phase_complete", phase: "script", message: `训练剧本注入完成：${stepsCreated} 个节点，${flowsCreated} 条连线` });

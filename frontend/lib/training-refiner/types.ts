@@ -7,9 +7,40 @@ export interface TrainingRefineLlmSettings {
   apiKey?: string;
   apiUrl?: string;
   model?: string;
+  imageModel?: string;
 }
 
 export type TrainingRefineInjectMode = "replace" | "append";
+
+export type TrainingRefineStrategy = "incremental" | "template-rebuild";
+export type TrainingTemplateMode = "general" | "sequential" | "roleplay" | "summary";
+
+export interface TrainingTemplateModuleDiagnosis {
+  id: string;
+  title: string;
+  recommendedMode: TrainingTemplateMode;
+  sourceStepIds: string[];
+  objective: string;
+  reason: string;
+  suggestedRounds: number;
+}
+
+export interface TrainingTemplateDiagnosis {
+  overallMode: TrainingTemplateMode | "mixed";
+  confidence: number;
+  reasons: string[];
+  currentProblems: string[];
+  flowType: "linear" | "graph";
+  modules: TrainingTemplateModuleDiagnosis[];
+}
+
+export interface TrainingTemplateRewriteOptions {
+  strategy: TrainingRefineStrategy;
+  mode: TrainingTemplateMode | "auto";
+  preserveResources: boolean;
+  preservePlatformConfig: boolean;
+  rewriteScoring: boolean;
+}
 
 export interface TrainingRefineInjectionOptions {
   injectScript: boolean;
@@ -83,6 +114,9 @@ export interface RefinedTrainingNode {
   modelId?: string;
   agentId?: string;
   avatarNid?: string;
+  templateMode?: TrainingTemplateMode;
+  sourceStepIds?: string[];
+  resourcePolicy?: "inherit" | "none";
 }
 
 export interface RefinedTrainingFlow {
@@ -109,11 +143,56 @@ export interface TrainingRefinementPlan {
   flows: RefinedTrainingFlow[];
   scoreItems: TrainingScoreItem[];
   warnings: string[];
+  strategy?: TrainingRefineStrategy;
+  templateDiagnosis?: TrainingTemplateDiagnosis;
+}
+
+export interface TrainingRefineImageOptions {
+  generateCover: boolean;
+  generateBackgrounds: boolean;
+  stylePrompt?: string;
+}
+
+export interface TrainingRefineImageAsset {
+  fileId: string;
+  fileUrl: string;
+  contextKey: string;
+}
+
+export interface TrainingRefineImageAssets {
+  cover?: TrainingRefineImageAsset;
+  backgrounds?: Record<string, TrainingRefineImageAsset>;
+}
+
+// 只包含实际生图输入，不包含凭证；用于识别旧方案、旧风格或旧模型的图片。
+export function refinementImageContextKey(
+  plan: TrainingRefinementPlan,
+  kind: "cover" | "background",
+  nodeId: string | undefined,
+  stylePrompt = "",
+  imageModel = "",
+): string {
+  const node = kind === "background" ? plan.nodes.find((item) => item.id === nodeId) : undefined;
+  return JSON.stringify([
+    "refinement-image-v1", kind, plan.taskName.trim(), plan.description.trim(),
+    node?.id || "", node?.stepName.trim() || "", node?.description.trim() || "",
+    stylePrompt.trim(), imageModel.trim(),
+  ]);
 }
 
 export interface TrainingRefineApiResponse {
   ok: boolean;
-  action: "extract" | "optimize" | "dry-run" | "import";
+  action:
+    | "extract"
+    | "optimize"
+    | "analyze-template"
+    | "rewrite-template"
+    | "dry-run"
+    | "import"
+    | "generate-image";
+  image?: TrainingRefineImageAsset;
+  imageKind?: "cover" | "background";
+  nodeId?: string;
   source?: TrainingGraphSnapshot;
   plan?: TrainingRefinementPlan;
   validation?: {
@@ -125,5 +204,7 @@ export interface TrainingRefineApiResponse {
   command?: string[];
   modelUsed?: string;
   inputChars?: number;
+  diagnosis?: TrainingTemplateDiagnosis;
+  templateModulePlan?: import("@/lib/training-generator/types").TrainingScriptPlan;
   error?: string;
 }

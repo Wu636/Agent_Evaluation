@@ -1,0 +1,16 @@
+FROM node:24-bookworm
+
+ENV NODE_ENV=production \
+    PLAYWRIGHT_CHANNEL=chromium \
+    PUBLISH_WORKER_TMP_DIR=/tmp/project-publish
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --include=dev
+COPY . .
+RUN npx playwright install --with-deps chromium \
+    && mkdir -p /tmp/project-publish \
+    && chown -R node:node /app /tmp/project-publish
+
+USER node
+CMD ["node", "scripts/project-publish-worker.mjs"]

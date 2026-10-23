@@ -1,0 +1,240 @@
+[
+  {
+    "caseNo": 1,
+    "source": "word/media/image1.wmf",
+    "file": "plc_case_pipeline/assets/case_01_image_01.wmf",
+    "primaryStage": "案例01-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 2,
+    "source": "word/media/image2.wmf",
+    "file": "plc_case_pipeline/assets/case_02_image_01.wmf",
+    "primaryStage": "案例02-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 6,
+    "source": "word/media/image3.wmf",
+    "file": "plc_case_pipeline/assets/case_06_image_01.wmf",
+    "primaryStage": "案例06-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 9,
+    "source": "word/media/image4.jpeg",
+    "file": "plc_case_pipeline/assets/case_09_image_01.jpeg",
+    "primaryStage": "案例09-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": false
+  },
+  {
+    "caseNo": 10,
+    "source": "word/media/image5.wmf",
+    "file": "plc_case_pipeline/assets/case_10_image_01.wmf",
+    "primaryStage": "案例10-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 11,
+    "source": "word/media/image6.wmf",
+    "file": "plc_case_pipeline/assets/case_11_image_01.wmf",
+    "primaryStage": "案例11-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 14,
+    "source": "word/media/image7.wmf",
+    "file": "plc_case_pipeline/assets/case_14_image_01.wmf",
+    "primaryStage": "案例14-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 19,
+    "source": "word/media/image8.png",
+    "file": "plc_case_pipeline/assets/case_19_image_01.png",
+    "primaryStage": "案例19-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": false
+  },
+  {
+    "caseNo": 19,
+    "source": "word/media/image9.png",
+    "file": "plc_case_pipeline/assets/case_19_image_02.png",
+    "primaryStage": "案例19-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": false
+  },
+  {
+    "caseNo": 21,
+    "source": "word/media/image10.wmf",
+    "file": "plc_case_pipeline/assets/case_21_image_01.wmf",
+    "primaryStage": "案例21-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 22,
+    "source": "word/media/image11.wmf",
+    "file": "plc_case_pipeline/assets/case_22_image_01.wmf",
+    "primaryStage": "案例22-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 24,
+    "source": "word/media/image12.wmf",
+    "file": "plc_case_pipeline/assets/case_24_image_01.wmf",
+    "primaryStage": "案例24-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 24,
+    "source": "word/media/image13.gif",
+    "file": "plc_case_pipeline/assets/case_24_image_02.gif",
+    "primaryStage": "案例24-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 25,
+    "source": "word/media/image14.wmf",
+    "file": "plc_case_pipeline/assets/case_25_image_01.wmf",
+    "primaryStage": "案例25-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 25,
+    "source": "word/media/image15.png",
+    "file": "plc_case_pipeline/assets/case_25_image_02.png",
+    "primaryStage": "案例25-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": false
+  },
+  {
+    "caseNo": 26,
+    "source": "word/media/image16.png",
+    "file": "plc_case_pipeline/assets/case_26_image_01.png",
+    "primaryStage": "案例26-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": false
+  },
+  {
+    "caseNo": 27,
+    "source": "word/media/image17.wmf",
+    "file": "plc_case_pipeline/assets/case_27_image_01.wmf",
+    "primaryStage": "案例27-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 28,
+    "source": "word/media/image18.gif",
+    "file": "plc_case_pipeline/assets/case_28_image_01.gif",
+    "primaryStage": "案例28-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 28,
+    "source": "word/media/image19.png",
+    "file": "plc_case_pipeline/assets/case_28_image_02.png",
+    "primaryStage": "案例28-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": false
+  },
+  {
+    "caseNo": 29,
+    "source": "word/media/image20.gif",
+    "file": "plc_case_pipeline/assets/case_29_image_01.gif",
+    "primaryStage": "案例29-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 29,
+    "source": "word/media/image21.png",
+    "file": "plc_case_pipeline/assets/case_29_image_02.png",
+    "primaryStage": "案例29-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": false
+  },
+  {
+    "caseNo": 31,
+    "source": "word/media/image12.wmf",
+    "file": "plc_case_pipeline/assets/case_24_image_01.wmf",
+    "duplicate": true,
+    "duplicateOf": "plc_case_pipeline/assets/case_24_image_01.wmf"
+  },
+  {
+    "caseNo": 31,
+    "source": "word/media/image13.gif",
+    "file": "plc_case_pipeline/assets/case_24_image_02.gif",
+    "duplicate": true,
+    "duplicateOf": "plc_case_pipeline/assets/case_24_image_02.gif"
+  },
+  {
+    "caseNo": 31,
+    "source": "word/media/image22.wmf",
+    "file": "plc_case_pipeline/assets/case_31_image_03.wmf",
+    "primaryStage": "案例31-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": true
+  },
+  {
+    "caseNo": 32,
+    "source": "word/media/image23.png",
+    "file": "plc_case_pipeline/assets/case_32_image_01.png",
+    "primaryStage": "案例32-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": false
+  },
+  {
+    "caseNo": 33,
+    "source": "word/media/image24.png",
+    "file": "plc_case_pipeline/assets/case_33_image_01.png",
+    "primaryStage": "案例33-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": false
+  },
+  {
+    "caseNo": 34,
+    "source": "word/media/image25.png",
+    "file": "plc_case_pipeline/assets/case_34_image_01.png",
+    "primaryStage": "案例34-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": false
+  },
+  {
+    "caseNo": 35,
+    "source": "word/media/image26.jpeg",
+    "file": "plc_case_pipeline/assets/case_35_image_01.jpeg",
+    "primaryStage": "案例35-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": false
+  },
+  {
+    "caseNo": 35,
+    "source": "word/media/image27.jpeg",
+    "file": "plc_case_pipeline/assets/case_35_image_02.jpeg",
+    "primaryStage": "案例35-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": false
+  },
+  {
+    "caseNo": 35,
+    "source": "word/media/image28.png",
+    "file": "plc_case_pipeline/assets/case_35_image_03.png",
+    "primaryStage": "案例35-案例导入与基础理论问答",
+    "duplicate": false,
+    "conversionNeeded": false
+  }
+]

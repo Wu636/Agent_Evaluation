@@ -10,6 +10,7 @@ export function TrainingInjectionOptions({
   hasRubric = true,
   disabled = false,
   modeAppliesToAllSelected = false,
+  appendDisabledReason,
   onInjectScriptChange,
   onInjectRubricChange,
   onInjectModeChange,
@@ -21,6 +22,7 @@ export function TrainingInjectionOptions({
   hasRubric?: boolean;
   disabled?: boolean;
   modeAppliesToAllSelected?: boolean;
+  appendDisabledReason?: string;
   onInjectScriptChange: (value: boolean) => void;
   onInjectRubricChange: (value: boolean) => void;
   onInjectModeChange: (value: TrainingInjectionMode) => void;
@@ -98,14 +100,14 @@ export function TrainingInjectionOptions({
               </p>
             </label>
             <label
-              className={`rounded-lg border p-2 transition-colors ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"} ${injectMode === "append" ? "border-indigo-500 bg-indigo-50/50" : "border-slate-200 hover:bg-slate-50"}`}
+              className={`rounded-lg border p-2 transition-colors ${disabled || appendDisabledReason ? "cursor-not-allowed opacity-60" : "cursor-pointer"} ${injectMode === "append" ? "border-indigo-500 bg-indigo-50/50" : "border-slate-200 hover:bg-slate-50"}`}
             >
               <div className="mb-1 flex items-center gap-2">
                 <input
                   type="radio"
                   checked={injectMode === "append"}
                   onChange={() => onInjectModeChange("append")}
-                  disabled={disabled}
+                  disabled={disabled || Boolean(appendDisabledReason)}
                   className="text-indigo-600 focus:ring-indigo-500"
                 />
                 <span className="text-sm font-medium text-slate-800">
@@ -113,9 +115,9 @@ export function TrainingInjectionOptions({
                 </span>
               </div>
               <p className="pl-6 text-xs text-slate-500">
-                {modeAppliesToAllSelected
+                {appendDisabledReason || (modeAppliesToAllSelected
                   ? "保留目标训练的现有节点、连线和评分项，再追加勾选内容。"
-                  : "保留原有的节点，只新增节点，请稍后手动调整连线。"}
+                  : "保留原有的节点，只新增节点，请稍后手动调整连线。")}
               </p>
             </label>
           </div>

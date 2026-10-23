@@ -615,9 +615,10 @@ def print_dry_run(sources, rmaps, mode):
     extra_nodes = 0
     extra_flows = 1  # START → 首节点
     if mode == "branch" and len(sources) > 1:
-        extra_nodes = len(sources) - 1  # 分支节点
-        extra_flows += len(sources) - 1  # 末节点 → 分支节点
-        extra_flows += len(sources) - 1  # 分支节点 → 各源首节点
+        extra_nodes = 1  # 一个统一的分支选择节点
+        extra_flows = 1  # START → 分支选择
+        extra_flows += sum(len(src["first_ids"]) for src in sources)  # 选择 → 各源首节点
+        extra_flows += sum(len(src["last_ids"]) for src in sources)  # 各源末节点 → END
     elif mode == "sequential" and len(sources) > 1:
         extra_flows += len(sources) - 1  # 末节点 → 下一源首节点
     extra_flows += len(sources[-1]["last_ids"])  # 末源末节点 → END
@@ -739,70 +740,49 @@ def import_merge(target_id, course_id, sources, rmaps, mode, import_mode="replac
             flow_count += 1
 
     elif mode == "branch":
-        # START → 第一个源的首节点
-        for fid in source_first_ids[0]:
-            create_script_flow(
-                target_id, start_id=start_id, end_id=fid,
-                cond="", is_default=0, transition="",
-                flow_config=copy.deepcopy(EMPTY_FLOW_CFG), hist_num=0,
-            )
-            flow_count += 1
+        if len(sources) < 2:
+            raise ValueError("branch 模式至少需要 2 个源训练")
 
-        # 在第一个源和后续源之间创建分支节点
-        branch_ids = []
-        for bi in range(len(sources) - 1):
-            branch_id = generate(size=21)
-            branch_detail = copy.deepcopy(BRANCH_NODE_TEMPLATE)
-            # 自动命名分支节点
-            next_labels = [sources[bi + 1 + j]["label"] or f"训练{bi + 2 + j}" for j in range(len(sources) - 1 - bi)]
-            branch_detail["stepName"] = f"选择{'或'.join(next_labels)}"
-            branch_detail["description"] = f"请选择接下来进行的训练：{'、'.join(next_labels)}"
+        # One selector is the only shared node. START enters it, the selector
+        # fans out to every source's first node, and every source joins END.
+        branch_id = generate(size=21)
+        branch_detail = copy.deepcopy(BRANCH_NODE_TEMPLATE)
+        labels = [src["label"] or f"训练{i + 1}" for i, src in enumerate(sources)]
+        branch_detail["stepName"] = "选择" + " / ".join(labels)
+        branch_detail["description"] = "请选择接下来进行的训练：" + "、".join(labels)
+        if not create_script_node_min(target_id, course_id, branch_id, branch_detail, {}):
+            raise RuntimeError("创建分支选择节点失败")
+        full_detail = build_clone_detail(branch_detail, branch_id, target_id, {})
+        if not edit_script_step({
+            "trainTaskId": target_id,
+            "stepId": branch_id,
+            "stepDetailDTO": full_detail,
+            "positionDTO": {"x": x_cursor, "y": y_base},
+            "courseId": course_id,
+        }):
+            raise RuntimeError("补全分支选择节点失败")
+        print(f"   ✅ [分支选择节点] {branch_detail['stepName']}")
+        x_cursor += x_gap
 
-            # 创建分支节点
-            ok = create_script_node_min(target_id, course_id, branch_id, branch_detail, {})
-            if not ok:
-                raise RuntimeError("创建分支节点失败")
-            full_detail = build_clone_detail(branch_detail, branch_id, target_id, {})
-            ok = edit_script_step({
-                "trainTaskId": target_id,
-                "stepId": branch_id,
-                "stepDetailDTO": full_detail,
-                "positionDTO": {"x": x_cursor, "y": y_base},
-                "courseId": course_id,
-            })
-            if not ok:
-                raise RuntimeError("补全分支节点失败")
-            print(f"   ✅ [分支节点] {branch_detail['stepName']}")
-            x_cursor += x_gap
-            branch_ids.append(branch_id)
+        create_script_flow(
+            target_id, start_id=start_id, end_id=branch_id,
+            cond="", is_default=1, transition="",
+            flow_config=copy.deepcopy(EMPTY_FLOW_CFG), hist_num=0,
+        )
+        flow_count += 1
 
-        # 第一个源的末节点 → 分支节点
-        for lid in source_last_ids[0]:
-            create_script_flow(
-                target_id, start_id=lid, end_id=branch_ids[0],
-                cond="", is_default=1,
-            )
-            flow_count += 1
+        for si, src in enumerate(sources):
+            label = labels[si]
+            for fid in source_first_ids[si]:
+                create_script_flow(
+                    target_id,
+                    start_id=branch_id,
+                    end_id=fid,
+                    cond=f"NEXT_TO_{label}",
+                    is_default=1 if si == 0 else 0,
+                )
+                flow_count += 1
 
-        # 分支节点 → 各后续源的首节点（带条件）
-        for bi, branch_id in enumerate(branch_ids):
-            next_source_idx = bi + 1
-            if next_source_idx < len(sources):
-                src = sources[next_source_idx]
-                label = src["label"] or f"训练{next_source_idx + 1}"
-                for fid in source_first_ids[next_source_idx]:
-                    create_script_flow(
-                        target_id,
-                        start_id=branch_id,
-                        end_id=fid,
-                        cond=f"NEXT_TO_{label}",
-                        is_default=0,
-                    )
-                    flow_count += 1
-
-        # 后续源的末节点 → END
-        for si in range(1, len(sources)):
-            src = sources[si]
             for lid in source_last_ids[si]:
                 src_end_flow = src["end_flows"][0] if src["end_flows"] else None
                 create_script_flow(
@@ -832,7 +812,7 @@ def import_merge(target_id, course_id, sources, rmaps, mode, import_mode="replac
     live_files = sum(file_count(n) for n in biz)
     expected_nodes = sum(s["node_count"] for s in sources)
     if mode == "branch":
-        expected_nodes += len(sources) - 1
+        expected_nodes += 1
 
     ok = (
         len(biz) == expected_nodes

@@ -5,7 +5,7 @@
 import type { LLMResponse, ApiConfig, DialogueData, IssueItem, HighlightItem } from "./types";
 
 import { jsonrepair } from 'jsonrepair';
-import { summarizeLlmHttpError } from "./error-utils";
+import { LlmHttpError, LlmOutputError, summarizeLlmHttpError } from "./error-utils";
 
 function formatLlmNetworkError(baseUrl: string, error: unknown): Error {
     const anyError = error as {
@@ -60,8 +60,12 @@ export function modelRequiresDefaultTemperature(model: string): boolean {
         .replace(/[_\s]+/g, "-");
     if (!normalized) return false;
 
-    return /(^|[/:])gpt-?5(?:$|[.\-_:])/.test(normalized)
+    return /(^|[/:])gpt-?[56](?:$|[.\-_:])/.test(normalized)
         || /(^|[/:])o[134](?:$|[.\-_:])/.test(normalized);
+}
+
+export function modelRequiresCompletionTokens(model: string): boolean {
+    return modelRequiresDefaultTemperature(model) && !/chat/i.test(model);
 }
 
 export function buildTemperatureCompatiblePayload<T extends Record<string, unknown>>(
@@ -84,11 +88,12 @@ function getStreamEndpoint(baseUrl: string): string {
     const normalized = normalizeChatCompletionEndpoint(baseUrl);
     if (!normalized) return normalized;
 
-    if (normalized === "https://llm-service.polymas.com/api/openai/v1/chat/completions") {
-        return "http://llm-service.polymas.com/api/openai/v1/chat/completions/stream";
+    const url = new URL(normalized);
+    // 仅平台网关使用专用流式路径；标准 OpenAI 接口通过 stream 参数启用。
+    if (url.hostname === "llm-service.polymas.com" && !url.pathname.endsWith("/stream")) {
+        url.pathname = `${url.pathname}/stream`;
     }
-
-    return normalized.endsWith("/stream") ? normalized : `${normalized}/stream`;
+    return url.toString();
 }
 
 /**
@@ -358,7 +363,13 @@ export async function* callLLMStream(
     prompt: string,
     config: ApiConfig & { model: string },
     temperature: number = 0.1,
-    systemPrompt?: string
+    systemPrompt?: string,
+    options: {
+        maxTokens?: number;
+        lowReasoningEffort?: boolean;
+        signal?: AbortSignal;
+        requireComplete?: boolean;
+    } = {},
 ): AsyncGenerator<string, void, unknown> {
     const { apiKey, baseUrl, model } = config;
 
@@ -372,8 +383,19 @@ export async function* callLLMStream(
 - 直接输出 JSON 对象，以 { 开头，以 } 结尾
 - 如果需要思考，在心里思考，不要写出来`;
 
+    const streamUrl = getStreamEndpoint(baseUrl);
+    const maxTokens = options.maxTokens ?? 16000;
+    const isPolymas = new URL(streamUrl).hostname === "llm-service.polymas.com";
+    const isReasoningModel = modelRequiresCompletionTokens(model);
+    // 平台 Claude 请求统一使用网关的 maxTokens 字段，避免重复声明额度。
+    const usesPolymasClaudeTokens = isPolymas && /(?:^|[/:\s])claude(?:[-\s]|$)/i.test(model);
+    const tokenLimits = isReasoningModel
+        ? { ...(isPolymas ? { maxTokens } : {}), max_completion_tokens: maxTokens }
+        : usesPolymasClaudeTokens ? { maxTokens }
+            : isPolymas ? { maxTokens, max_tokens: maxTokens } : { max_tokens: maxTokens };
     const payload = buildTemperatureCompatiblePayload({
-        maxTokens: 16000,
+        ...tokenLimits,
+        ...(options.lowReasoningEffort && isReasoningModel ? { reasoning_effort: "low" } : {}),
         messages: [
             {
                 role: "system",
@@ -386,15 +408,11 @@ export async function* callLLMStream(
         ],
         model,
         n: 1,
-        presencePenalty: 0.0,
         stream: true, // 启用流式响应
     }, model, temperature);
 
-    console.log(`[LLM流式调用] 模型: ${model}, API: ${baseUrl}`);
+    console.log(`[LLM流式调用] 模型: ${model}, 输入: ${prompt.length} 字符, 输出额度: ${maxTokens}`);
     const startTime = Date.now();
-
-    // 流式接口需要在原 URL 后加上 /stream
-    const streamUrl = getStreamEndpoint(baseUrl);
 
     let response: Response;
     try {
@@ -402,78 +420,127 @@ export async function* callLLMStream(
             method: "POST",
             headers: buildLlmHeaders(apiKey),
             body: JSON.stringify(payload),
+            signal: options.signal,
         });
     } catch (error) {
+        options.signal?.throwIfAborted();
         throw formatLlmNetworkError(streamUrl, error);
     }
 
     if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[LLM流式错误] HTTP ${response.status}:`, errorText.substring(0, 500));
-        throw new Error(summarizeLlmHttpError(response.status, errorText));
+        console.warn(`[LLM流式调用] HTTP ${response.status}，等待 ${Date.now() - startTime}ms，输入 ${prompt.length} 字符，输出额度 ${maxTokens}`);
+        throw new LlmHttpError(response.status, errorText);
     }
 
     if (!response.body) {
         throw new Error("响应没有 body，无法进行流式读取");
     }
 
+    let finished = false;
+    let finishReason = '';
+    let outputChars = 0;
+    const parseContent = (text: string): string => {
+        if (text.trim() === "[DONE]") {
+            finished = true;
+            if (!finishReason) finishReason = 'done';
+            return "";
+        }
+        const json = JSON.parse(text);
+        if (json.error) {
+            const status = Number(json.error.status || json.error.code || 502);
+            throw new LlmHttpError(Number.isFinite(status) ? status : 502, JSON.stringify(json.error));
+        }
+        const choice = json.choices?.[0];
+        if (choice?.finish_reason) finishReason = String(choice.finish_reason);
+        if (choice?.finish_reason === 'content_filter') {
+            throw new LlmOutputError('content_filter', `模型 ${model} 的上游返回 content_filter，未完成文本生成。本次响应未作为有效生成结果接受，请联系网关服务方核查拦截原因。`);
+        }
+        if (choice?.delta?.refusal || choice?.message?.refusal) {
+            throw new LlmOutputError('refusal', `模型 ${model} 的上游返回 refusal，未完成文本生成。本次响应未作为有效生成结果接受，请核查模型通道的响应。`);
+        }
+        if (options.requireComplete && choice?.finish_reason === "length") {
+            throw new Error("模型输出达到额度上限，优化方案不完整，需要压缩后重新生成。");
+        }
+        if (choice?.finish_reason) finished = true;
+        const content = choice?.delta?.content ?? choice?.message?.content;
+        if (Array.isArray(content)) {
+            const text = content.map((item: { text?: string; content?: string }) => item.text || item.content || "").join("");
+            outputChars += text.length;
+            return text;
+        }
+        if (typeof content === 'string') outputChars += content.length;
+        return typeof content === "string" ? content : "";
+    };
+    const ensureTextReceived = () => {
+        if (outputChars === 0) {
+            throw new LlmOutputError('empty_response', `模型 ${model} 返回空正文（结束原因：${finishReason || 'eof'}）。本次响应未被视为生成成功。`);
+        }
+    };
+
+    // 有些兼容服务忽略 stream 参数，仍返回完整 JSON。
+    if (response.headers.get("content-type")?.includes("application/json")) {
+        const content = parseContent(await response.text());
+        options.signal?.throwIfAborted();
+        ensureTextReceived();
+        console.log(`[LLM流式完成] JSON兼容响应, 耗时: ${Date.now() - startTime}ms, 结束原因: ${finishReason || 'json'}, 正文: ${outputChars} 字符`);
+        if (content) yield content;
+        return;
+    }
+
     const reader = response.body.getReader();
-    const decoder = new TextDecoder("utf-8");
+    const decoder = new TextDecoder("utf-8", { fatal: true });
     let buffer = "";
+    let dataLines: string[] = [];
+    const consumeLine = (line: string): string => {
+        const trimmed = line.trim();
+        if (!trimmed && dataLines.length) {
+            const data = dataLines.join("\n");
+            dataLines = [];
+            return parseContent(data);
+        }
+        if (trimmed.startsWith("data:")) {
+            dataLines.push(trimmed.slice(5).trimStart());
+        } else if (trimmed.startsWith("{")) {
+            return parseContent(trimmed);
+        }
+        return "";
+    };
 
     try {
-        let chunkCount = 0;
         while (true) {
+            options.signal?.throwIfAborted();
             const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            buffer += chunk;
-
-            // 调试：打印前几个 chunk 的原始内容
-            chunkCount++;
-            if (chunkCount <= 3) {
-                console.log(`[流式调试] Chunk ${chunkCount} 原始内容:`, chunk.substring(0, 200));
-            }
-
-            // SSE 格式：每行以 "data: " 开头
+            options.signal?.throwIfAborted();
+            buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
             const lines = buffer.split("\n");
-            buffer = lines.pop() || ""; // 保留最后一个可能不完整的行
-
+            buffer = lines.pop() || "";
             for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || trimmed === "data: [DONE]") continue;
-
-                if (trimmed.startsWith("data:")) {
-                    // 支持 "data:" 和 "data: " 两种格式
-                    const jsonStr = trimmed.startsWith("data: ") ? trimmed.slice(6) : trimmed.slice(5);
-                    try {
-                        const json = JSON.parse(jsonStr);
-                        // 支持两种格式：delta.content (标准 OpenAI) 和 message.content (这个 API)
-                        const content = json.choices?.[0]?.delta?.content || json.choices?.[0]?.message?.content;
-                        if (content) {
-                            yield content;
-                        }
-                    } catch {
-                        // 忽略解析错误（可能是不完整的 JSON）
-                    }
-                } else if (trimmed.startsWith("{")) {
-                    // 尝试直接解析 JSON（某些 API 不使用 SSE 格式）
-                    try {
-                        const json = JSON.parse(trimmed);
-                        const content = json.choices?.[0]?.delta?.content || json.choices?.[0]?.message?.content;
-                        if (content) {
-                            yield content;
-                        }
-                    } catch {
-                        // 忽略
-                    }
+                const content = consumeLine(line);
+                if (content) yield content;
+                if (finished) {
+                    ensureTextReceived();
+                    return;
                 }
+            }
+            if (done) {
+                if (buffer) {
+                    const content = consumeLine(buffer);
+                    if (content) yield content;
+                }
+                const content = consumeLine("");
+                if (content) yield content;
+                if (options.requireComplete && !finished) {
+                    throw new Error("模型数据流提前结束，未收到完成标记，优化方案未被接受。");
+                }
+                ensureTextReceived();
+                return;
             }
         }
     } finally {
+        void reader.cancel().catch(() => {});
         reader.releaseLock();
         const elapsed = Date.now() - startTime;
-        console.log(`[LLM流式完成] 耗时: ${elapsed}ms`);
+        console.log(`[LLM流式完成] 耗时: ${elapsed}ms, 结束原因: ${finishReason || (options.signal?.aborted ? 'aborted' : 'eof')}, 正文: ${outputChars} 字符`);
     }
 }

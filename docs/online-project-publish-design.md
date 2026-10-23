@@ -10,7 +10,7 @@
 
 - 现有 `frontend/lib/project-publish-preflight.ts` 已提供资源扫描、文件指纹、平铺模拟和与正式发布共用的改写顺序；`frontend/scripts/project-publish-preview.mjs` 已使用 Playwright 巡检；`ResourceUploadInterface.tsx` 当前要求导入本地生成的报告。
 - 主站部署在 Vercel，仓库已有 Supabase 登录能力及独立服务的部署先例。Vercel Function 请求体限制为 4.5 MB，项目文件不经主站 API 转发，而由浏览器直传临时私有对象存储。浏览器巡检使用单独的 Node.js 24 + Playwright 容器工作进程。第一版可部署为独立 Railway 服务，沿用现有团队的部署方式。
-- 临时文件使用 Supabase Storage **私有 bucket**，任务和版本状态使用 Supabase Postgres。工作进程持有服务端密钥，主站浏览器只获得对应任务的限时上传许可；Polymas Authorization/Cookie 不发给巡检进程。
+- 临时文件使用 Supabase Storage **私有 bucket**，任务和版本状态使用 Supabase Postgres。Next.js API 和独立工作进程各自在服务端环境持有 Supabase service-role key；主站浏览器只获得当前账号任务的限时上传/下载许可。Polymas Authorization/Cookie 不发给巡检进程。
 - 正式发布沿用浏览器内的 `executeProjectPublish`、OSS 验证和 IndexedDB 复用逻辑。服务端交付已经复检的**不可变版本**文件清单；浏览器重新计算指纹并只发布该版本。原项目及已修复版本均可下载为 ZIP。
 
 ```mermaid

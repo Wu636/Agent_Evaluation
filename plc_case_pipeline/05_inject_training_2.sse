@@ -1,0 +1,462 @@
+data: {"type":"progress","phase":"script","message":"正在解析训练剧本配置...","current":0,"total":1}
+
+data: {"type":"progress","phase":"script","message":"正则提取任务名称：PLC能力训练-训练2-指令综合与结构化程序设计","current":0,"total":1}
+
+data: {"type":"progress","phase":"script","message":"基础配置解析结果：PLC能力训练-训练2-指令综合与结构化程序设计 / 描述已提取","current":0,"total":1}
+
+data: {"type":"progress","phase":"script","message":"已跳过课程封面图注入","current":0,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在更新任务基础配置（名称、描述、入口音色）...","current":0,"total":51}
+
+data: {"type":"progress","phase":"script","message":"基础配置缺少当前封面图，已跳过名称/描述写入，避免触发平台配置接口错误","current":0,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在查询现有工作流...","current":0,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在查询账号可配置音色...","current":0,"total":51}
+
+data: {"type":"progress","phase":"script","message":"已读取 66 个可配置音色，其中 66 个可用于数字人创建","current":0,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在查询课程已有数字人，优先复用同名配置...","current":0,"total":51}
+
+data: {"type":"progress","phase":"script","message":"已读取 154 个已有数字人，其中 153 个可作为账号内安全参数源","current":0,"total":51}
+
+data: {"type":"start","phase":"script","message":"开始注入训练剧本，共 51 个新增阶段...","total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 1/51：分支选择","current":1,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：训练引导官（男性，成年，音色：反卷青年）","current":1,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":1,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":1,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 2/51：案例14-移位指令应用-物品自动分选控制基础案例实操训练","current":2,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（男性，成年，音色：儒雅青年）","current":2,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":2,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":2,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 3/51：案例14-移位指令应用-物品自动分选控制基础案例实操训练","current":3,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（男性，成年，音色：儒雅青年）","current":3,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":3,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":3,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 4/51：案例14-移位指令应用-物品自动分选控制基础案例实操训练","current":4,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（男性，成年，音色：儒雅青年）","current":4,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":4,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":4,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 5/51：案例14-移位指令应用-物品自动分选控制基础案例实操训练","current":5,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（男性，成年，音色：儒雅青年）","current":5,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":5,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":5,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 6/51：案例14-移位指令应用-物品自动分选控制基础案例实操训练","current":6,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（男性，成年，音色：儒雅青年）","current":6,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":6,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":6,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 7/51：案例15-多路彩灯循环移位控制基础案例实操训练","current":7,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":7,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":7,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":7,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 8/51：案例15-多路彩灯循环移位控制基础案例实操训练","current":8,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":8,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":8,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":8,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 9/51：案例15-多路彩灯循环移位控制基础案例实操训练","current":9,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":9,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":9,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":9,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 10/51：案例15-多路彩灯循环移位控制基础案例实操训练","current":10,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":10,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":10,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":10,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 11/51：案例15-多路彩灯循环移位控制基础案例实操训练","current":11,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":11,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":11,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":11,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 12/51：案例16-四相八拍步进电机正反转调速控制基础案例实操训练","current":12,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":12,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":12,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":12,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 13/51：案例16-四相八拍步进电机正反转调速控制基础案例实操训练","current":13,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":13,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":13,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":13,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 14/51：案例16-四相八拍步进电机正反转调速控制基础案例实操训练","current":14,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":14,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":14,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":14,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 15/51：案例16-四相八拍步进电机正反转调速控制基础案例实操训练","current":15,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":15,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":15,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":15,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 16/51：案例16-四相八拍步进电机正反转调速控制基础案例实操训练","current":16,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":16,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":16,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":16,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 17/51：案例17-模拟量信号输入控制基础案例实操训练","current":17,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":17,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":17,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":17,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 18/51：案例17-模拟量信号输入控制基础案例实操训练","current":18,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":18,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":18,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":18,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 19/51：案例17-模拟量信号输入控制基础案例实操训练","current":19,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":19,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":19,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":19,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 20/51：案例17-模拟量信号输入控制基础案例实操训练","current":20,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":20,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":20,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":20,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 21/51：案例17-模拟量信号输入控制基础案例实操训练","current":21,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":21,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":21,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":21,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 22/51：案例18-模拟量输出控制基础案例实操训练","current":22,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":22,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":22,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":22,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 23/51：案例18-模拟量输出控制基础案例实操训练","current":23,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":23,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":23,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":23,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 24/51：案例18-模拟量输出控制基础案例实操训练","current":24,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":24,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":24,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":24,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 25/51：案例18-模拟量输出控制基础案例实操训练","current":25,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":25,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":25,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":25,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 26/51：案例18-模拟量输出控制基础案例实操训练","current":26,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":26,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":26,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":26,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 27/51：案例19-循环中断程序设计-数码管循环显示控制基础案例实操训练","current":27,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":27,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":27,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":27,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 28/51：案例19-循环中断程序设计-数码管循环显示控制基础案例实操训练","current":28,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":28,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":28,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":28,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 29/51：案例19-循环中断程序设计-数码管循环显示控制基础案例实操训练","current":29,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":29,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":29,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":29,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 30/51：案例19-循环中断程序设计-数码管循环显示控制基础案例实操训练","current":30,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":30,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":30,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":30,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 31/51：案例19-循环中断程序设计-数码管循环显示控制基础案例实操训练","current":31,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":31,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":31,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":31,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 32/51：案例20-一元二次方程求解 FC 功能块设计基础案例实操训练","current":32,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":32,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":32,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":32,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 33/51：案例20-一元二次方程求解 FC 功能块设计基础案例实操训练","current":33,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":33,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":33,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":33,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 34/51：案例20-一元二次方程求解 FC 功能块设计基础案例实操训练","current":34,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":34,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":34,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":34,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 35/51：案例20-一元二次方程求解 FC 功能块设计基础案例实操训练","current":35,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":35,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":35,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":35,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 36/51：案例20-一元二次方程求解 FC 功能块设计基础案例实操训练","current":36,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":36,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":36,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":36,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 37/51：案例21-FB程序设计-两种液体混合控制基础案例实操训练","current":37,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":37,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":37,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":37,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 38/51：案例21-FB程序设计-两种液体混合控制基础案例实操训练","current":38,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":38,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":38,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":38,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 39/51：案例21-FB程序设计-两种液体混合控制基础案例实操训练","current":39,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":39,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":39,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":39,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 40/51：案例21-FB程序设计-两种液体混合控制基础案例实操训练","current":40,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":40,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":40,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":40,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 41/51：案例21-FB程序设计-两种液体混合控制基础案例实操训练","current":41,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":41,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":41,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":41,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 42/51：案例22-FB程序设计与模拟量输入-两种液体混合控制基础案例实操训练","current":42,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":42,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":42,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":42,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 43/51：案例22-FB程序设计与模拟量输入-两种液体混合控制基础案例实操训练","current":43,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":43,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":43,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":43,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 44/51：案例22-FB程序设计与模拟量输入-两种液体混合控制基础案例实操训练","current":44,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":44,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":44,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":44,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 45/51：案例22-FB程序设计与模拟量输入-两种液体混合控制基础案例实操训练","current":45,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":45,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":45,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":45,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 46/51：案例22-FB程序设计与模拟量输入-两种液体混合控制基础案例实操训练","current":46,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":46,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":46,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":46,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 47/51：案例23-多重背景数据块编程基础案例实操训练","current":47,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":47,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":47,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":47,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 48/51：案例23-多重背景数据块编程基础案例实操训练","current":48,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":48,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":48,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":48,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 49/51：案例23-多重背景数据块编程基础案例实操训练","current":49,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":49,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":49,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":49,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 50/51：案例23-多重背景数据块编程基础案例实操训练","current":50,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":50,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":50,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":50,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 51/51：案例23-多重背景数据块编程基础案例实操训练","current":51,"total":51}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":51,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":51,"total":51}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":51,"total":51}
+
+data: {"type":"progress","phase":"script","message":"正在按非线性跳转关系创建节点连线...","current":51,"total":51}
+
+data: {"type":"phase_complete","phase":"script","message":"训练剧本注入完成：51 个节点，53 条连线"}
+
+data: {"type":"start","phase":"rubric","message":"开始注入评分标准，共 10 个评分项...","total":10}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 1/10：案例14-移位指令应用-物品自动分选控制基础案例实操训练（10分）","current":1,"total":10}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 2/10：案例15-多路彩灯循环移位控制基础案例实操训练（10分）","current":2,"total":10}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 3/10：案例16-四相八拍步进电机正反转调速控制基础案例实操训练（10分）","current":3,"total":10}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 4/10：案例17-模拟量信号输入控制基础案例实操训练（10分）","current":4,"total":10}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 5/10：案例18-模拟量输出控制基础案例实操训练（10分）","current":5,"total":10}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 6/10：案例19-循环中断程序设计-数码管循环显示控制基础案例实操训练（10分）","current":6,"total":10}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 7/10：案例20-一元二次方程求解 FC 功能块设计基础案例实操训练（10分）","current":7,"total":10}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 8/10：案例21-FB程序设计-两种液体混合控制基础案例实操训练（10分）","current":8,"total":10}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 9/10：案例22-FB程序设计与模拟量输入-两种液体混合控制基础案例实操训练（10分）","current":9,"total":10}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 10/10：案例23-多重背景数据块编程基础案例实操训练（10分）","current":10,"total":10}
+
+data: {"type":"phase_complete","phase":"rubric","message":"评分标准注入完成：10 个评分项"}
+
+data: {"type":"complete","message":"所有内容注入成功！请前往智慧树平台刷新对应任务页面查看结果。","summary":{"stepsCreated":51,"flowsCreated":53,"scoreItemsCreated":10,"stepsDeleted":0,"flowsDeleted":0}}
+

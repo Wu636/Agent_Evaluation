@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -15,7 +15,6 @@ import {
   FileVideo,
   FolderUp,
   Link as LinkIcon,
-  ListChecks,
   Loader2,
   Music2,
   ShieldCheck,
@@ -23,25 +22,9 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import {
-  collectProjectAssets,
-  createProjectFileIndex,
-  findCssReferences,
-  findHtmlReferences,
-  findJavaScriptReferences,
-  injectRuntimeAssetResolver,
-  isCssFile,
-  isHtmlFile,
-  isJavaScriptFile,
-  isLocalProjectReference,
-  isWebMediaFile,
-  type ProjectAsset,
-  resolveProjectReference,
-  rewriteCssReferences,
-  rewriteHtmlReferences,
-  rewriteJavaScriptNavigationReferences,
-  rewriteJavaScriptReferences,
-} from "@/lib/html-project-publisher";
+import { isHtmlFile } from "@/lib/html-project-publisher";
+import { type UploadUrlState } from "@/lib/project-upload-cache";
+import { ProjectPublishInterface } from "@/components/ProjectPublishInterface";
 
 const CREDENTIAL_STORAGE_KEY = "polymas-resource-uploader-credentials";
 const SHARED_CREDENTIAL_STORAGE_KEY = "training-injector-credentials";
@@ -51,7 +34,6 @@ const MAX_PROXY_BYTES = 4 * 1024 * 1024;
 
 type UploadStatus = "queued" | "uploading" | "success" | "error";
 type UploadMode = "resource" | "project";
-type ProjectPhase = "idle" | "ready" | "publishing" | "success" | "error";
 
 interface UploadItem {
   id: string;
@@ -76,13 +58,6 @@ interface PlatformUploadResponse {
   message?: string;
   error?: string;
   data?: { fileId?: string; ossUrl?: string; fileUrl?: string };
-}
-
-interface ProjectResult {
-  url: string;
-  assetCount: number;
-  replacementCount: number;
-  warnings: string[];
 }
 
 function readCredentials(key: string): { authorization: string; cookie: string } | null {
@@ -110,15 +85,6 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
-function looksLikeStaticFileReference(reference: string): boolean {
-  const pathname = reference.trim().split(/[?#]/, 1)[0];
-  if (!pathname || /\s|["'`(){}<>]/.test(pathname)) return false;
-  // A leading dot followed by a name is usually a CSS selector (for example
-  // `.card.active`), while ./ and ../ are genuine relative file paths.
-  if (/^\.[^./]/.test(pathname)) return false;
-  return /(^|\/)[^/]+\.[a-z0-9]{1,12}$/i.test(pathname);
-}
-
 function FileTypeIcon({ type, name }: { type: string; name: string }) {
   const className = "h-5 w-5";
   if (type.startsWith("image/")) return <FileImage className={`${className} text-pink-500`} />;
@@ -137,16 +103,9 @@ export function ResourceUploadInterface() {
   const [items, setItems] = useState<UploadItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [projectAssets, setProjectAssets] = useState<ProjectAsset[]>([]);
-  const [projectEntryPath, setProjectEntryPath] = useState("");
-  const [projectPhase, setProjectPhase] = useState<ProjectPhase>("idle");
-  const [projectProgress, setProjectProgress] = useState(0);
-  const [projectMessage, setProjectMessage] = useState("");
-  const [projectResult, setProjectResult] = useState<ProjectResult | null>(null);
   const [notice, setNotice] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const directoryInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const credentials = readCredentials(CREDENTIAL_STORAGE_KEY) || readCredentials(SHARED_CREDENTIAL_STORAGE_KEY);
@@ -154,22 +113,6 @@ export function ResourceUploadInterface() {
     setAuthorization(credentials.authorization);
     setCookie(credentials.cookie);
   }, []);
-
-  useEffect(() => {
-    // Folder selection remains Chromium/Safari-specific, so set its vendor
-    // attribute imperatively instead of depending on React's HTML typings.
-    directoryInputRef.current?.setAttribute("webkitdirectory", "");
-    directoryInputRef.current?.setAttribute("directory", "");
-  }, [uploadMode]);
-
-  const projectIndex = useMemo(
-    () => createProjectFileIndex(projectAssets),
-    [projectAssets],
-  );
-  const projectHtmlFiles = useMemo(
-    () => projectAssets.filter((asset) => isHtmlFile(asset.path)),
-    [projectAssets],
-  );
 
   const updateItem = (id: string, update: Partial<UploadItem>) => {
     setItems((previous) => previous.map((item) => item.id === id ? { ...item, ...update } : item));
@@ -192,40 +135,9 @@ export function ResourceUploadInterface() {
     event.target.value = "";
   };
 
-  const selectProjectFiles = (files: FileList | File[]) => {
-    const { assets, duplicates } = collectProjectAssets(Array.from(files));
-    const htmlFiles = assets.filter((asset) => isHtmlFile(asset.path));
-    const defaultEntry = htmlFiles.find((asset) => /(^|\/)index\.html?$/i.test(asset.path)) || htmlFiles[0];
-
-    setProjectAssets(assets);
-    setProjectEntryPath(defaultEntry?.path || "");
-    setProjectPhase(assets.length ? "ready" : "idle");
-    setProjectProgress(0);
-    setProjectMessage(assets.length
-      ? `已识别 ${assets.length} 个文件${defaultEntry ? `，默认入口为 ${defaultEntry.path}` : "，但未找到 HTML 文件"}。`
-      : "未选择到文件。",
-    );
-    setProjectResult(null);
-    setNotice(duplicates.length ? `已忽略 ${duplicates.length} 个同路径的重复文件。` : "");
-  };
-
-  const onDirectoryChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files) selectProjectFiles(event.target.files);
-    event.target.value = "";
-  };
-
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setIsDragging(false);
-    if (uploadMode === "project") {
-      const files = Array.from(event.dataTransfer.files);
-      if (!files.every((file) => file.webkitRelativePath)) {
-        setNotice("为保留 HTML 中的目录关系，请使用“选择项目文件夹”按钮，而不是拖入散落文件。");
-        return;
-      }
-      selectProjectFiles(files);
-      return;
-    }
     addFiles(event.dataTransfer.files);
   };
 
@@ -321,6 +233,21 @@ export function ResourceUploadInterface() {
     }
   };
 
+  const verifyOssUrl = async (ossUrl: string, file: File): Promise<UploadUrlState> => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await fetch(`/api/resource-upload/verify?url=${encodeURIComponent(ossUrl)}&size=${file.size}&html=${isHtmlFile(file.name) ? "1" : "0"}`, { cache: "no-store", signal: AbortSignal.timeout(12000) });
+        const result = await response.json() as { ok?: boolean; invalid?: boolean; status?: number };
+        if (response.ok && result.ok) return "valid";
+        if (result.invalid || response.status === 400 || [403, 404, 410].includes(result.status || 0)) return "invalid";
+      } catch {
+        // A short retry covers OSS propagation and transient network errors.
+      }
+      if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 400 * (attempt + 1)));
+    }
+    return "unavailable";
+  };
+
   const uploadOne = async (item: UploadItem) => {
     updateItem(item.id, { status: "uploading", progress: 0, error: undefined, ossUrl: undefined });
     const lastData = await uploadFileToOss(item.file, (progress) => {
@@ -360,239 +287,6 @@ export function ResourceUploadInterface() {
     setIsUploading(false);
   };
 
-  const publishHtmlProject = async () => {
-    if (!authorization.trim() || !cookie.trim()) {
-      setNotice("请先填写平台 Authorization 和 Cookie。它们仅用于本次上传，并只会保存在当前浏览器中。");
-      return;
-    }
-    const entry = projectIndex.byPath.get(projectEntryPath);
-    if (!entry) {
-      setProjectPhase("error");
-      setProjectMessage("请选择一个 HTML 文件作为网页入口。");
-      return;
-    }
-
-    let sourceHtml = "";
-    const missingReferences = new Set<string>();
-    const referencedPaths = new Set<string>();
-    const markReferenced = (references: string[], sourcePath: string) => {
-      for (const reference of references) {
-        if (!isLocalProjectReference(reference)) continue;
-        const target = resolveProjectReference(reference, sourcePath, projectIndex);
-        if (target) referencedPaths.add(target.path);
-      }
-    };
-    try {
-      for (const htmlAsset of projectHtmlFiles) {
-        const html = await htmlAsset.file.text();
-        if (htmlAsset.path === entry.path) sourceHtml = html;
-        // Upload selection needs every path the page may use, including
-        // inline-script strings; the missing-reference check below stays
-        // stricter because script strings produce too many false positives.
-        markReferenced(findHtmlReferences(html), htmlAsset.path);
-        // Inline scripts contain selectors, event names and ordinary labels in
-        // quotes. Only explicit HTML/CSS references are safe to treat as
-        // required files during preflight; known JS paths are still rewritten
-        // later and dynamic paths are handled by the runtime manifest.
-        for (const reference of findHtmlReferences(html, { includeScriptStrings: false })) {
-          if (!isLocalProjectReference(reference)) continue;
-          if (looksLikeStaticFileReference(reference) && !resolveProjectReference(reference, htmlAsset.path, projectIndex)) {
-            missingReferences.add(`${htmlAsset.path} → ${reference}`);
-          }
-        }
-      }
-      for (const stylesheet of projectAssets.filter((asset) => isCssFile(asset.path))) {
-        const css = await stylesheet.file.text();
-        markReferenced(findCssReferences(css), stylesheet.path);
-        for (const reference of findCssReferences(css)) {
-          if (!isLocalProjectReference(reference)) continue;
-          if (!resolveProjectReference(reference, stylesheet.path, projectIndex)) {
-            missingReferences.add(`${stylesheet.path} → ${reference}`);
-          }
-        }
-      }
-      for (const script of projectAssets.filter((asset) => isJavaScriptFile(asset.path))) {
-        markReferenced(findJavaScriptReferences(await script.file.text()), script.path);
-      }
-    } catch {
-      setProjectPhase("error");
-      setProjectMessage("读取 HTML/CSS 文件失败，请重新选择项目文件夹。");
-      return;
-    }
-
-    saveCredentials();
-    setNotice("");
-    setIsUploading(true);
-    setProjectPhase("publishing");
-    setProjectProgress(0);
-    setProjectResult(null);
-
-    const publicUrls = new Map<string, string>();
-    const warnings = new Set<string>();
-    if (missingReferences.size > 0) {
-      const references = [...missingReferences];
-      const examples = references.slice(0, 5).join("；");
-      const remainder = references.length > 5 ? `；另有 ${references.length - 5} 处` : "";
-      warnings.add(`发现 ${references.length} 个未匹配的显式本地引用，已保留原路径并继续发布：${examples}${remainder}。若页面对应内容显示异常，请检查这些路径。`);
-    }
-    let replacementCount = 0;
-    // Only publish files the page actually uses. Unreferenced development
-    // files (README, package.json, .gitignore, server scripts, tests, docs)
-    // are rejected by the platform as illegal file types and would abort the
-    // whole publish, so they are skipped instead of uploaded.
-    const isUploadedRawAsset = (asset: ProjectAsset) =>
-      !isHtmlFile(asset.path) && !isCssFile(asset.path) && !isJavaScriptFile(asset.path)
-      && (referencedPaths.has(asset.path) || isWebMediaFile(asset.path));
-    const rawAssets = projectAssets.filter(isUploadedRawAsset);
-    const cssAssets = projectAssets.filter((asset) => isCssFile(asset.path) && referencedPaths.has(asset.path));
-    const scriptAssets = projectAssets.filter((asset) => isJavaScriptFile(asset.path) && referencedPaths.has(asset.path));
-    const skippedAssets = projectAssets.filter((asset) =>
-      !isHtmlFile(asset.path) && !referencedPaths.has(asset.path) && !isUploadedRawAsset(asset));
-    if (skippedAssets.length > 0) {
-      const examples = skippedAssets.slice(0, 6).map((asset) => asset.path).join("；");
-      const remainder = skippedAssets.length > 6 ? `；另有 ${skippedAssets.length - 6} 个` : "";
-      warnings.add(`已跳过 ${skippedAssets.length} 个未被页面引用、平台也不支持上传的文件（${examples}${remainder}），发布结果不含这些文件。`);
-    }
-    const secondaryHtmlAssets = projectHtmlFiles.filter((asset) => asset.path !== entry.path);
-    const totalOperations = Math.max(1, rawAssets.length + cssAssets.length + scriptAssets.length + secondaryHtmlAssets.length + 1);
-    let completedOperations = 0;
-
-    const reportProgress = (partProgress = 0) => {
-      setProjectProgress(Math.min(99, Math.round(((completedOperations + partProgress / 100) / totalOperations) * 100)));
-    };
-
-    const uploadAsset = async (asset: ProjectAsset, file = asset.file) => {
-      setProjectMessage(`正在上传 ${asset.path}…`);
-      const data = await uploadFileToOss(file, reportProgress);
-      publicUrls.set(asset.path, data.ossUrl!);
-      completedOperations += 1;
-      reportProgress();
-      return data.ossUrl!;
-    };
-
-    const preparingCss = new Set<string>();
-    const prepareCss = async (path: string): Promise<string | undefined> => {
-      const existing = publicUrls.get(path);
-      if (existing) return existing;
-      const asset = projectIndex.byPath.get(path);
-      if (!asset) return undefined;
-      if (preparingCss.has(path)) {
-        warnings.add(`检测到 CSS 相互引用：${path}。其中一个引用将保持为原始路径。`);
-        return undefined;
-      }
-
-      preparingCss.add(path);
-      const content = await asset.file.text();
-      for (const reference of findCssReferences(content)) {
-        const target = resolveProjectReference(reference, path, projectIndex);
-        if (target && isCssFile(target.path)) await prepareCss(target.path);
-      }
-      const rewritten = rewriteCssReferences(content, (reference) => {
-        const target = resolveProjectReference(reference, path, projectIndex);
-        if (!target) return reference;
-        const url = publicUrls.get(target.path);
-        if (!url) {
-          warnings.add(`未能自动替换 CSS 引用：${path} → ${target.path}`);
-          return reference;
-        }
-        replacementCount += 1;
-        return `${url}${target.suffix}`;
-      });
-      const rewrittenFile = new File([rewritten], asset.file.name, {
-        type: asset.file.type || "text/css",
-        lastModified: asset.file.lastModified,
-      });
-      const url = await uploadAsset(asset, rewrittenFile);
-      preparingCss.delete(path);
-      return url;
-    };
-
-    const replaceKnownReference = (
-      reference: string,
-      sourcePath: string,
-      allowDocumentRelativeFallback = false,
-    ): string => {
-      const target = resolveProjectReference(reference, sourcePath, projectIndex)
-        || (allowDocumentRelativeFallback
-          ? resolveProjectReference(reference, entry.path, projectIndex)
-          : null);
-      if (!target) return reference;
-      const url = publicUrls.get(target.path);
-      if (!url) return reference;
-      replacementCount += 1;
-      return `${url}${target.suffix}`;
-    };
-
-    const prepareJavaScript = async (asset: ProjectAsset) => {
-      const content = await asset.file.text();
-      const withStaticUrls = rewriteJavaScriptReferences(content, (reference) =>
-        replaceKnownReference(reference, asset.path, true),
-      );
-      const rewritten = rewriteJavaScriptNavigationReferences(withStaticUrls);
-      const rewrittenFile = new File([rewritten], asset.file.name, {
-        type: asset.file.type || "text/javascript",
-        lastModified: asset.file.lastModified,
-      });
-      return uploadAsset(asset, rewrittenFile);
-    };
-
-    const prepareHtml = async (asset: ProjectAsset, html: string) => {
-      const rewritten = rewriteHtmlReferences(html, (reference) =>
-        replaceKnownReference(reference, asset.path),
-      );
-      const unreplaced = findHtmlReferences(rewritten).filter((reference) => {
-        if (!isLocalProjectReference(reference)) return false;
-        const target = resolveProjectReference(reference, asset.path, projectIndex);
-        return Boolean(target && !isHtmlFile(target.path) && publicUrls.has(target.path));
-      });
-      if (unreplaced.length > 0) {
-        warnings.add(`静态替换后仍检测到 ${unreplaced.length} 个引用，已交给运行时映射继续处理：${asset.path} → ${unreplaced.slice(0, 5).join("；")}`);
-      }
-      return injectRuntimeAssetResolver(rewritten, publicUrls, asset.path);
-    };
-
-    try {
-      for (const asset of rawAssets) await uploadAsset(asset);
-      for (const asset of cssAssets) await prepareCss(asset.path);
-      for (const asset of scriptAssets) await prepareJavaScript(asset);
-      for (const htmlAsset of secondaryHtmlAssets) {
-        const html = await htmlAsset.file.text();
-        const preparedHtml = await prepareHtml(htmlAsset, html);
-        const preparedFile = new File([preparedHtml], htmlAsset.file.name, {
-          type: htmlAsset.file.type || "text/html",
-          lastModified: htmlAsset.file.lastModified,
-        });
-        await uploadAsset(htmlAsset, preparedFile);
-      }
-
-      const runtimeResolvedHtml = await prepareHtml(entry, sourceHtml);
-      const publishedHtml = new File([runtimeResolvedHtml], entry.file.name, {
-        type: entry.file.type || "text/html",
-        lastModified: entry.file.lastModified,
-      });
-      setProjectMessage(`正在发布网页入口 ${entry.path}…`);
-      const finalData = await uploadFileToOss(publishedHtml, reportProgress);
-      completedOperations += 1;
-      setProjectProgress(100);
-      setProjectPhase("success");
-      setProjectMessage(replacementCount > 0
-        ? `发布完成：已静态替换 ${replacementCount} 处路径，并启用 ${publicUrls.size} 个资源的动态路径解析。`
-        : `发布完成：资源路径由 JavaScript 动态生成，已注入 ${publicUrls.size} 个资源的运行时 OSS 映射。`,
-      );
-      setProjectResult({
-        url: finalData.ossUrl!,
-        assetCount: publicUrls.size,
-        replacementCount,
-        warnings: [...warnings],
-      });
-    } catch (error) {
-      setProjectPhase("error");
-      setProjectMessage(error instanceof Error ? error.message : "项目发布失败，请检查文件和平台凭证后重试。");
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
   const copyText = async (value: string, key: string) => {
     try {
       await navigator.clipboard.writeText(value);
@@ -613,8 +307,8 @@ export function ResourceUploadInterface() {
           <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
             <LinkIcon className="h-3.5 w-3.5" /> Polymas OSS 资源上传
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">上传本地资源，获取公网 ossUrl</h1>
-          <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base">支持 HTML、图片、视频、音频及其他常见文件。上传完成后可复制公网链接，直接用于分享或在系统中引用。</p>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">{uploadMode === "project" ? "发布 HTML 项目，获取在线链接" : "上传本地资源，获取公网 ossUrl"}</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base">{uploadMode === "project" ? "选择文件夹或 ZIP 后自动检查，确认无资源路径错误即可发布。" : "支持 HTML、图片、视频、音频及其他常见文件。上传完成后可复制公网链接，直接用于分享或在系统中引用。"}</p>
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -625,7 +319,7 @@ export function ResourceUploadInterface() {
                 {showCredentials ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}{showCredentials ? "收起" : "填写 / 查看"}
               </button>
             </div>
-            {!showCredentials && <p className="mt-1 text-xs text-slate-500">需要智慧树平台请求头中的 Authorization 和 Cookie。凭证不会写入服务器日志。</p>}
+            {!showCredentials && <p className="mt-1 text-xs text-slate-500">{uploadMode === "project" ? "可以先选项目并完成本地检查，发布时再填写平台 Authorization 和 Cookie。" : "需要智慧树平台请求头中的 Authorization 和 Cookie。凭证不会写入服务器日志。"}</p>}
           </div>
           {showCredentials && <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 sm:px-6">
             <label className="block text-sm font-medium text-slate-700">Authorization
@@ -689,49 +383,17 @@ export function ResourceUploadInterface() {
               </div>)}
             </div>
           </div>}
-          </> : <>
-          <input ref={directoryInputRef} type="file" multiple className="hidden" onChange={onDirectoryChange} />
-          <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm leading-6 text-slate-700">
-            <p className="flex items-center gap-2 font-semibold text-indigo-900"><ListChecks className="h-4 w-4" />一键发布静态 HTML 项目</p>
-            <p className="mt-1">选择项目根目录后，系统会先上传被页面引用的图片、视频、音频、JS 等资源，再重写 CSS 与入口 HTML 中的静态本地路径，最终输出可分享的 HTML 链接。无法确定的引用会原样保留并显示诊断，不会阻断整个项目发布；未被引用的开发文件（如 README、package.json、服务端脚本、测试）会自动跳过，避免平台文件类型限制阻断发布。</p>
-          </div>
-          <div className="mt-4 flex min-h-48 flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/70 px-5 text-center">
-            <div className="mb-3 rounded-xl bg-white p-3 shadow-sm"><FolderUp className="h-7 w-7 text-indigo-600" /></div>
-            <p className="font-semibold text-slate-800">选择 HTML 项目文件夹</p>
-            <p className="mt-1 text-sm text-slate-500">文件夹内应包含入口 HTML 及其引用的资源目录</p>
-            <button type="button" onClick={() => directoryInputRef.current?.click()} disabled={isUploading} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"><FolderUp className="h-4 w-4" />选择项目文件夹</button>
-            <p className="mt-3 text-xs text-slate-400">建议使用 Chrome、Edge 或 Safari；Firefox 暂不支持网页选择整个文件夹。</p>
-          </div>
-
-          {notice && <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{notice}</div>}
-
-          {projectAssets.length > 0 && <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
-            <div className="flex flex-col gap-3 border-b border-slate-100 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div><p className="text-sm font-semibold text-slate-800">已识别 {projectAssets.length} 个项目文件</p><p className="mt-0.5 text-xs text-slate-500">资源会保留引用关系，但上传后的 OSS 文件名由平台生成。</p></div>
-              <button type="button" onClick={() => { setProjectAssets([]); setProjectEntryPath(""); setProjectPhase("idle"); setProjectResult(null); setProjectMessage(""); }} disabled={isUploading} className="inline-flex items-center gap-1.5 self-start rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />清除项目</button>
-            </div>
-            <div className="space-y-4 p-4">
-              <label className="block text-sm font-medium text-slate-700">网页入口 HTML
-                <select value={projectEntryPath} onChange={(event) => { setProjectEntryPath(event.target.value); setProjectPhase("ready"); setProjectResult(null); }} disabled={isUploading || projectHtmlFiles.length === 0} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
-                  {projectHtmlFiles.length === 0 && <option value="">未发现 HTML 文件</option>}
-                  {projectHtmlFiles.map((asset) => <option key={asset.path} value={asset.path}>{asset.path}</option>)}
-                </select>
-              </label>
-              {projectMessage && <p className={`text-sm ${projectPhase === "error" ? "text-rose-600" : projectPhase === "success" ? "text-emerald-700" : "text-slate-600"}`}>{projectMessage}</p>}
-              {projectPhase === "publishing" && <div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${projectProgress}%` }} /></div><p className="mt-1.5 text-xs text-indigo-600">发布进度：{projectProgress}%</p></div>}
-              <button type="button" onClick={() => void publishHtmlProject()} disabled={isUploading || !projectEntryPath} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{projectPhase === "publishing" ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}{projectPhase === "publishing" ? "正在发布项目" : "自动替换路径并发布"}</button>
-            </div>
-          </div>}
-
-          {projectResult && <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4"><div className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" /><div className="min-w-0 flex-1"><p className="font-semibold text-emerald-900">项目发布完成</p><p className="mt-0.5 text-sm text-emerald-700">已上传 {projectResult.assetCount} 个资源；静态替换 {projectResult.replacementCount} 处，并已启用动态路径 OSS 映射。</p><div className="mt-3 flex min-w-0 items-center gap-2 rounded-lg bg-white/80 px-2.5 py-2"><LinkIcon className="h-4 w-4 shrink-0 text-emerald-600" /><a href={projectResult.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate font-mono text-xs text-emerald-800 hover:underline" title={projectResult.url}>{projectResult.url}</a><button type="button" onClick={() => void copyText(projectResult.url, "project")} className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100">{copied === "project" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copied === "project" ? "已复制" : "复制"}</button></div></div></div>
-            {projectResult.warnings.length > 0 && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800"><p className="font-semibold">注意事项</p><ul className="mt-1 list-disc pl-4">{projectResult.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
-          </div>}
-          </>}
+          </> : <ProjectPublishInterface
+            hasPlatformCredentials={Boolean(authorization.trim() && cookie.trim())}
+            savePlatformCredentials={saveCredentials}
+            uploadFile={uploadFileToOss}
+            verifyOssUrl={verifyOssUrl}
+          />}
         </section>
 
         {successItems.length > 1 && <section className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5 sm:p-6"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><h2 className="font-semibold text-emerald-900">已获得 {successItems.length} 个公网链接</h2><p className="mt-1 text-sm text-emerald-700">可一次复制全部 ossUrl，用于批量粘贴或记录。</p></div><button type="button" onClick={() => void copyText(successItems.map((item) => item.ossUrl).join("\n"), "all")} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Clipboard className="h-4 w-4" />{copied === "all" ? "已复制全部" : "复制全部链接"}</button></div></section>}
 
-        <p className="mt-5 text-center text-xs leading-5 text-slate-400">上传成功表示平台已返回 ossUrl。HTML 是否以网页形式预览取决于 OSS 的响应头策略；即使浏览器下载该文件，链接仍可用于系统资源引用。</p>
+        <p className="mt-5 text-center text-xs leading-5 text-slate-400">{uploadMode === "project" ? "项目发布会逐个验证资源链接和入口网页，再显示最终在线链接。" : "上传成功表示平台已返回 ossUrl。HTML 是否以网页形式预览取决于 OSS 的响应头策略；即使浏览器下载该文件，链接仍可用于系统资源引用。"}</p>
       </div>
     </main>
   );

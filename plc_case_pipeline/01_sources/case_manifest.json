@@ -1,0 +1,302 @@
+{
+  "source": "/Users/w/智慧树/能力训练/未完成/可编程序控制器原理及应用--内蒙古工业大学/35 案例/1基础案例实操训练(1).docx",
+  "caseCount": 35,
+  "cases": [
+    {
+      "caseNo": 1,
+      "title": "案例 1 置位复位指令应用-传送带控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_01.md",
+      "imageRefs": [
+        "word/media/image1.wmf"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 2,
+      "title": "案例 2 边沿检测指令 - 传送带包裹方向识别控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_02.md",
+      "imageRefs": [
+        "word/media/image2.wmf"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 3,
+      "title": "案例 3 三变量逻辑组合 - 三台风机状态逻辑控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_03.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 4,
+      "title": "案例 4 单按钮循环启停控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_04.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 5,
+      "title": "案例 5 单按钮依次点亮三盏灯基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_05.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 6,
+      "title": "案例 6 有轨小车多站往复周期运行控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_06.md",
+      "imageRefs": [
+        "word/media/image3.wmf"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 7,
+      "title": "案例 7 状态表法程序设计方法-单按钮灯亮灭控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_07.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 8,
+      "title": "案例 8 状态表法程序设计-单按钮三灯顺序点亮控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_08.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 9,
+      "title": "案例 9 脉冲定时器应用-抢答器控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_09.md",
+      "imageRefs": [
+        "word/media/image4.jpeg"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 10,
+      "title": "案例 10 延时接通定时器应用-可调占空比脉冲控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_10.md",
+      "imageRefs": [
+        "word/media/image5.wmf"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 11,
+      "title": "案例 11 延时关断定时器应用-两台皮带顺序起停控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_11.md",
+      "imageRefs": [
+        "word/media/image6.wmf"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 12,
+      "title": "案例 12 定时产生脉冲应用-长延时定时器设计基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_12.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 13,
+      "title": "案例 13 定时器计数器组合应用-三台电机顺序启动控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_13.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 14,
+      "title": "案例 14 移位指令应用-物品自动分选控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_14.md",
+      "imageRefs": [
+        "word/media/image7.wmf"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 15,
+      "title": "案例 15 多路彩灯循环移位控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_15.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 16,
+      "title": "案例 16 四相八拍步进电机正反转调速控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_16.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 17,
+      "title": "案例 17 模拟量信号输入控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_17.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 18,
+      "title": "案例 18 模拟量输出控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_18.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 19,
+      "title": "案例 19 循环中断程序设计-数码管循环显示控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_19.md",
+      "imageRefs": [
+        "word/media/image8.png",
+        "word/media/image9.png"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 20,
+      "title": "案例 20 一元二次方程求解 FC 功能块设计基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_20.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 21,
+      "title": "案例 21 FB程序设计-两种液体混合控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_21.md",
+      "imageRefs": [
+        "word/media/image10.wmf"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 22,
+      "title": "案例 22 FB程序设计与模拟量输入-两种液体混合控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_22.md",
+      "imageRefs": [
+        "word/media/image11.wmf"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 23,
+      "title": "案例 23 多重背景数据块编程基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_23.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 24,
+      "title": "案例 24 十字路口交通灯顺序功能图设计基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_24.md",
+      "imageRefs": [
+        "word/media/image12.wmf",
+        "word/media/image13.gif"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 25,
+      "title": "案例 25洗车机顺序功能图设计基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_25.md",
+      "imageRefs": [
+        "word/media/image14.wmf",
+        "word/media/image15.png"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 26,
+      "title": "案例 26 启停反向指示灯顺序功能图设计基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_26.md",
+      "imageRefs": [
+        "word/media/image16.png"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 27,
+      "title": "案例 27 饮料灌装封盖流水线顺序功能图设计基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_27.md",
+      "imageRefs": [
+        "word/media/image17.wmf"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 28,
+      "title": "案例 28 冲孔分拣加工流水线顺序功能图设计基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_28.md",
+      "imageRefs": [
+        "word/media/image18.gif",
+        "word/media/image19.png"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 29,
+      "title": "案例 29 搬运机械手臂顺序功能图设计基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_29.md",
+      "imageRefs": [
+        "word/media/image20.gif",
+        "word/media/image21.png"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 30,
+      "title": "案例 30 单灯三态顺序控制设计综合训练",
+      "file": "plc_case_pipeline/01_sources/case_30.md",
+      "imageRefs": [],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 31,
+      "title": "案例 31 十字路口完整交通灯顺序控制综合训练",
+      "file": "plc_case_pipeline/01_sources/case_31.md",
+      "imageRefs": [
+        "word/media/image12.wmf",
+        "word/media/image13.gif",
+        "word/media/image22.wmf"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 32,
+      "title": "案例 32 PID_Compact 模拟量温度闭环控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_32.md",
+      "imageRefs": [
+        "word/media/image23.png"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 33,
+      "title": "案例 33 伺服轴工艺对象位置/速度运动控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_33.md",
+      "imageRefs": [
+        "word/media/image24.png"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 34,
+      "title": "案例 34 步进电动阀门分段开度控制基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_34.md",
+      "imageRefs": [
+        "word/media/image25.png"
+      ],
+      "status": "EXTRACTED"
+    },
+    {
+      "caseNo": 35,
+      "title": "案例 35 高速编码器脉冲计数显示基础案例实操训练",
+      "file": "plc_case_pipeline/01_sources/case_35.md",
+      "imageRefs": [
+        "word/media/image26.jpeg",
+        "word/media/image27.jpeg",
+        "word/media/image28.png"
+      ],
+      "status": "EXTRACTED"
+    }
+  ]
+}

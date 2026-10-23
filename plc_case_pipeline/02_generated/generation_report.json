@@ -1,0 +1,280 @@
+{
+  "model": "claude-opus-4-8",
+  "endpoint": "http://localhost:3000/api/training-generate",
+  "results": [
+    {
+      "caseNo": 1,
+      "status": "SKIPPED",
+      "script": "plc_case_pipeline/02_generated/case_01_script.md"
+    },
+    {
+      "caseNo": 2,
+      "status": "SKIPPED",
+      "script": "plc_case_pipeline/02_generated/case_02_script.md"
+    },
+    {
+      "caseNo": 3,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_03_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_03_rubric.md",
+      "taskName": "案例03"
+    },
+    {
+      "caseNo": 4,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_04_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_04_rubric.md",
+      "taskName": "案例04"
+    },
+    {
+      "caseNo": 5,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_05_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_05_rubric.md",
+      "taskName": "案例05"
+    },
+    {
+      "caseNo": 6,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_06_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_06_rubric.md",
+      "taskName": "案例06"
+    },
+    {
+      "caseNo": 7,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_07_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_07_rubric.md",
+      "taskName": "案例07"
+    },
+    {
+      "caseNo": 8,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_08_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_08_rubric.md",
+      "taskName": "案例08"
+    },
+    {
+      "caseNo": 9,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_09_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_09_rubric.md",
+      "taskName": "案例09"
+    },
+    {
+      "caseNo": 10,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_10_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_10_rubric.md",
+      "taskName": "案例10"
+    },
+    {
+      "caseNo": 11,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_11_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_11_rubric.md",
+      "taskName": "案例11"
+    },
+    {
+      "caseNo": 12,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_12_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_12_rubric.md",
+      "taskName": "案例12"
+    },
+    {
+      "caseNo": 13,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_13_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_13_rubric.md",
+      "taskName": "案例13"
+    },
+    {
+      "caseNo": 14,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_14_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_14_rubric.md",
+      "taskName": "案例14"
+    },
+    {
+      "caseNo": 15,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_15_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_15_rubric.md",
+      "taskName": "案例15"
+    },
+    {
+      "caseNo": 16,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_16_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_16_rubric.md",
+      "taskName": "案例16"
+    },
+    {
+      "caseNo": 17,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_17_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_17_rubric.md",
+      "taskName": "案例17"
+    },
+    {
+      "caseNo": 18,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_18_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_18_rubric.md",
+      "taskName": "案例18"
+    },
+    {
+      "caseNo": 19,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_19_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_19_rubric.md",
+      "taskName": "案例19"
+    },
+    {
+      "caseNo": 20,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_20_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_20_rubric.md",
+      "taskName": "案例20"
+    },
+    {
+      "caseNo": 21,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_21_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_21_rubric.md",
+      "taskName": "案例21"
+    },
+    {
+      "caseNo": 22,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_22_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_22_rubric.md",
+      "taskName": "案例22"
+    },
+    {
+      "caseNo": 23,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_23_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_23_rubric.md",
+      "taskName": "案例23"
+    },
+    {
+      "caseNo": 24,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_24_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_24_rubric.md",
+      "taskName": "案例24"
+    },
+    {
+      "caseNo": 25,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_25_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_25_rubric.md",
+      "taskName": "案例25"
+    },
+    {
+      "caseNo": 26,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_26_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_26_rubric.md",
+      "taskName": "案例26"
+    },
+    {
+      "caseNo": 27,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_27_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_27_rubric.md",
+      "taskName": "案例27"
+    },
+    {
+      "caseNo": 28,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_28_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_28_rubric.md",
+      "taskName": "案例28"
+    },
+    {
+      "caseNo": 29,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_29_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_29_rubric.md",
+      "taskName": "案例29"
+    },
+    {
+      "caseNo": 30,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_30_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_30_rubric.md",
+      "taskName": "案例30"
+    },
+    {
+      "caseNo": 31,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_31_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_31_rubric.md",
+      "taskName": "案例31"
+    },
+    {
+      "caseNo": 32,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_32_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_32_rubric.md",
+      "taskName": "案例32"
+    },
+    {
+      "caseNo": 33,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_33_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_33_rubric.md",
+      "taskName": "案例33"
+    },
+    {
+      "caseNo": 34,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_34_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_34_rubric.md",
+      "taskName": "案例34"
+    },
+    {
+      "caseNo": 35,
+      "status": "GENERATED",
+      "attempt": 1,
+      "script": "plc_case_pipeline/02_generated/case_35_script.md",
+      "rubric": "plc_case_pipeline/02_generated/case_35_rubric.md",
+      "taskName": "案例35"
+    }
+  ]
+}

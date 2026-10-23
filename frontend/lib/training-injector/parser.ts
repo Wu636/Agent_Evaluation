@@ -253,7 +253,22 @@ function isStructuralBoundaryLine(line: string): boolean {
 }
 
 function closeDanglingCodeBlocksBeforeStructuralBoundaries(markdown: string): string {
-    const lines = String(markdown || "").split("\n");
+    let lines = String(markdown || "").split("\n");
+    const firstContentIndex = lines.findIndex((line) => line.trim().length > 0);
+    const lastContentIndex = lines.reduce((last, line, index) => (
+        line.trim().length > 0 ? index : last
+    ), -1);
+    // Treat a leading/trailing Markdown fence as an outer wrapper. Without
+    // this, the structural-boundary repair sees every stage inside one code
+    // block and inserts spurious closures before parsing fields.
+    if (
+        firstContentIndex >= 0 &&
+        lastContentIndex > firstContentIndex &&
+        /^```(?:markdown|md)?\s*$/i.test(lines[firstContentIndex].trim()) &&
+        /^```\s*$/i.test(lines[lastContentIndex].trim())
+    ) {
+        lines = lines.slice(firstContentIndex + 1, lastContentIndex);
+    }
     const repairedLines: string[] = [];
     let inCodeBlock = false;
 
@@ -284,14 +299,32 @@ export function normalizeTrainingScriptSource(markdown: string): string {
     let raw = String(markdown || "");
     const initialLines = raw.split("\n");
     const firstContentIndex = initialLines.findIndex((line) => line.trim().length > 0);
-    if (firstContentIndex >= 0 && /^```(?:markdown|md)?\s*$/i.test(initialLines[firstContentIndex].trim())) {
-        const firstClosingIndex = initialLines.findIndex((line, index) => index > firstContentIndex && line.trim().startsWith("```"));
-        if (firstClosingIndex > firstContentIndex) {
-            const firstFenceBody = initialLines.slice(firstContentIndex + 1, firstClosingIndex).join("\n");
-            const remainingBody = initialLines.slice(firstClosingIndex + 1).join("\n");
+    const lastContentIndex = initialLines.reduce((last, line, index) => (
+        line.trim().length > 0 ? index : last
+    ), -1);
+
+    // Models sometimes wrap the whole document in an outer Markdown fence,
+    // while each stage contains its own fenced prompt fields. Remove only
+    // the outer pair first so the inner fences remain balanced.
+    if (
+        firstContentIndex >= 0 &&
+        lastContentIndex > firstContentIndex &&
+        /^```(?:markdown|md)?\s*$/i.test(initialLines[firstContentIndex].trim()) &&
+        /^```\s*$/i.test(initialLines[lastContentIndex].trim())
+    ) {
+        raw = initialLines.slice(firstContentIndex + 1, lastContentIndex).join("\n").trim();
+    }
+
+    const reparsedLines = raw.split("\n");
+    const reparsedFirstContentIndex = reparsedLines.findIndex((line) => line.trim().length > 0);
+    if (reparsedFirstContentIndex >= 0 && /^```(?:markdown|md)?\s*$/i.test(reparsedLines[reparsedFirstContentIndex].trim())) {
+        const firstClosingIndex = reparsedLines.findIndex((line, index) => index > reparsedFirstContentIndex && line.trim().startsWith("```"));
+        if (firstClosingIndex > reparsedFirstContentIndex) {
+            const firstFenceBody = reparsedLines.slice(reparsedFirstContentIndex + 1, firstClosingIndex).join("\n");
+            const remainingBody = reparsedLines.slice(firstClosingIndex + 1).join("\n");
             if (looksLikeTrainingScriptContent(firstFenceBody) && /(?:^|\n)\s*(?:[-*+•]\s*)?(?:#{2,6}\s*)?(?:第?\s*[0-9一二三四五六七八九十]+\s*阶段|阶段\s*[0-9一二三四五六七八九十]+)/.test(remainingBody)) {
-                initialLines.splice(firstContentIndex, 1);
-                raw = initialLines.join("\n");
+                reparsedLines.splice(reparsedFirstContentIndex, 1);
+                raw = reparsedLines.join("\n");
             }
         }
     }
@@ -301,15 +334,23 @@ export function normalizeTrainingScriptSource(markdown: string): string {
         return outerFenceMatch[1].trim();
     }
 
-    const unwrappedScriptLikeFences = raw.replace(
-        /```(?:markdown|md)?\s*\n([\s\S]*?)\n```/gi,
-        (fullMatch, innerContent: string) => {
-            if (!looksLikeTrainingScriptContent(innerContent)) {
-                return fullMatch;
+    // Once a structured script is visible, preserve every remaining fence:
+    // transition/prompt fields legitimately contain nested code blocks, and a
+    // global non-greedy replacement can pair an indented closing fence with a
+    // later prompt fence and silently discard the prompt boundary.
+    const hasStructuredScript = /(?:^|\n)\s*(?:#{2,6}\s*)?(?:📋\s*)?基础配置\b/m.test(raw) ||
+        /(?:^|\n)\s*#{2,6}\s*阶段\s*[0-9一二三四五六七八九十]+/m.test(raw);
+    const unwrappedScriptLikeFences = hasStructuredScript
+        ? raw
+        : raw.replace(
+            /```(?:markdown|md)?\s*\n([\s\S]*?)\n```/gi,
+            (fullMatch, innerContent: string) => {
+                if (!looksLikeTrainingScriptContent(innerContent)) {
+                    return fullMatch;
+                }
+                return `\n${innerContent.trim()}\n`;
             }
-            return `\n${innerContent.trim()}\n`;
-        }
-    );
+        );
 
     const fenceMatches = Array.from(
         unwrappedScriptLikeFences.matchAll(/```(?:markdown|md)?\s*\n([\s\S]*?)\n```/gi)
@@ -782,7 +823,7 @@ export function parseTrainingScript(markdown: string): ParsedStep[] {
 }
 
 function findNonlinearFlowBlock(markdown: string): string {
-    const normalized = normalizeTrainingScriptSource(markdown);
+    const normalized = repairTrainingScriptForParsing(markdown);
     const lines = normalized.split("\n");
     const headingPattern = /^#{1,6}\s*(?:🔀\s*)?(?:非线性|分支|图结构|流程图|多线路)[\s\S]{0,32}(?:跳转|流程|连线|关系)(?:\s|$|[（(])/i;
     const genericSectionPattern = /^#{1,6}\s+\S/;
@@ -944,7 +985,8 @@ export function parseTrainingScriptFlowConfig(markdown: string): ParsedFlowConfi
 
     const bulletEdges = parseFlowEdgesFromBullets(block);
     return {
-        flowType: bulletEdges.length > 0 ? "graph" : "linear",
+        // 找到图结构标题但解析失败时保留 graph，让注入预检明确报错。
+        flowType: "graph",
         edges: bulletEdges,
     };
 }

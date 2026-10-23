@@ -7,7 +7,7 @@
 
 import { ParsedStep, ParsedScoreItem, ParsedFlowConfig } from "./types";
 import { MODEL_NAME_MAPPING } from "@/lib/config";
-import { buildTemperatureCompatiblePayload } from "@/lib/llm/utils";
+import { buildTemperatureCompatiblePayload, modelRequiresCompletionTokens } from "@/lib/llm/utils";
 
 export interface LLMSettings {
     apiKey: string;
@@ -54,7 +54,9 @@ async function callLLM(
             },
             { role: "user", content: prompt },
         ],
-        max_tokens: 16000,
+        ...(modelRequiresCompletionTokens(model)
+            ? { max_completion_tokens: 16000 }
+            : { max_tokens: 16000 }),
     }, model, 0));
 
     let lastError: Error | null = null;

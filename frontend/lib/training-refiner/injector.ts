@@ -2,6 +2,7 @@ import type { PolymasCredentials } from "@/lib/training-injector/types";
 
 import type {
   TrainingRefinementPlan,
+  TrainingRefineImageAsset,
   TrainingRefineInjectMode,
   TrainingScoreItem,
 } from "./types";
@@ -149,6 +150,7 @@ function cloneDetail(params: {
   newStepId: string;
   isNewNode: boolean;
   refinedNode: TrainingRefinementPlan["nodes"][number];
+  backgroundImage?: TrainingRefineImageAsset | null;
 }) {
   const detail = structuredClone(params.sourceDetail);
   const originalResources = params.isNewNode
@@ -170,11 +172,36 @@ function cloneDetail(params: {
     detail.stepExtProperty && typeof detail.stepExtProperty === "object"
       ? structuredClone(detail.stepExtProperty as Record<string, unknown>)
       : {};
-  ext.resources = remapResources(
-    originalResources,
-    params.targetTaskId,
-    params.newStepId,
-  );
+  if (
+    params.backgroundImage !== undefined &&
+    !params.isNewNode &&
+    Array.isArray(ext.resources)
+  ) {
+    // 新背景流程保留原资源分组及嵌套元数据，只重映射附件归属。
+    ext.resources = ext.resources.map((group: Record<string, unknown>) => {
+      if (!group || typeof group !== "object" || !Array.isArray(group.list))
+        return group;
+      return {
+        ...group,
+        list: group.list.map((resource: Record<string, unknown>) => {
+          if (!resource || typeof resource !== "object" || !text(resource.fileId))
+            return resource;
+          return {
+            ...resource,
+            trainTaskId: params.targetTaskId,
+            scriptStepId: params.newStepId,
+            scriptStepResourceId: generateId(20),
+          };
+        }),
+      };
+    });
+  } else {
+    ext.resources = remapResources(
+      originalResources,
+      params.targetTaskId,
+      params.newStepId,
+    );
+  }
   detail.stepExtProperty = ext;
 
   detail.nodeType = "SCRIPT_NODE";
@@ -189,7 +216,15 @@ function cloneDetail(params: {
   if (params.refinedNode.agentId) detail.agentId = params.refinedNode.agentId;
   if (params.refinedNode.avatarNid)
     detail.avatarNid = params.refinedNode.avatarNid;
-  if (
+  if (params.backgroundImage !== undefined) {
+    const image = params.backgroundImage;
+    detail.scriptStepCover = image
+      ? { fileId: image.fileId, fileUrl: image.fileUrl }
+      : {};
+    detail.backgroundTheme = image ? image.fileId : null;
+    // 平台无图契约仍使用 image 类型，必须同时清空封面对象和主题。
+    detail.scriptBackgroundType = "image";
+  } else if (
     detail.scriptStepCover &&
     typeof detail.scriptStepCover === "object" &&
     text((detail.scriptStepCover as Record<string, unknown>).fileUrl)
@@ -536,6 +571,8 @@ export function buildRefinementDryRun(
     injectScript?: boolean;
     injectRubric?: boolean;
     injectMode?: TrainingRefineInjectMode;
+    generateCover?: boolean;
+    generateBackgrounds?: boolean;
   },
 ) {
   const injectScript = options?.injectScript !== false;
@@ -547,6 +584,9 @@ export function buildRefinementDryRun(
     `🛠️  优化训练：${plan.taskName}`,
     `📝 摘要：${plan.summary || "-"}`,
     `🧩 架构：${plan.architectureRationale || "-"}`,
+    plan.strategy === "template-rebuild"
+      ? `🧭 模板重构：${plan.templateDiagnosis?.overallMode || "mixed"}`
+      : "",
     `🎯 注入内容：${[
       injectScript ? "训练剧本" : "",
       injectRubric ? "评分标准" : "",
@@ -556,6 +596,19 @@ export function buildRefinementDryRun(
     `📥 注入模式：${injectMode === "append" ? "保留现有内容并追加" : "清空选中内容后重建"}`,
     `📦 卡片 ${plan.nodes.length} 张，连线 ${plan.flows.length} 条，评分项 ${plan.scoreItems?.length || 0} 条`,
   ];
+  lines.push(
+    `封面计划：${options?.generateCover ? "在独立步骤生成并准备 1 张新封面" : "未选择生成封面"}。`,
+    `背景计划：${!injectScript
+      ? "不注入剧本，目标节点背景保持不变"
+      : options?.generateBackgrounds === true
+        ? `在独立步骤准备全部 ${plan.nodes.length} 张新背景，齐备后再注入，不回退源图`
+        : options?.generateBackgrounds === false
+          ? "本次新建节点无图，明确清除源背景，不回退源图"
+          : "继承源背景（兼容旧调用）"}。`,
+  );
+  if (injectScript && injectMode === "append") {
+    lines.push("追加背景计划：仅处理本次新增节点，不修改目标已有节点背景。");
+  }
   for (const node of injectScript ? plan.nodes : []) {
     const source = node.sourceStepId
       ? sourceById.get(node.sourceStepId)
@@ -574,7 +627,7 @@ export function buildRefinementDryRun(
       `  ★ ${scoreItem.itemName}：${scoreItem.score} 分｜${scoreItem.requireDetail.slice(0, 80)}`,
     );
   }
-  lines.push("✅ Dry-run 完成，未调用任何写入接口。");
+  lines.push("Dry-run 完成，仅报告计划，未调用任何图片生成或写入接口。");
   return lines.join("\n");
 }
 
@@ -588,8 +641,11 @@ export async function injectRefinedTraining(params: {
   injectScript?: boolean;
   injectRubric?: boolean;
   injectMode?: TrainingRefineInjectMode;
+  backgroundImages?: Record<string, TrainingRefineImageAsset>;
+  replaceSourceImages?: boolean;
 }) {
   const injectScript = params.injectScript !== false;
+  const replaceSourceImages = params.replaceSourceImages === true;
   const injectRubric = params.injectRubric !== false;
   const injectMode: TrainingRefineInjectMode =
     params.injectMode === "append" ? "append" : "replace";
@@ -602,6 +658,80 @@ export async function injectRefinedTraining(params: {
   if (injectRubric && !params.plan.scoreItems?.length) {
     throw new Error("优化方案中没有可注入的评分项。");
   }
+  // 图片由独立步骤准备；所有本地预校验必须早于任何平台请求及删除操作。
+  const validatedImages = new Map<string, TrainingRefineImageAsset>();
+  if (params.backgroundImages !== undefined) {
+    if (
+      !params.backgroundImages ||
+      typeof params.backgroundImages !== "object" ||
+      Array.isArray(params.backgroundImages)
+    ) {
+        throw new Error("背景图片必须是按优化节点 id 索引的完整映射，未修改目标训练。");
+    }
+    const clearAllBackgrounds =
+      replaceSourceImages && Object.keys(params.backgroundImages).length === 0;
+    if (!clearAllBackgrounds) {
+      for (const node of params.plan.nodes) {
+        const image = Object.prototype.hasOwnProperty.call(params.backgroundImages, node.id)
+          ? params.backgroundImages[node.id]
+          : undefined;
+        const fileId = typeof image?.fileId === "string" ? image.fileId.trim() : "";
+        const fileUrl = typeof image?.fileUrl === "string" ? image.fileUrl.trim() : "";
+        let validUrl = false;
+        try {
+          const parsed = new URL(fileUrl);
+          validUrl = /^https?:\/\//i.test(fileUrl) &&
+            (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+            Boolean(parsed.hostname);
+        } catch {
+          validUrl = false;
+        }
+        if (!fileId || !validUrl) {
+          throw new Error(
+            `卡片 ${node.stepName}（${node.id}）的背景图片未准备完整：需要非空 fileId 和有效 http(s) fileUrl；未修改目标训练，不回退源图。`,
+          );
+        }
+        validatedImages.set(node.id, { fileId, fileUrl, contextKey: image!.contextKey });
+      }
+    }
+  }
+  const sourceBusiness = businessSteps(params.sourceSteps);
+  const sourceById = new Map(sourceBusiness.map((step) => [step.stepId, step]));
+  const sourceFlowById = new Map(
+    params.sourceFlows
+      .filter((flow) => flow.flowId)
+      .map((flow) => [flow.flowId!, flow]),
+  );
+  const templateFallback = sourceBusiness[0];
+  if (injectScript && !templateFallback)
+    throw new Error("源训练没有业务卡片。");
+  const preparedNodes = (injectScript ? params.plan.nodes : []).map((node) => {
+    const source = node.sourceStepId
+      ? sourceById.get(node.sourceStepId)
+      : node.templateSourceStepId
+        ? sourceById.get(node.templateSourceStepId)
+        : templateFallback;
+    if (
+      !source?.stepDetailDTO ||
+      typeof source.stepDetailDTO !== "object" ||
+      Array.isArray(source.stepDetailDTO)
+    ) {
+      throw new Error(`卡片 ${node.stepName}（${node.id}）没有可继承的原卡配置，未修改目标训练。`);
+    }
+    const stepId = generateId();
+    const backgroundImage = replaceSourceImages
+      ? validatedImages.get(node.id) ?? null
+      : undefined;
+    const detail = cloneDetail({
+      sourceDetail: source.stepDetailDTO,
+      targetTaskId: params.targetTaskId,
+      newStepId: stepId,
+      isNewNode: !node.sourceStepId,
+      refinedNode: node,
+      backgroundImage,
+    });
+    return { node, stepId, detail, backgroundImage };
+  });
   const targetScoreItemsBefore = injectRubric
     ? await queryTrainingScoreItems(params.targetTaskId, params.credentials)
     : [];
@@ -614,16 +744,6 @@ export async function injectRefinedTraining(params: {
       "目标训练存在无法精确定位的评分项，已在修改剧本前中止覆盖。",
     );
   }
-  const sourceBusiness = businessSteps(params.sourceSteps);
-  const sourceById = new Map(sourceBusiness.map((step) => [step.stepId, step]));
-  const sourceFlowById = new Map(
-    params.sourceFlows
-      .filter((flow) => flow.flowId)
-      .map((flow) => [flow.flowId!, flow]),
-  );
-  const templateFallback = sourceBusiness[0];
-  if (injectScript && !templateFallback)
-    throw new Error("源训练没有业务卡片。");
 
   const logs: string[] = [];
   let scriptCards = 0;
@@ -757,24 +877,13 @@ export async function injectRefinedTraining(params: {
     ]);
     const positions = graphPositions(params.plan);
     const expectedFiles = new Map<string, string[]>();
-    for (const node of params.plan.nodes) {
-      const source = node.sourceStepId
-        ? sourceById.get(node.sourceStepId)
-        : node.templateSourceStepId
-          ? sourceById.get(node.templateSourceStepId)
-          : templateFallback;
-      if (!source?.stepDetailDTO) {
-        throw new Error(`卡片 ${node.stepName} 没有可继承的原卡配置。`);
-      }
-      const stepId = generateId();
+    const expectedBackgrounds = new Map<string, {
+      nodeId: string;
+      stepName: string;
+      image: TrainingRefineImageAsset | null;
+    }>();
+    for (const { node, stepId, detail, backgroundImage } of preparedNodes) {
       liveIds.set(node.id, stepId);
-      const detail = cloneDetail({
-        sourceDetail: source.stepDetailDTO,
-        targetTaskId: params.targetTaskId,
-        newStepId: stepId,
-        isNewNode: !node.sourceStepId,
-        refinedNode: node,
-      });
       const basePosition = positions.get(node.id) || { x: 300, y: 300 };
       await createBusinessNode({
         taskId: params.targetTaskId,
@@ -788,8 +897,19 @@ export async function injectRefinedTraining(params: {
         credentials: params.credentials,
       });
       expectedFiles.set(stepId, fileIds(detail));
+      if (backgroundImage !== undefined) {
+        expectedBackgrounds.set(stepId, {
+          nodeId: node.id,
+          stepName: node.stepName,
+          image: backgroundImage,
+        });
+      }
       logs.push(
-        `✅ 卡片：${node.stepName}（附件 ${fileIds(detail).length} 个）`,
+        `卡片：${node.stepName}（附件 ${fileIds(detail).length} 个；背景：${backgroundImage === undefined
+          ? "继承源配置"
+          : backgroundImage === null
+            ? "无图，已明确清除源背景"
+            : "生成图，已替换源背景"}）`,
       );
     }
 
@@ -841,6 +961,40 @@ export async function injectRefinedTraining(params: {
         sortedExpected.every((value, index) => value === actual[index])
       );
     });
+    const liveDetailMap = new Map(
+      liveBusiness.map((step) => [step.stepId, step.stepDetailDTO]),
+    );
+    const backgroundFailures: string[] = [];
+    for (const [stepId, expected] of expectedBackgrounds) {
+      const actual = liveDetailMap.get(stepId);
+      const rawCover = actual?.scriptStepCover;
+      const cover = rawCover && typeof rawCover === "object" && !Array.isArray(rawCover)
+        ? rawCover as Record<string, unknown>
+        : undefined;
+      const mismatches: string[] = [];
+      if (expected.image) {
+        if (cover?.fileId !== expected.image.fileId) mismatches.push("fileId");
+        if (cover?.fileUrl !== expected.image.fileUrl) mismatches.push("fileUrl");
+        if (actual?.backgroundTheme !== expected.image.fileId)
+          mismatches.push("backgroundTheme");
+      } else {
+        if ((rawCover != null && !cover) || text(cover?.fileId) || text(cover?.fileUrl))
+          mismatches.push("scriptStepCover 未清空");
+        if (text(actual?.backgroundTheme)) mismatches.push("backgroundTheme 未清空");
+      }
+      // 部分平台回采接口会省略该派生字段；只在明确返回其他类型时判错。
+      if (
+        text(actual?.scriptBackgroundType) &&
+        actual?.scriptBackgroundType !== "image"
+      ) {
+        mismatches.push("scriptBackgroundType");
+      }
+      if (mismatches.length > 0) {
+        backgroundFailures.push(
+          `${expected.stepName}（${expected.nodeId}）：${mismatches.join("、")}`,
+        );
+      }
+    }
     const edgesPresent = [...expectedEdges].every(
       ([key, count]) => (liveEdges.get(key) || 0) >= count,
     );
@@ -866,6 +1020,7 @@ export async function injectRefinedTraining(params: {
       连线数量: liveFlows.length === expectedFlowCount,
       新连线结构: edgesPresent,
       新卡附件: exactFiles,
+      新卡背景: backgroundFailures.length === 0,
       原节点保留: preservedStepsPresent,
       原连线保留: preservedFlowsPresent,
     };
@@ -879,10 +1034,19 @@ export async function injectRefinedTraining(params: {
     logs.push(
       `🔎 回采：业务卡片 ${liveBusiness.length}/${expectedBusinessCount}，连线 ${liveFlows.length}/${expectedFlowCount}，新附件 ${scriptResources}`,
     );
+    logs.push(
+      replaceSourceImages
+        ? `背景回采：本次新建节点 ${expectedBackgrounds.size} 个，背景不一致 ${backgroundFailures.length} 个。`
+        : "背景回采：本次继承源配置，未启用新背景替换校验。",
+    );
     if (failed.length > 0) {
-      throw new Error(`目标训练回采校验失败：${failed.join("、")}`);
+      throw new Error(
+        `目标训练回采校验失败：${failed.join("、")}${backgroundFailures.length > 0
+          ? `；新背景不一致：${backgroundFailures.join("；")}`
+          : ""}`,
+      );
     }
-    logs.push("✅ 卡片、连线、附件及原配置保留校验通过");
+    logs.push("卡片、连线、附件、背景及原配置保留校验通过");
     scriptCards = params.plan.nodes.length;
     scriptFlows = params.plan.flows.length;
   } else {

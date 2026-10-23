@@ -1,3 +1,5 @@
+import { parse, type Node } from "acorn";
+
 export interface ProjectAsset {
   file: File;
   path: string;
@@ -22,7 +24,7 @@ function normalizePath(value: string): string {
 }
 
 function isRootFolderPath(paths: string[]): boolean {
-  if (paths.length < 2) return false;
+  if (paths.length === 0) return false;
   const roots = new Set(paths.map((path) => path.split("/")[0]));
   return roots.size === 1 && paths.every((path) => path.includes("/"));
 }
@@ -35,11 +37,15 @@ const IGNORED_PROJECT_DIRECTORIES = new Set([
   "node_modules",
 ]);
 
-function isIgnoredProjectPath(path: string): boolean {
+export function isIgnoredProjectPath(path: string): boolean {
   return path.split("/").some((part) =>
     IGNORED_PROJECT_DIRECTORIES.has(part)
     || part === ".DS_Store"
+    || part === ".polymas-publish-audit.json"
+    || part === "polymas-publish-audit.json"
     || part === "Thumbs.db"
+    || /^\.env(?:\.|$)/i.test(part)
+    || /\.(?:pem|key|p12|pfx)$/i.test(part)
     || part.startsWith("._"),
   );
 }
@@ -60,7 +66,7 @@ export function collectProjectAssets(files: File[]): { assets: ProjectAsset[]; d
     const rawPath = rawPaths[index];
     const path = removeRoot ? rawPath.split("/").slice(1).join("/") : rawPath;
     if (!path) continue;
-    const key = path.toLowerCase();
+    const key = path;
     if (seen.has(key)) {
       duplicates.push(path);
       continue;
@@ -69,6 +75,7 @@ export function collectProjectAssets(files: File[]): { assets: ProjectAsset[]; d
     assets.push({ file: records[index].file, path });
   }
 
+  assets.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   return { assets, duplicates };
 }
 
@@ -91,6 +98,10 @@ export function isJavaScriptFile(path: string): boolean {
   return /\.(?:cjs|mjs|js)$/i.test(path);
 }
 
+export function isSvgFile(path: string): boolean {
+  return /\.svg$/i.test(path);
+}
+
 /** Image/video/audio types the platform accepts even without a static reference. */
 export function isWebMediaFile(path: string): boolean {
   return /\.(?:png|jpe?g|gif|webp|avif|svg|ico|bmp|mp4|webm|ogv|mov|m4v|mp3|wav|ogg|m4a|aac|flac)$/i.test(path);
@@ -108,7 +119,7 @@ export function findJavaScriptReferences(content: string): string[] {
 
 function splitReference(reference: string): { pathname: string; suffix: string } {
   const match = reference.match(/^([^?#]*)([?#][\s\S]*)?$/);
-  return { pathname: match?.[1] || reference, suffix: match?.[2] || "" };
+  return { pathname: match ? match[1] : reference, suffix: match?.[2] || "" };
 }
 
 function isExternalReference(pathname: string): boolean {
@@ -125,12 +136,19 @@ export function isLocalProjectReference(reference: string): boolean {
   return !/[{}]|\$\{/.test(pathname);
 }
 
+/** A bare filename in JavaScript may be appended to a directory at runtime. */
+export function isBareRuntimeAssetFilename(reference: string): boolean {
+  const { pathname } = splitReference(reference.trim());
+  return /^[^.\\/][^\\/]*\.[^\\/]+$/.test(pathname)
+    && (isWebMediaFile(pathname) || isCssFile(pathname) || isJavaScriptFile(pathname));
+}
+
 /** Resolves a relative HTML/CSS reference to a selected project file path. */
 export function resolveProjectReference(
   reference: string,
   sourcePath: string,
   index: ProjectFileIndex,
-): { path: string; suffix: string } | null {
+): { path: string; suffix: string; caseMismatch?: boolean } | null {
   const { pathname, suffix } = splitReference(reference.trim());
   if (isExternalReference(pathname)) return null;
 
@@ -152,7 +170,7 @@ export function resolveProjectReference(
     : index.caseInsensitivePaths.get(candidate.toLowerCase())
       || index.caseInsensitivePaths.get(decodedCandidate.toLowerCase());
 
-  if (path) return { path, suffix };
+  if (path) return { path, suffix, caseMismatch: path !== candidate && path !== decodedCandidate };
 
   // Some exported HTML projects use paths relative to a virtual web root,
   // while the selected folder contains one or more additional parent levels.
@@ -180,7 +198,11 @@ export function resolveProjectReference(
     );
   });
 
-  return fallbackMatches.length === 1 ? { path: fallbackMatches[0], suffix } : null;
+  if (fallbackMatches.length !== 1) return null;
+  const match = fallbackMatches[0];
+  const exactSuffixes = [candidate, decodedCandidate, pathnameOnly, decodedPathname].filter(Boolean);
+  const caseMismatch = !exactSuffixes.some((suffix) => match === suffix || match.endsWith(`/${suffix}`) || suffix.endsWith(`/${match}`));
+  return { path: match, suffix, caseMismatch };
 }
 
 interface CssUrlToken {
@@ -248,6 +270,27 @@ export function findCssReferences(content: string): string[] {
   return [...found].filter(Boolean);
 }
 
+/** Rewrites resources referenced by SVG href and xlink:href attributes. */
+export function rewriteSvgReferences(
+  content: string,
+  replaceReference: (reference: string) => string,
+): string {
+  return rewriteCssReferences(content.replace(
+    /\b((?:xlink:)?href)\s*=\s*(["'])(.*?)\2/gi,
+    (_match, attribute: string, quote: string, reference: string) =>
+      `${attribute}=${quote}${replaceReference(reference)}${quote}`,
+  ), replaceReference);
+}
+
+export function findSvgReferences(content: string): string[] {
+  const found = new Set<string>();
+  rewriteSvgReferences(content, (reference) => {
+    found.add(reference.trim());
+    return reference;
+  });
+  return [...found].filter(Boolean);
+}
+
 export function rewriteCssReferences(
   content: string,
   replaceReference: (reference: string) => string,
@@ -268,22 +311,63 @@ export function rewriteJavaScriptReferences(
   content: string,
   replaceReference: (reference: string) => string,
 ): string {
-  const quoted = content.replace(
-    /(["'])(.*?)\1/g,
-    (match, quote: string, value: string) => {
-      if (!value || value.includes("\\")) return match;
+  // 语法树区分资源值、对象键、映射查询、比较常量和来源元数据，避免把路径形状等同于加载依赖。
+  type AstNode = Node & Record<string, unknown>;
+  let tree: Node;
+  let offset = 0;
+  const options = { ecmaVersion: "latest", sourceType: "module", allowReturnOutsideFunction: true, allowAwaitOutsideFunction: true } as const;
+  try {
+    tree = parse(content, options);
+  } catch {
+    try {
+      tree = parse(`(${content})`, options);
+      offset = 1;
+    } catch {
+      throw new Error("JavaScript/JSON 语法无法解析，不能安全扫描或改写资源引用。");
+    }
+  }
+  const replacements: Array<{ start: number; end: number; text: string }> = [];
+  const propertyName = (node: AstNode | undefined) => node?.type === "Identifier" ? node.name : node?.value;
+  const visit = (node: AstNode, parent?: AstNode, field = "", provenance = false) => {
+    const metadata = provenance || (parent?.type === "Property" && field === "value"
+      && ["sourceRecovery", "provenance", "buildInfo"].includes(String(propertyName(parent.key as AstNode))));
+    const isMetadataValue = metadata && parent?.type === "Property" && field === "value"
+      && ["sourcePath", "sourceBanner", "sourceSha256"].includes(String(propertyName(parent.key as AstNode)));
+    const isKey = parent?.type === "Property" && field === "key";
+    const isLookup = parent?.type === "MemberExpression" && field === "property";
+    const isComparison = parent?.type === "BinaryExpression" && ["===", "!==", "==", "!="].includes(String(parent.operator));
+    let value: string | undefined;
+    if (node.type === "Literal" && typeof node.value === "string") value = node.value;
+    if (node.type === "TemplateLiteral" && (node.expressions as unknown[]).length === 0) {
+      value = ((node.quasis as AstNode[])[0].value as { cooked?: string }).cooked;
+    }
+    if (value !== undefined && !isKey && !isLookup && !isComparison && !isMetadataValue) {
       const rewritten = replaceReference(value);
-      return rewritten === value ? match : `${quote}${rewritten}${quote}`;
-    },
-  );
-  return quoted.replace(
-    /`([^`]*)`/g,
-    (match, value: string) => {
-      if (!value || value.includes("${") || value.includes("\\")) return match;
-      const rewritten = replaceReference(value);
-      return rewritten === value ? match : `\`${rewritten}\``;
-    },
-  );
+      if (rewritten !== value) {
+        const start = node.start - offset;
+        const quote = content[start];
+        let escaped = JSON.stringify(rewritten).slice(1, -1).replace(/</g, "\\u003c");
+        if (quote === "'") escaped = escaped.replace(/'/g, "\\'");
+        if (quote === "`") escaped = escaped.replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
+        replacements.push({ start, end: node.end - offset, text: `${quote}${escaped}${quote}` });
+      }
+      return;
+    }
+    for (const [key, child] of Object.entries(node)) {
+      if (key === "start" || key === "end" || key === "loc") continue;
+      if (Array.isArray(child)) {
+        for (const item of child) if (item && typeof item === "object" && typeof item.type === "string") visit(item as AstNode, node, key, metadata);
+      } else if (child && typeof child === "object" && typeof (child as Node).type === "string") {
+        visit(child as AstNode, node, key, metadata);
+      }
+    }
+  };
+  visit(tree as AstNode);
+  let result = content;
+  for (const replacement of replacements.sort((a, b) => b.start - a.start)) {
+    result = result.slice(0, replacement.start) + replacement.text + result.slice(replacement.end);
+  }
+  return result;
 }
 
 /** Routes JavaScript-driven page navigation through the injected manifest. */
@@ -293,10 +377,23 @@ export function rewriteJavaScriptNavigationReferences(content: string): string {
     (_match, prefix: string, quote: string, reference: string) =>
       `${prefix}window.__polymasAssetUrl(${quote}${reference}${quote})`,
   );
+  // Template-built paths still need the runtime manifest after files are flattened.
+  rewritten = rewritten.replace(
+    /((?:(?:window\.)?location)\.href\s*=\s*)(`(?:\\[\s\S]|[^`])*`)/g,
+    (_match, prefix: string, expression: string) => `${prefix}window.__polymasAssetUrl(${expression})`,
+  );
   rewritten = rewritten.replace(
     /((?:(?:window\.)?location)\.(?:assign|replace)\s*\(\s*)(["'])([^"'\n]+)\2/g,
     (_match, prefix: string, quote: string, reference: string) =>
       `${prefix}window.__polymasAssetUrl(${quote}${reference}${quote})`,
+  );
+  rewritten = rewritten.replace(
+    /((?:(?:window\.)?location)\.(?:assign|replace)\s*\(\s*)(`(?:\\[\s\S]|[^`])*`)/g,
+    (_match, prefix: string, expression: string) => `${prefix}window.__polymasAssetUrl(${expression})`,
+  );
+  rewritten = rewritten.replace(
+    /(window\.open\s*\(\s*)(`(?:\\[\s\S]|[^`])*`)/g,
+    (_match, prefix: string, expression: string) => `${prefix}window.__polymasAssetUrl(${expression})`,
   );
   return rewritten.replace(
     /(window\.open\s*\(\s*)(["'])([^"'\n]+)\2/g,
@@ -333,6 +430,8 @@ function rewriteHtmlMarkupReferences(
   replaceReference: (reference: string) => string,
 ): string {
   let rewritten = rewriteHtmlAttributeReferences(content, replaceReference);
+  rewritten = rewritten.replace(/\b(on[a-z]+)\s*=\s*(["'])([\s\S]*?)\2/gi,
+    (_match, attribute: string, quote: string, handler: string) => `${attribute}=${quote}${rewriteJavaScriptNavigationReferences(handler)}${quote}`);
   rewritten = rewritten.replace(
     /\bsrcset\s*=\s*(?:(["'])(.*?)\1|([^\s"'=<>`]+))/gi,
     (_match, quote: string | undefined, quotedValue: string | undefined, unquotedValue: string | undefined) => {
@@ -350,6 +449,8 @@ function rewriteHtmlMarkupReferences(
 export interface HtmlReferenceOptions {
   /** Include complete quoted strings inside inline scripts. Defaults to true. */
   includeScriptStrings?: boolean;
+  /** Leave bare asset filenames in inline scripts for runtime path assembly. */
+  preserveBareScriptAssetNames?: boolean;
 }
 
 /** Rewrites static asset paths in ordinary HTML documents. */
@@ -370,7 +471,11 @@ export function rewriteHtmlReferences(
       ? rewriteCssReferences(match[3], replaceReference)
       : options.includeScriptStrings === false
         ? match[3]
-        : rewriteJavaScriptNavigationReferences(rewriteJavaScriptReferences(match[3], replaceReference));
+        : rewriteJavaScriptNavigationReferences(rewriteJavaScriptReferences(match[3], (reference) =>
+          options.preserveBareScriptAssetNames && isBareRuntimeAssetFilename(reference)
+            ? reference
+            : replaceReference(reference),
+        ));
     rewritten += `${openingTag}${body}${match[4]}`;
     cursor = blockPattern.lastIndex;
   }
@@ -399,17 +504,18 @@ export function injectRuntimeAssetResolver(
   content: string,
   publicUrls: Map<string, string>,
   entryPath: string,
+  projectKey?: string,
 ): string {
-  if (publicUrls.size === 0) return content;
-
   const manifest = Object.fromEntries(publicUrls);
   const safeManifest = JSON.stringify(manifest).replace(/</g, "\\u003c");
   const safeEntryPath = JSON.stringify(entryPath).replace(/</g, "\\u003c");
   const bootstrap = `<script data-polymas-asset-resolver>(function(){
 var manifest=${safeManifest};
 var entry=${safeEntryPath};
-var manifestKey='__POLYMAS_PROJECT_MANIFEST__:'+(Object.keys(manifest).length?manifest[Object.keys(manifest)[0]]:entry);
-try{var storedManifest=JSON.parse(sessionStorage.getItem(manifestKey)||'{}');Object.keys(storedManifest).forEach(function(key){if(!manifest[key])manifest[key]=storedManifest[key];});sessionStorage.setItem(manifestKey,JSON.stringify(manifest));}catch(_storageError){}
+var manifestKey='__POLYMAS_PROJECT_MANIFEST__:'+(${JSON.stringify(projectKey || "").replace(/</g, "\\u003c")}||(Object.keys(manifest).length?manifest[Object.keys(manifest)[0]]:entry));
+try{var storedManifest=JSON.parse(sessionStorage.getItem(manifestKey)||'{}');Object.keys(storedManifest).forEach(function(key){if(!manifest[key])manifest[key]=storedManifest[key];});}catch(_storageError){}
+manifest[entry]=location.href.split(/[?#]/)[0];
+try{sessionStorage.setItem(manifestKey,JSON.stringify(manifest));}catch(_storageError){}
 var entryDir=entry.indexOf('/')>=0?entry.slice(0,entry.lastIndexOf('/')):'';
 function normalize(value){var out=[];String(value||'').replace(/\\\\/g,'/').split('/').forEach(function(part){if(!part||part==='.')return;if(part==='..'){out.pop();return;}out.push(part);});return out.join('/');}
 function resolve(value){
@@ -426,6 +532,7 @@ function resolve(value){
   return matches.length===1?manifest[matches[0]]+suffix:value;
 }
 window.__POLYMAS_ASSET_MANIFEST__=manifest;
+window.__POLYMAS_PROJECT_PATH__=entry;
 window.__polymasAssetUrl=resolve;
 var nativeSetAttribute=Element.prototype.setAttribute;
 var assetAttrs={src:1,href:1,poster:1,'data-src':1,'data-original':1,'data-background':1,background:1,data:1};

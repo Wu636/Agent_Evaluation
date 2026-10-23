@@ -1,0 +1,120 @@
+[
+  {
+    "training": 1,
+    "taskName": "PLC能力训练-训练1-基础指令、状态表与定时器应用",
+    "branches": [
+      {
+        "code": "B1",
+        "label": "基本指令案例",
+        "cases": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "stageStart": 2,
+        "stageEnd": 31
+      },
+      {
+        "code": "B2",
+        "label": "状态表法程序设计",
+        "cases": [
+          7,
+          8
+        ],
+        "stageStart": 32,
+        "stageEnd": 41
+      },
+      {
+        "code": "B3",
+        "label": "定时器指令案例",
+        "cases": [
+          9,
+          10,
+          11,
+          12,
+          13
+        ],
+        "stageStart": 42,
+        "stageEnd": 66
+      }
+    ],
+    "stageCount": 66,
+    "edgeCount": 69,
+    "file": "plc_case_pipeline/03_composed/final/training_1_graph.md"
+  },
+  {
+    "training": 2,
+    "taskName": "PLC能力训练-训练2-指令综合与结构化程序设计",
+    "branches": [
+      {
+        "code": "B1",
+        "label": "指令综合应用",
+        "cases": [
+          14,
+          15,
+          16,
+          17,
+          18
+        ],
+        "stageStart": 2,
+        "stageEnd": 26
+      },
+      {
+        "code": "B2",
+        "label": "结构化程序设计",
+        "cases": [
+          19,
+          20,
+          21,
+          22,
+          23
+        ],
+        "stageStart": 27,
+        "stageEnd": 51
+      }
+    ],
+    "stageCount": 51,
+    "edgeCount": 53,
+    "file": "plc_case_pipeline/03_composed/final/training_2_graph.md"
+  },
+  {
+    "training": 3,
+    "taskName": "PLC能力训练-训练3-顺序控制与工艺对象设计",
+    "branches": [
+      {
+        "code": "B1",
+        "label": "顺序控制系统设计",
+        "cases": [
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31
+        ],
+        "stageStart": 2,
+        "stageEnd": 41
+      },
+      {
+        "code": "B2",
+        "label": "工艺对象设计",
+        "cases": [
+          32,
+          33,
+          34,
+          35
+        ],
+        "stageStart": 42,
+        "stageEnd": 61
+      }
+    ],
+    "stageCount": 61,
+    "edgeCount": 63,
+    "file": "plc_case_pipeline/03_composed/final/training_3_graph.md"
+  }
+]

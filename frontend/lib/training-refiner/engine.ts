@@ -1,8 +1,8 @@
 import { jsonrepair } from "jsonrepair";
 
 import { MODEL_NAME_MAPPING } from "@/lib/config";
-import { summarizeLlmHttpError } from "@/lib/llm/error-utils";
-import { buildTemperatureCompatiblePayload } from "@/lib/llm/utils";
+import { LlmHttpError, LlmOutputError } from "@/lib/llm/error-utils";
+import { callLLMStream } from "@/lib/llm/utils";
 import { DEFAULT_SCRIPT_TEMPLATE } from "@/lib/training-generator/prompts";
 import type {
   PolymasScriptFlow,
@@ -40,8 +40,8 @@ const EDITABLE_NODE_FIELDS = new Set([
   "avatarNid",
 ]);
 
-class RefinerRequestError extends Error {
-  constructor(message: string) {
+export class RefinerRequestError extends Error {
+  constructor(message: string, public readonly retryable = true, public readonly status = 502) {
     super(message);
     this.name = "RefinerRequestError";
   }
@@ -1051,7 +1051,10 @@ async function callRefiner(
   prompt: string,
   settings: TrainingRefineLlmSettings,
   compact = false,
+  signal?: AbortSignal,
+  onProgress?: (message: string) => void,
 ): Promise<string> {
+  signal?.throwIfAborted();
   const endpoint = normalizeEndpoint(settings.apiUrl || "");
   const apiKey = cleanText(settings.apiKey);
   const model =
@@ -1059,59 +1062,64 @@ async function callRefiner(
   if (!endpoint || !apiKey || !model) {
     throw new RefinerRequestError(
       "请先在 AgentEval 设置中配置“训练优化模型”、API URL 和 API Key。",
+      false,
+      400,
     );
   }
-  let response: Response;
+  const controller = new AbortController();
+  const attemptSignal = signal
+    ? AbortSignal.any([signal, controller.signal])
+    : controller.signal;
+  // 首个正文长时间未到就释放请求，为压缩重试预留预算。
+  const firstTokenTimeout = setTimeout(() => controller.abort(
+    new Error("模型 90 秒内未返回正文，已停止本次等待。"),
+  ), 90_000);
+  const attemptTimeout = setTimeout(() => controller.abort(
+    new Error("模型单次生成超过 150 秒，已停止本次等待。"),
+  ), 150_000);
+  let content = "";
+  let lastProgressAt = 0;
+  const startedAt = Date.now();
   try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "api-key": apiKey,
-        Authorization: `Bearer ${apiKey}`,
+    onProgress?.(`${compact ? "压缩重试" : "开始流式优化"} · 模型：${model} · 输入 ${prompt.length.toLocaleString()} 字符`);
+    for await (const chunk of callLLMStream(
+      prompt,
+      { baseUrl: endpoint, apiKey, model },
+      0.1,
+      "你是能力训练图谱优化架构师。你必须保持卡片、分支条件和流转语义一致，严格根据教师意见做可追溯修改，只输出 JSON。",
+      {
+        maxTokens: compact ? 8_000 : 12_000,
+        signal: attemptSignal,
+        requireComplete: true,
       },
-      body: JSON.stringify(
-        buildTemperatureCompatiblePayload(
-          {
-            model,
-            maxTokens: compact ? 8_000 : 12_000,
-            n: 1,
-            messages: [
-              {
-                role: "system",
-                content:
-                  "你是能力训练图谱优化架构师。你必须保持卡片、分支条件和流转语义一致，严格根据教师意见做可追溯修改，只输出 JSON。",
-              },
-              { role: "user", content: prompt },
-            ],
-          },
-          model,
-          0.1,
-        ),
-      ),
-      signal: AbortSignal.timeout(8 * 60 * 1000),
-    });
+    )) {
+      if (!chunk) continue;
+      clearTimeout(firstTokenTimeout);
+      content += chunk;
+      if (Date.now() - lastProgressAt >= 1000) {
+        onProgress?.(`模型 ${model} 正在生成优化方案，已接收 ${content.length.toLocaleString()} 字符……`);
+        lastProgressAt = Date.now();
+      }
+    }
+    attemptSignal.throwIfAborted();
+    if (!content.trim()) throw new RefinerRequestError("能力训练优化模型未返回有效内容。");
+    return content;
   } catch (error) {
+    signal?.throwIfAborted();
+    if (error instanceof RefinerRequestError) throw error;
+    const message = controller.signal.aborted
+      ? String(controller.signal.reason?.message || "模型请求超时。")
+      : error instanceof Error ? error.message : "请求异常";
     throw new RefinerRequestError(
-      `能力训练优化模型连接中断：${error instanceof Error ? error.message : "请求异常"}`,
+      `能力训练优化模型请求失败：${message}`,
+      error instanceof LlmHttpError || error instanceof LlmOutputError ? error.retryable : true,
+      controller.signal.aborted ? 504 : error instanceof LlmHttpError ? error.status : 502,
     );
+  } finally {
+    clearTimeout(firstTokenTimeout);
+    clearTimeout(attemptTimeout);
+    console.info(`[训练优化] 模型=${model} 压缩=${compact} 输入=${prompt.length} 输出=${content.length} 耗时=${Date.now() - startedAt}ms`);
   }
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new RefinerRequestError(
-      `能力训练优化模型请求失败：${summarizeLlmHttpError(response.status, body)}`,
-    );
-  }
-  const payload = await response.json();
-  const content = payload?.choices?.[0]?.message?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((item) => cleanText(item?.text || item?.content))
-      .join("")
-      .trim();
-  }
-  throw new RefinerRequestError("能力训练优化模型未返回有效内容。");
 }
 
 export async function generateTrainingRefinementPlan(params: {
@@ -1126,6 +1134,8 @@ export async function generateTrainingRefinementPlan(params: {
   selectedNodeIds?: string[];
   optimizeScoring?: boolean;
   llmSettings: TrainingRefineLlmSettings;
+  signal?: AbortSignal;
+  onProgress?: (message: string) => void;
 }): Promise<{
   plan: TrainingRefinementPlan;
   validation: { errors: string[]; warnings: string[] };
@@ -1153,10 +1163,15 @@ export async function generateTrainingRefinementPlan(params: {
   if (selectedNodeIds.size === 0 && !optimizeScoring) {
     throw new Error("请至少选择一张卡片，或开启评分标准优化。");
   }
+  const timeoutSignal = AbortSignal.timeout(240_000);
+  const signal = params.signal
+    ? AbortSignal.any([params.signal, timeoutSignal])
+    : timeoutSignal;
   let previousErrors: string[] = [];
-  let lastRequestError = "";
+  let lastRequestError: RefinerRequestError | undefined;
   let lastInputChars = 0;
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    signal.throwIfAborted();
     const compact = attempt > 0;
     const prompt = buildRefinementPrompt({
       ...params,
@@ -1171,7 +1186,7 @@ export async function generateTrainingRefinementPlan(params: {
     let plan: TrainingRefinementPlan;
     try {
       plan = parsePlan(
-        await callRefiner(prompt, params.llmSettings, compact),
+        await callRefiner(prompt, params.llmSettings, compact, signal, params.onProgress),
         params.steps as RawStep[],
         params.flows as RawFlow[],
         params.scoreItems,
@@ -1179,16 +1194,20 @@ export async function generateTrainingRefinementPlan(params: {
         optimizeScoring,
       );
     } catch (error) {
+      signal.throwIfAborted();
       const message =
         error instanceof Error ? error.message : "优化方案 JSON 解析失败。";
       if (error instanceof RefinerRequestError) {
-        lastRequestError = message;
+        if (!error.retryable) throw error;
+        lastRequestError = error;
         previousErrors = [];
       } else {
         previousErrors = [message];
       }
+      if (attempt === 0) params.onProgress?.(`本次未完成：${message} 将使用压缩上下文重试一次。`);
       continue;
     }
+    params.onProgress?.("模型输出已接收，正在校验 START/END、卡片可达性与分支默认边……");
     const validation = validateRefinementPlan(
       plan,
       params.steps,
@@ -1205,10 +1224,13 @@ export async function generateTrainingRefinementPlan(params: {
       };
     }
     previousErrors = validation.errors;
+    if (attempt === 0) params.onProgress?.("图谱校验未通过，正在根据校验结果修复一次……");
   }
   if (lastRequestError && previousErrors.length === 0) {
-    throw new Error(
-      `${lastRequestError}。系统已自动使用压缩图谱和较小输出额度重试，仍未完成；请确认该模型服务当前可用，或在设置中切换训练优化模型后重试。`,
+    throw new RefinerRequestError(
+      `${lastRequestError.message} 系统已自动使用流式请求、压缩图谱和较小输出额度重试，仍未完成；请缩小本次优化范围或检查模型服务网关。`,
+      lastRequestError.retryable,
+      lastRequestError.status,
     );
   }
   throw new Error(

@@ -1362,12 +1362,14 @@ export function TrainingGenerateInterface() {
                 generateRubric,
                 scriptMode,
                 modulePlan: generateScript ? modulePlan || undefined : undefined,
+                userSuggestions: generateScript ? planningSuggestion.trim() : undefined,
                 scriptPromptTemplate: scriptTemplate !== activeDefaultScriptTemplate ? scriptTemplate : undefined,
                 rubricPromptTemplate: rubricTemplate !== DEFAULT_RUBRIC_TEMPLATE ? rubricTemplate : undefined,
                 signal: controller.signal,
                 onEvent: (event: TrainingSSEEvent) => {
                     switch (event.type) {
                         case "start":
+                        case "progress":
                             setCurrentGeneratingPhase(event.phase);
                             setStatusMessage(event.message || `正在生成${event.phase === "script" ? "训练剧本" : "评分标准"}...`);
                             break;
@@ -1384,6 +1386,7 @@ export function TrainingGenerateInterface() {
                             }
                             break;
 
+                        case "phase_snapshot":
                         case "phase_complete":
                             if (event.phase === "script") {
                                 tempScript = event.fullContent;
@@ -1440,6 +1443,7 @@ export function TrainingGenerateInterface() {
         generateScript,
         generateRubric,
         modulePlan,
+        planningSuggestion,
         rubricTemplate,
         scriptMode,
         scriptTemplate,
@@ -1453,6 +1457,126 @@ export function TrainingGenerateInterface() {
         }
         abortRef.current?.abort();
     }, [generateScript, repairInterruptedScriptContent]);
+
+    const handleContinueScript = useCallback(async () => {
+        if (!scriptContent.trim() || phase === "generating") return;
+        if (!isApiConfigured()) {
+            setShowSettings(true);
+            return;
+        }
+
+        const doc = await getDocContent();
+        if (!doc) {
+            setRepairFeedback({
+                type: "error",
+                message: "请先恢复本次生成使用的教师任务文档，再进行断点续写。",
+            });
+            return;
+        }
+
+        const originalScript = scriptContent;
+        let tempScript = originalScript;
+        const controller = new AbortController();
+        abortRef.current = controller;
+        generatingScriptRef.current = originalScript;
+        setPhase("generating");
+        setActiveTab("script");
+        setCurrentGeneratingPhase("script");
+        setStatusMessage("正在定位剧本断点...");
+        setErrorMessage("");
+        setRepairFeedback(null);
+        setIsScriptSourceEditing(false);
+
+        try {
+            await streamTrainingGenerate({
+                requestMode: "continue_script",
+                teacherDocContent: doc.content || "",
+                file: doc.file,
+                teacherDocName: doc.name,
+                generateScript: true,
+                generateRubric: false,
+                scriptMode,
+                modulePlan: modulePlan || undefined,
+                userSuggestions: planningSuggestion.trim() || undefined,
+                priorScript: originalScript,
+                scriptPromptTemplate: scriptTemplate !== activeDefaultScriptTemplate ? scriptTemplate : undefined,
+                signal: controller.signal,
+                onEvent: (event: TrainingSSEEvent) => {
+                    switch (event.type) {
+                        case "start":
+                        case "progress":
+                            setCurrentGeneratingPhase("script");
+                            setStatusMessage(event.message || "正在断点续写训练剧本...");
+                            break;
+                        case "chunk":
+                            if (event.phase === "script") {
+                                tempScript += event.content;
+                                generatingScriptRef.current = tempScript;
+                                setScriptContent(tempScript);
+                            }
+                            break;
+                        case "phase_snapshot":
+                        case "phase_complete":
+                            if (event.phase === "script") {
+                                tempScript = event.fullContent;
+                                generatingScriptRef.current = tempScript;
+                                setScriptContent(tempScript);
+                            }
+                            break;
+                        case "complete": {
+                            const completedScript = event.script || tempScript;
+                            tempScript = completedScript;
+                            generatingScriptRef.current = completedScript;
+                            setScriptContent(completedScript);
+                            setTaskName(event.taskName || taskName || "训练配置");
+                            setPhase("completed");
+                            setCurrentGeneratingPhase(null);
+                            setStatusMessage("");
+                            const diagnostics = diagnoseTrainingScript(completedScript, modulePlan);
+                            setRepairFeedback({
+                                type: diagnostics.canInject ? "success" : "error",
+                                message: diagnostics.canInject
+                                    ? `断点续写完成，已保留原内容并补齐到 ${diagnostics.stageCount} 个阶段及阶段关系。`
+                                    : `断点续写已返回内容，当前仍有 ${diagnostics.issues.filter((issue) => issue.level === "error").length} 个阻塞问题。`,
+                            });
+                            break;
+                        }
+                        case "error":
+                            setPhase("completed");
+                            setErrorMessage(event.message);
+                            setCurrentGeneratingPhase(null);
+                            setStatusMessage("");
+                            setRepairFeedback({ type: "error", message: event.message });
+                            break;
+                    }
+                },
+            });
+        } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError") {
+                setPhase("completed");
+                setRepairFeedback({ type: "error", message: "已停止本轮断点续写，当前剧本内容已保留。" });
+            } else {
+                const message = error instanceof Error ? error.message : "断点续写失败";
+                setPhase("completed");
+                setErrorMessage(message);
+                setRepairFeedback({ type: "error", message });
+            }
+            setStatusMessage("");
+        } finally {
+            abortRef.current = null;
+            setCurrentGeneratingPhase(null);
+        }
+    }, [
+        activeDefaultScriptTemplate,
+        getDocContent,
+        modulePlan,
+        phase,
+        planningSuggestion,
+        scriptContent,
+        scriptMode,
+        scriptTemplate,
+        taskName,
+    ]);
 
     // --- 重新生成逻辑 ---
     const [regenContext, setRegenContext] = useState("");
@@ -1471,9 +1595,7 @@ export function TrainingGenerateInterface() {
         const shouldRegenRubric = regenRubric && generateRubric;
         if (!shouldRegenScript && !shouldRegenRubric) return;
 
-        // 构建重新生成的文档内容：
-        // 将已有的生成结果 + 用户的修改意见一起发给 LLM
-        // 这样 LLM 可以在已有结果的基础上进行修改，而不是从头生成
+        // 保持教师文档干净；旧剧本和用户建议通过独立字段传递。
         let regenDocContent = "";
 
         // 先获取原始文档内容作为基础上下文
@@ -1488,16 +1610,7 @@ export function TrainingGenerateInterface() {
             }
         }
 
-        // 附加已生成的内容供 LLM 参考
-        if (shouldRegenScript && scriptContent) {
-            regenDocContent += `\n\n【以下是之前生成的训练剧本配置，请在此基础上根据用户要求进行修改】：\n${scriptContent}`;
-        }
-        if (shouldRegenRubric && rubricContent) {
-            regenDocContent += `\n\n【以下是之前生成的评分标准配置，请在此基础上根据用户要求进行修改】：\n${rubricContent}`;
-        }
-
-        // 附加用户的修改意见
-        regenDocContent += `\n\n【用户的修改要求，请严格按照以下指示修改上面的内容】：\n${regenContext}`;
+        // 旧剧本与旧评分标准分别传递，避免混入教师任务文档。
 
         // 设置状态
         setPhase("generating");
@@ -1514,6 +1627,8 @@ export function TrainingGenerateInterface() {
 
         let tempScript = shouldRegenScript ? "" : scriptContent;
         let tempRubric = shouldRegenRubric ? "" : rubricContent;
+        generatingScriptRef.current = tempScript;
+        generatingRubricRef.current = tempRubric;
 
         try {
             // 始终使用文本模式发送（不再重新上传文件）
@@ -1524,30 +1639,39 @@ export function TrainingGenerateInterface() {
                 generateRubric: shouldRegenRubric,
                 scriptMode,
                 modulePlan: shouldRegenScript ? modulePlan || undefined : undefined,
+                userSuggestions: regenContext.trim(),
+                priorScript: shouldRegenScript ? scriptContent : undefined,
+                priorRubric: shouldRegenRubric ? rubricContent : undefined,
                 scriptPromptTemplate: scriptTemplate !== activeDefaultScriptTemplate ? scriptTemplate : undefined,
                 rubricPromptTemplate: rubricTemplate !== DEFAULT_RUBRIC_TEMPLATE ? rubricTemplate : undefined,
                 signal: controller.signal,
                 onEvent: (event: TrainingSSEEvent) => {
                     switch (event.type) {
                         case "start":
+                        case "progress":
                             setCurrentGeneratingPhase(event.phase);
                             setStatusMessage(event.message || `正在重新生成${event.phase === "script" ? "训练剧本" : "评分标准"}...`);
                             break;
                         case "chunk":
                             if (event.phase === "script") {
                                 tempScript += event.content;
+                                generatingScriptRef.current = tempScript;
                                 setScriptContent(tempScript);
                             } else {
                                 tempRubric += event.content;
+                                generatingRubricRef.current = tempRubric;
                                 setRubricContent(tempRubric);
                             }
                             break;
+                        case "phase_snapshot":
                         case "phase_complete":
                             if (event.phase === "script") {
                                 tempScript = event.fullContent;
+                                generatingScriptRef.current = event.fullContent;
                                 setScriptContent(event.fullContent);
                             } else {
                                 tempRubric = event.fullContent;
+                                generatingRubricRef.current = event.fullContent;
                                 setRubricContent(event.fullContent);
                             }
                             break;
@@ -1648,6 +1772,7 @@ export function TrainingGenerateInterface() {
     // --- 渲染 ---
 
     const activeContent = activeTab === "script" ? scriptContent : rubricContent;
+    const isManualContinuationStatus = /手动断点续写/.test(statusMessage);
     const isAutoRecoveryStatus = /断点续写|自动重试|自动补救|生成中断|中断/.test(statusMessage);
     const recommendedBuiltInTemplateId = modulePlan
         ? getBuiltInTemplateIdByMode(modulePlan.recommendedMode)
@@ -1683,6 +1808,22 @@ export function TrainingGenerateInterface() {
                 issue.field === "stageCount" ||
                 issue.field === "stepName" ||
                 issue.field === "completionMarker"
+            ) ||
+            Boolean(modulePlan?.modules?.length && scriptDiagnostics.stageCount !== modulePlan.modules.length)
+        )
+    );
+    const hasContinuableScriptIssue = Boolean(
+        scriptDiagnostics && (
+            scriptDiagnostics.issues.some((issue) =>
+                issue.level === "error" && [
+                    "completionMarker",
+                    "markdownFence",
+                    "flowConfig",
+                    "stageCount",
+                    "llmPrompt",
+                    "flowCondition",
+                    "transitionPrompt",
+                ].includes(issue.field || "")
             ) ||
             Boolean(modulePlan?.modules?.length && scriptDiagnostics.stageCount !== modulePlan.modules.length)
         )
@@ -2985,6 +3126,16 @@ export function TrainingGenerateInterface() {
                             <div className="flex items-center justify-between gap-3 text-xs">
                                 <span className="text-slate-500">结构诊断</span>
                                 <div className="flex items-center gap-2">
+                                    {hasContinuableScriptIssue && (
+                                        <button
+                                            type="button"
+                                            onClick={handleContinueScript}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 border border-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm"
+                                        >
+                                            <RefreshCw className="w-3.5 h-3.5" />
+                                            断点续写
+                                        </button>
+                                    )}
                                     {hasRepairableScriptStructureIssue && (
                                         <button
                                             type="button"
@@ -3136,8 +3287,14 @@ export function TrainingGenerateInterface() {
                                     <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
                                         <RefreshCw className="w-4 h-4 text-amber-600 animate-spin flex-shrink-0" />
                                         <div>
-                                            <p className="text-sm font-medium text-amber-700">系统正在自动补救（断点续写/重试）</p>
-                                            <p className="text-xs text-amber-600 mt-0.5">无需手动操作，请稍候，系统会在补全后自动继续输出。</p>
+                                            <p className="text-sm font-medium text-amber-700">
+                                                {isManualContinuationStatus ? "正在执行手动断点续写" : "系统正在自动补救（断点续写/重试）"}
+                                            </p>
+                                            <p className="text-xs text-amber-600 mt-0.5">
+                                                {isManualContinuationStatus
+                                                    ? "正在保留已有阶段并补齐缺失阶段和阶段关系。"
+                                                    : "无需手动操作，请稍候，系统会在补全后自动继续输出。"}
+                                            </p>
                                         </div>
                                     </div>
                                 )}

@@ -1,4 +1,4 @@
-import { isScriptFieldLine, matchStageHeading, normalizeTrainingScriptSource, parseTaskConfig, parseTrainingScript, parseTrainingScriptFlowConfig, repairTrainingScriptForParsing } from "@/lib/training-injector/parser";
+import { isScriptFieldLine, matchStageHeading, normalizeTrainingScriptSource, parseTaskConfig, parseTrainingScript, parseTrainingScriptFlowConfig, repairTrainingScriptForParsing, serializeTrainingStage } from "@/lib/training-injector/parser";
 import { ScriptFlowEdge, TRAINING_FLOW_END_NODE_ID, TrainingScriptPlan } from "./types";
 import { detectMultiRoleTextSignal } from "./plan-validation";
 
@@ -222,7 +222,7 @@ function resolveEdgeStageLabel(
     return fallback === "to" ? "END" : "阶段1";
 }
 
-function buildSerializableGraphEdges(plan: TrainingScriptPlan): Array<{
+export function buildSerializableGraphEdges(plan: TrainingScriptPlan): Array<{
     from: string;
     to: string;
     condition: string;
@@ -231,34 +231,36 @@ function buildSerializableGraphEdges(plan: TrainingScriptPlan): Array<{
     isDefault: number;
 }> {
     const moduleIds = new Set(plan.modules.map((module) => module.id));
-    const defaultAssignedBySource = new Set<string>();
-    return (plan.edges || [])
+    const validEdges = (plan.edges || [])
         .filter((edge: ScriptFlowEdge) =>
             moduleIds.has(edge.fromModuleId) &&
             (moduleIds.has(edge.toModuleId) || normalizeEndNodeId(edge.toModuleId)) &&
             edge.fromModuleId !== edge.toModuleId &&
             edge.condition.trim()
-        )
+        );
+    const defaultBySource = new Map<string, ScriptFlowEdge>();
+    for (const edge of validEdges) {
+        const siblings = validEdges.filter((item) => item.fromModuleId === edge.fromModuleId);
+        const explicitDefault = siblings.find((item) => /^(?:1|true)$/i.test(String(item.isDefault)));
+        defaultBySource.set(edge.fromModuleId, explicitDefault || siblings[0]);
+    }
+    return validEdges
         .map((edge) => {
             const from = resolveEdgeStageLabel(edge.fromModuleId, plan, "from");
-            const isDefault = defaultAssignedBySource.has(from) ? 0 : 1;
-            if (isDefault === 1) {
-                defaultAssignedBySource.add(from);
-            }
             return {
                 from,
                 to: resolveEdgeStageLabel(edge.toModuleId, plan, "to"),
                 condition: edge.condition.trim(),
                 conditionDescription: edge.conditionDescription || "",
                 transitionPrompt: edge.transitionPrompt || "",
-                isDefault,
+                isDefault: defaultBySource.get(edge.fromModuleId) === edge ? 1 : 0,
             };
         });
 }
 
 function stripNonlinearFlowConfigBlocks(markdown: string): string {
     const lines = String(markdown || "").split("\n");
-    const headingPattern = /^#{1,6}\s*(?:🔀\s*)?(?:非线性|分支|图结构|流程图|多线路)[\s\S]{0,32}(?:跳转|流程|连线|关系)(?:\s|$|[（(])/i;
+    const headingPattern = /^#{1,6}\s*(?:(?:🔀|🔄)\s*)?(?:(?:非线性|分支|图结构|流程图|多线路)[\s\S]{0,32}(?:跳转|流程|连线|关系)|(?:阶段|线性)跳转关系)(?:\s|$|[（(])/i;
     const genericSectionPattern = /^#{1,6}\s+\S/;
     const keptLines: string[] = [];
     let inCodeBlock = false;
@@ -340,6 +342,69 @@ export function ensureNonlinearFlowConfigMarkdown(
     }
 
     return `${raw}\n\n${flowBlock}`;
+}
+
+export function buildPlannedStageRouting(plan: TrainingScriptPlan, stageNumber: number): string {
+    if (plan.flowType !== 'graph') return '';
+    const from = `阶段${stageNumber}`;
+    const edges = buildSerializableGraphEdges(plan).filter((edge) => edge.from === from);
+    return [
+        `# 阶段${stageNumber}的分支跳转规则（模块规划）`,
+        '阶段编号只用于文档定位，实际路径由本节连线决定。保持学生已锁定的角色和路线。',
+        '本节是本阶段的完整出口清单；前文出现的其他跳转关键词或按编号依次跳转表述，以本节为准。',
+        ...edges.map((edge) => [
+            `- 目标：${edge.to}${edge.to === 'END' ? '（结束当前路线）' : `（${plan.modules[Number(edge.to.slice(2)) - 1]?.title || ''}）`}`,
+            `  判定：${edge.conditionDescription || '完成本阶段教学要求并满足该规划线路条件。'}`,
+            `  命中该分支时单独输出：${JSON.stringify(edge.condition)}`,
+        ].join('\n')),
+        edges.length === 0 ? '本阶段没有规划的后继模块，完成当前路线后结束实训。' : '',
+        '多个出口应互斥判定，每次只选择一个；未达到教学要求时继续本阶段。isDefault 只标记平台默认连线，不代表无条件跳转。',
+    ].filter(Boolean).join('\n');
+}
+
+/** 完成校验后，把已确认的图连线同步到阶段字段和提示词，避免两套路由互相矛盾。 */
+export function alignTrainingScriptWithPlan(markdown: string, plan?: TrainingScriptPlan): string {
+    if (!plan || plan.flowType !== 'graph') return markdown;
+    const structure = extractScriptStructure(markdown);
+    const edges = buildSerializableGraphEdges(plan);
+    const generatedEdges = parseTrainingScriptFlowConfig(markdown).edges;
+    const stages = structure.stages.map((stage) => {
+        const stageNumber = extractStageNumberFromHeading(stage.heading);
+        if (!stageNumber || !plan.modules[stageNumber - 1]) return stage.markdown;
+        const step = parseTrainingScript(stage.markdown)[0];
+        if (!step?.llmPrompt) return stage.markdown;
+        const outgoing = edges.filter((edge) => edge.from === `阶段${stageNumber}`);
+        const primary = outgoing.find((edge) => edge.isDefault === 1) || outgoing[0];
+        let prompt = step.llmPrompt.replace(/\n*<!-- PLANNED_ROUTING_START -->[\s\S]*?<!-- PLANNED_ROUTING_END -->/g, '').trimEnd();
+        if (outgoing.length && primary) {
+            const staleKeywords = new Set([
+                step.flowCondition,
+                ...generatedEdges.filter((edge) => edge.from === `阶段${stageNumber}`).map((edge) => edge.condition),
+            ]);
+            const allowed = outgoing.map((edge) => edge.condition);
+            for (const keyword of staleKeywords) {
+                if (keyword && !allowed.some((condition) => condition.includes(keyword))) {
+                    prompt = prompt.split(keyword).join(outgoing.length === 1
+                        ? primary.condition : '本节出口清单中与当前路线匹配的跳转关键词');
+                }
+            }
+        }
+        const nextStep = {
+            ...step,
+            stepName: plan.modules[stageNumber - 1].title,
+            flowCondition: primary?.condition || step.flowCondition,
+            transitionPrompt: primary?.transitionPrompt || step.transitionPrompt,
+            llmPrompt: `${prompt}\n\n<!-- PLANNED_ROUTING_START -->\n${buildPlannedStageRouting(plan, stageNumber)}\n<!-- PLANNED_ROUTING_END -->`,
+        };
+        return [
+            `<!-- STAGE_START:${stageNumber} -->`,
+            serializeTrainingStage(nextStep, stageNumber),
+            `<!-- STAGE_END:${stageNumber} -->`,
+        ].join('\n');
+    });
+    return ensureNonlinearFlowConfigMarkdown([
+        structure.prefix, ...stages, structure.suffix,
+    ].filter(Boolean).join('\n\n'), plan);
 }
 
 export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingScriptPlan | null): ScriptDiagnosticsResult {

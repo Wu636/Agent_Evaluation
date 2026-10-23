@@ -1,0 +1,602 @@
+data: {"type":"progress","phase":"script","message":"正在解析训练剧本配置...","current":0,"total":1}
+
+data: {"type":"progress","phase":"script","message":"正则提取任务名称：PLC能力训练-训练1-基础指令、状态表与定时器应用","current":0,"total":1}
+
+data: {"type":"progress","phase":"script","message":"基础配置解析结果：PLC能力训练-训练1-基础指令、状态表与定时器应用 / 描述已提取","current":0,"total":1}
+
+data: {"type":"progress","phase":"script","message":"已跳过课程封面图注入","current":0,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在更新任务基础配置（名称、描述、入口音色）...","current":0,"total":66}
+
+data: {"type":"progress","phase":"script","message":"基础配置缺少当前封面图，已跳过名称/描述写入，避免触发平台配置接口错误","current":0,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在查询现有工作流...","current":0,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在查询账号可配置音色...","current":0,"total":66}
+
+data: {"type":"progress","phase":"script","message":"已读取 66 个可配置音色，其中 66 个可用于数字人创建","current":0,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在查询课程已有数字人，优先复用同名配置...","current":0,"total":66}
+
+data: {"type":"progress","phase":"script","message":"已读取 147 个已有数字人，其中 146 个可作为账号内安全参数源","current":0,"total":66}
+
+data: {"type":"start","phase":"script","message":"开始注入训练剧本，共 66 个新增阶段...","total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 1/66：分支选择","current":1,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在配置数字人：训练引导官（使用账号内「助教导师（男性，成年，音色：儒雅青年）」的可用形象/音色参数）","current":1,"total":66}
+
+data: {"type":"progress","phase":"script","message":"数字人配置成功：训练引导官（男性，成年，音色：反卷青年）","current":1,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":1,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":1,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 2/66：案例01-置位复位指令应用-传送带控制基础案例实操训练","current":2,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在配置数字人：王工（使用账号内「助教导师（男性，成年，音色：儒雅青年）」的可用形象/音色参数）","current":2,"total":66}
+
+data: {"type":"progress","phase":"script","message":"数字人配置成功：王工（男性，成年，音色：儒雅青年）","current":2,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":2,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":2,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 3/66：案例01-置位复位指令应用-传送带控制基础案例实操训练","current":3,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":3,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":3,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":3,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 4/66：案例01-置位复位指令应用-传送带控制基础案例实操训练","current":4,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":4,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":4,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":4,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 5/66：案例01-置位复位指令应用-传送带控制基础案例实操训练","current":5,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":5,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":5,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":5,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 6/66：案例01-置位复位指令应用-传送带控制基础案例实操训练","current":6,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":6,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":6,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":6,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 7/66：案例02-边沿检测指令 - 传送带包裹方向识别控制基础案例实操训练","current":7,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":7,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":7,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":7,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 8/66：案例02-边沿检测指令 - 传送带包裹方向识别控制基础案例实操训练","current":8,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":8,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":8,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":8,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 9/66：案例02-边沿检测指令 - 传送带包裹方向识别控制基础案例实操训练","current":9,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":9,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":9,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":9,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 10/66：案例02-边沿检测指令 - 传送带包裹方向识别控制基础案例实操训练","current":10,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":10,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":10,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":10,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 11/66：案例02-边沿检测指令 - 传送带包裹方向识别控制基础案例实操训练","current":11,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":11,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":11,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":11,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 12/66：案例03-三变量逻辑组合 - 三台风机状态逻辑控制基础案例实操训练","current":12,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":12,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":12,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":12,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 13/66：案例03-三变量逻辑组合 - 三台风机状态逻辑控制基础案例实操训练","current":13,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":13,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":13,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":13,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 14/66：案例03-三变量逻辑组合 - 三台风机状态逻辑控制基础案例实操训练","current":14,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":14,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":14,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":14,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 15/66：案例03-三变量逻辑组合 - 三台风机状态逻辑控制基础案例实操训练","current":15,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":15,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":15,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":15,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 16/66：案例03-三变量逻辑组合 - 三台风机状态逻辑控制基础案例实操训练","current":16,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":16,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":16,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":16,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 17/66：案例04-单按钮循环启停控制基础案例实操训练","current":17,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":17,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":17,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":17,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 18/66：案例04-单按钮循环启停控制基础案例实操训练","current":18,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":18,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":18,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":18,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 19/66：案例04-单按钮循环启停控制基础案例实操训练","current":19,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":19,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":19,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":19,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 20/66：案例04-单按钮循环启停控制基础案例实操训练","current":20,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":20,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":20,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":20,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 21/66：案例04-单按钮循环启停控制基础案例实操训练","current":21,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈工（男性，成年，音色：儒雅青年）","current":21,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":21,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":21,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 22/66：案例05-单按钮依次点亮三盏灯基础案例实操训练","current":22,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在配置数字人：韩老师（使用账号内「助教导师（男性，成年，音色：儒雅青年）」的可用形象/音色参数）","current":22,"total":66}
+
+data: {"type":"progress","phase":"script","message":"数字人配置成功：韩老师（男性，成年，音色：儒雅青年）","current":22,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":22,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":22,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 23/66：案例05-单按钮依次点亮三盏灯基础案例实操训练","current":23,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：韩老师（男性，成年，音色：儒雅青年）","current":23,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":23,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":23,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 24/66：案例05-单按钮依次点亮三盏灯基础案例实操训练","current":24,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：韩老师（男性，成年，音色：儒雅青年）","current":24,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":24,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":24,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 25/66：案例05-单按钮依次点亮三盏灯基础案例实操训练","current":25,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：韩老师（男性，成年，音色：儒雅青年）","current":25,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":25,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":25,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 26/66：案例05-单按钮依次点亮三盏灯基础案例实操训练","current":26,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：韩老师（男性，成年，音色：儒雅青年）","current":26,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":26,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":26,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 27/66：案例06-有轨小车多站往复周期运行控制基础案例实操训练","current":27,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":27,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":27,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":27,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 28/66：案例06-有轨小车多站往复周期运行控制基础案例实操训练","current":28,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":28,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":28,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":28,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 29/66：案例06-有轨小车多站往复周期运行控制基础案例实操训练","current":29,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":29,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":29,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":29,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 30/66：案例06-有轨小车多站往复周期运行控制基础案例实操训练","current":30,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":30,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":30,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":30,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 31/66：案例06-有轨小车多站往复周期运行控制基础案例实操训练","current":31,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":31,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":31,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":31,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 32/66：案例07-状态表法程序设计方法-单按钮灯亮灭控制基础案例实操训练","current":32,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在配置数字人：陈老师（使用账号内「助教导师（男性，成年，音色：儒雅青年）」的可用形象/音色参数）","current":32,"total":66}
+
+data: {"type":"progress","phase":"script","message":"数字人配置成功：陈老师（男性，成年，音色：儒雅青年）","current":32,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":32,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":32,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 33/66：案例07-状态表法程序设计方法-单按钮灯亮灭控制基础案例实操训练","current":33,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":33,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":33,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":33,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 34/66：案例07-状态表法程序设计方法-单按钮灯亮灭控制基础案例实操训练","current":34,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":34,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":34,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":34,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 35/66：案例07-状态表法程序设计方法-单按钮灯亮灭控制基础案例实操训练","current":35,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":35,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":35,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":35,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 36/66：案例07-状态表法程序设计方法-单按钮灯亮灭控制基础案例实操训练","current":36,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":36,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":36,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":36,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 37/66：案例08-状态表法程序设计-单按钮三灯顺序点亮控制基础案例实操训练","current":37,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在配置数字人：李工（PLC实训指导教师）（使用账号内「助教导师（男性，成年，音色：儒雅青年）」的可用形象/音色参数）","current":37,"total":66}
+
+data: {"type":"progress","phase":"script","message":"数字人配置成功：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":37,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":37,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":37,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 38/66：案例08-状态表法程序设计-单按钮三灯顺序点亮控制基础案例实操训练","current":38,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":38,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":38,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":38,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 39/66：案例08-状态表法程序设计-单按钮三灯顺序点亮控制基础案例实操训练","current":39,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":39,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":39,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":39,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 40/66：案例08-状态表法程序设计-单按钮三灯顺序点亮控制基础案例实操训练","current":40,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":40,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":40,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":40,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 41/66：案例08-状态表法程序设计-单按钮三灯顺序点亮控制基础案例实操训练","current":41,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（PLC实训指导教师）（男性，成年，音色：儒雅青年）","current":41,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":41,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":41,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 42/66：案例09-脉冲定时器应用-抢答器控制基础案例实操训练","current":42,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":42,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":42,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":42,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 43/66：案例09-脉冲定时器应用-抢答器控制基础案例实操训练","current":43,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":43,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":43,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":43,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 44/66：案例09-脉冲定时器应用-抢答器控制基础案例实操训练","current":44,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":44,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":44,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":44,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 45/66：案例09-脉冲定时器应用-抢答器控制基础案例实操训练","current":45,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":45,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":45,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":45,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 46/66：案例09-脉冲定时器应用-抢答器控制基础案例实操训练","current":46,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":46,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":46,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":46,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 47/66：案例10-延时接通定时器应用-可调占空比脉冲控制基础案例实操训练","current":47,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在配置数字人：张老师（使用账号内「助教导师（男性，成年，音色：儒雅青年）」的可用形象/音色参数）","current":47,"total":66}
+
+data: {"type":"progress","phase":"script","message":"数字人配置成功：张老师（男性，成年，音色：儒雅青年）","current":47,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":47,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":47,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 48/66：案例10-延时接通定时器应用-可调占空比脉冲控制基础案例实操训练","current":48,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：张老师（男性，成年，音色：儒雅青年）","current":48,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":48,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":48,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 49/66：案例10-延时接通定时器应用-可调占空比脉冲控制基础案例实操训练","current":49,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：张老师（男性，成年，音色：儒雅青年）","current":49,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":49,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":49,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 50/66：案例10-延时接通定时器应用-可调占空比脉冲控制基础案例实操训练","current":50,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：张老师（男性，成年，音色：儒雅青年）","current":50,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":50,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":50,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 51/66：案例10-延时接通定时器应用-可调占空比脉冲控制基础案例实操训练","current":51,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：张老师（男性，成年，音色：儒雅青年）","current":51,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":51,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":51,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 52/66：案例11-延时关断定时器应用-两台皮带顺序起停控制基础案例实操训练","current":52,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":52,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":52,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":52,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 53/66：案例11-延时关断定时器应用-两台皮带顺序起停控制基础案例实操训练","current":53,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":53,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":53,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":53,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 54/66：案例11-延时关断定时器应用-两台皮带顺序起停控制基础案例实操训练","current":54,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":54,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":54,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":54,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 55/66：案例11-延时关断定时器应用-两台皮带顺序起停控制基础案例实操训练","current":55,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":55,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":55,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":55,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 56/66：案例11-延时关断定时器应用-两台皮带顺序起停控制基础案例实操训练","current":56,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：王工（男性，成年，音色：儒雅青年）","current":56,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":56,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":56,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 57/66：案例12-定时产生脉冲应用-长延时定时器设计基础案例实操训练","current":57,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":57,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":57,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":57,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 58/66：案例12-定时产生脉冲应用-长延时定时器设计基础案例实操训练","current":58,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":58,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":58,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":58,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 59/66：案例12-定时产生脉冲应用-长延时定时器设计基础案例实操训练","current":59,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":59,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":59,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":59,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 60/66：案例12-定时产生脉冲应用-长延时定时器设计基础案例实操训练","current":60,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":60,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":60,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":60,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 61/66：案例12-定时产生脉冲应用-长延时定时器设计基础案例实操训练","current":61,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：陈老师（男性，成年，音色：儒雅青年）","current":61,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":61,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":61,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 62/66：案例13-定时器计数器组合应用-三台电机顺序启动控制基础案例实操训练","current":62,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在配置数字人：李工（使用账号内「助教导师（男性，成年，音色：儒雅青年）」的可用形象/音色参数）","current":62,"total":66}
+
+data: {"type":"progress","phase":"script","message":"数字人配置成功：李工（男性，成年，音色：儒雅青年）","current":62,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":62,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":62,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 63/66：案例13-定时器计数器组合应用-三台电机顺序启动控制基础案例实操训练","current":63,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（男性，成年，音色：儒雅青年）","current":63,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":63,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":63,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 64/66：案例13-定时器计数器组合应用-三台电机顺序启动控制基础案例实操训练","current":64,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（男性，成年，音色：儒雅青年）","current":64,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":64,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":64,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 65/66：案例13-定时器计数器组合应用-三台电机顺序启动控制基础案例实操训练","current":65,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（男性，成年，音色：儒雅青年）","current":65,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":65,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":65,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在创建节点 66/66：案例13-定时器计数器组合应用-三台电机顺序启动控制基础案例实操训练","current":66,"total":66}
+
+data: {"type":"progress","phase":"script","message":"复用已有数字人：李工（男性，成年，音色：儒雅青年）","current":66,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在写入场景配置...","current":66,"total":66}
+
+data: {"type":"progress","phase":"script","message":"场景配置设置成功","current":66,"total":66}
+
+data: {"type":"progress","phase":"script","message":"正在按非线性跳转关系创建节点连线...","current":66,"total":66}
+
+data: {"type":"phase_complete","phase":"script","message":"训练剧本注入完成：66 个节点，69 条连线"}
+
+data: {"type":"start","phase":"rubric","message":"开始注入评分标准，共 13 个评分项...","total":13}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 1/13：案例01-置位复位指令应用-传送带控制基础案例实操训练（8分）","current":1,"total":13}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 2/13：案例02-边沿检测指令 - 传送带包裹方向识别控制基础案例实操训练（8分）","current":2,"total":13}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 3/13：案例03-三变量逻辑组合 - 三台风机状态逻辑控制基础案例实操训练（8分）","current":3,"total":13}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 4/13：案例04-单按钮循环启停控制基础案例实操训练（8分）","current":4,"total":13}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 5/13：案例05-单按钮依次点亮三盏灯基础案例实操训练（8分）","current":5,"total":13}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 6/13：案例06-有轨小车多站往复周期运行控制基础案例实操训练（8分）","current":6,"total":13}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 7/13：案例07-状态表法程序设计方法-单按钮灯亮灭控制基础案例实操训练（8分）","current":7,"total":13}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 8/13：案例08-状态表法程序设计-单按钮三灯顺序点亮控制基础案例实操训练（8分）","current":8,"total":13}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 9/13：案例09-脉冲定时器应用-抢答器控制基础案例实操训练（8分）","current":9,"total":13}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 10/13：案例10-延时接通定时器应用-可调占空比脉冲控制基础案例实操训练（7分）","current":10,"total":13}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 11/13：案例11-延时关断定时器应用-两台皮带顺序起停控制基础案例实操训练（7分）","current":11,"total":13}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 12/13：案例12-定时产生脉冲应用-长延时定时器设计基础案例实操训练（7分）","current":12,"total":13}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 13/13：案例13-定时器计数器组合应用-三台电机顺序启动控制基础案例实操训练（7分）","current":13,"total":13}
+
+data: {"type":"phase_complete","phase":"rubric","message":"评分标准注入完成：13 个评分项"}
+
+data: {"type":"complete","message":"所有内容注入成功！请前往智慧树平台刷新对应任务页面查看结果。","summary":{"stepsCreated":66,"flowsCreated":69,"scoreItemsCreated":13,"stepsDeleted":0,"flowsDeleted":0}}
+

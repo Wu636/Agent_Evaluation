@@ -6,7 +6,7 @@ import { ApiConfig } from "../llm/types";
 import { jsonrepair } from "jsonrepair";
 import { buildTemperatureCompatiblePayload, callLLM, callLLMStream } from "../llm/utils";
 import { summarizeLlmHttpError } from "../llm/error-utils";
-import { buildScriptGeneratorPrompt, buildRubricGeneratorPrompt } from "./prompts";
+import { buildScriptGeneratorPrompt, buildRubricGeneratorPrompt, getBuiltInScriptTemplate } from "./prompts";
 import {
     ConcreteScriptMode,
     ScriptFlowEdge,
@@ -19,7 +19,7 @@ import {
     TrainingScriptPlan,
 } from "./types";
 import { MODEL_NAME_MAPPING } from "../config";
-import { extractScriptStructure, extractStageNumberFromHeading, TRAINING_SCRIPT_COMPLETE_MARKER } from "./script-tools";
+import { buildPlannedStageRouting, buildSerializableGraphEdges, extractScriptStructure, extractStageNumberFromHeading, TRAINING_SCRIPT_COMPLETE_MARKER } from "./script-tools";
 import { findMultiRoleModuleIssue } from "./plan-validation";
 
 /**
@@ -62,6 +62,7 @@ const SCRIPT_PLAN_SYSTEM_PROMPT = `你是一个训练剧本模块规划器。你
   "modules": [
     {
       "id": "module_1",
+      "sourceStepIds": ["源卡片 stepId；如果该模块由源卡片重构而来就填写，可为空"],
       "title": "模块标题",
       "moduleType": "general|sequential|roleplay|summary",
       "objective": "本模块训练目的",
@@ -104,6 +105,7 @@ const SCRIPT_PLAN_SYSTEM_PROMPT = `你是一个训练剧本模块规划器。你
 - 模块标题与目标必须具体，不能写占位词
 - taskName、overallObjective、每个模块的 title、objective、description 必须填写具体内容，不允许空字符串
 - 每个模块的 keyPoints 至少输出 2 条具体要点，不允许空数组
+- 如果输入包含现有能力训练卡片 stepId，模块应填写 sourceStepIds；模块由多张源卡合并时可填写多个，纯新增模块填写空数组。不得编造不存在的 stepId。
 - suggestedRounds 必须是大于等于 1 的整数，根据模块实际复杂度合理设置；模块不再限制轮数上限
 - 不得仅因为 suggestedRounds 较大而拆分模块；只有任务阶段本身不同、流程分支不同或需要切换智能体角色时才拆分模块`;
 
@@ -285,7 +287,8 @@ export function getScriptModeLabel(mode: ScriptMode): string {
 
 export async function classifyTrainingScriptMode(
     teacherDocContent: string,
-    config: ApiConfig & { model: string }
+    config: ApiConfig & { model: string },
+    signal?: AbortSignal,
 ): Promise<ConcreteScriptMode> {
     const { apiKey, baseUrl, model: rawModel } = config;
 
@@ -293,6 +296,7 @@ export async function classifyTrainingScriptMode(
 
     const model = MODEL_NAME_MAPPING[rawModel] || rawModel;
     const endpoint = normalizeChatCompletionEndpoint(baseUrl);
+    const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(90_000)]) : AbortSignal.timeout(90_000);
 
     let response: Response;
     try {
@@ -312,8 +316,11 @@ export async function classifyTrainingScriptMode(
                     },
                 ],
             }, model, 0)),
+            signal: requestSignal,
         });
     } catch (error) {
+        signal?.throwIfAborted();
+        if (requestSignal.aborted) throw new Error('剧本模式识别等待超过 90 秒。');
         throw formatLlmConnectivityError(baseUrl, error);
     }
 
@@ -453,6 +460,9 @@ function normalizePlan(raw: unknown): TrainingScriptPlan {
         flowType,
         modules: rawModules.map((module, index) => ({
             id: String(module.id || makeModuleId(index)),
+            sourceStepIds: Array.isArray(module.sourceStepIds)
+                ? module.sourceStepIds.map((item) => String(item || "")).filter(Boolean)
+                : undefined,
             title: String(module.title || ""),
             moduleType: extractScriptMode(String(module.moduleType || "general")),
             objective: String(module.objective || ""),
@@ -477,6 +487,7 @@ function mergeModuleWithFallback(
 
     return {
         id: currentModule.id,
+        sourceStepIds: generatedModule.sourceStepIds || currentModule.sourceStepIds,
         title: generatedModule.title.trim() || currentModule.title,
         moduleType: generatedModule.moduleType || currentModule.moduleType,
         objective: generatedModule.objective.trim() || currentModule.objective,
@@ -1786,6 +1797,7 @@ function formatModulePlanForPrompt(plan?: TrainingScriptPlan): string {
     const moduleLines = plan.modules.map((module, index) => [
         `### 模块${index + 1}: ${module.title}`,
         `- 模块ID: ${module.id}`,
+        `- 源卡片 stepId: ${(module.sourceStepIds || []).join("、") || "纯新增模块"}`,
         `- 对应阶段引用: 阶段${index + 1}`,
         `- 类型: ${module.moduleType}`,
         `- 训练目的: ${module.objective}`,
@@ -1796,28 +1808,14 @@ function formatModulePlanForPrompt(plan?: TrainingScriptPlan): string {
         `- 建议轮次: ${module.suggestedRounds}`,
     ].join("\n"));
     const flowType = plan.flowType || "linear";
-    const defaultAssignedBySource = new Set<string>();
     const edgeLines = flowType === "graph"
-        ? (plan.edges || []).map((edge, index) => {
-            const fromIndex = plan.modules.findIndex((module) => module.id === edge.fromModuleId);
-            const toIndex = plan.modules.findIndex((module) => module.id === edge.toModuleId);
-            const fromLabel = fromIndex >= 0 ? `阶段${fromIndex + 1}` : edge.fromModuleId;
-            const toLabel = isPlanEndNodeId(edge.toModuleId)
-                ? "END"
-                : toIndex >= 0
-                    ? `阶段${toIndex + 1}`
-                    : edge.toModuleId;
-            const explicitDefault = normalizePlanEdgeDefault(edge.isDefault);
-            const isDefault = explicitDefault === 0 || defaultAssignedBySource.has(edge.fromModuleId) ? 0 : 1;
-            if (isDefault === 1) {
-                defaultAssignedBySource.add(edge.fromModuleId);
-            }
+        ? buildSerializableGraphEdges(plan).map((edge, index) => {
             return [
-                `- 连线${index + 1}: ${fromLabel} -> ${toLabel}`,
+                `- 连线${index + 1}: ${edge.from} -> ${edge.to}`,
                 `  - condition: ${edge.condition}`,
                 `  - 条件说明: ${edge.conditionDescription || "无"}`,
                 `  - transitionPrompt: ${edge.transitionPrompt || "无"}`,
-                `  - isDefault: ${isDefault}`,
+                `  - isDefault: ${edge.isDefault}`,
             ].join("\n");
         })
         : [];
@@ -1835,7 +1833,7 @@ function formatModulePlanForPrompt(plan?: TrainingScriptPlan): string {
         Array.isArray(plan.notes) && plan.notes.length > 0 ? `\n补充说明:\n- ${plan.notes.join("\n- ")}` : "",
         "</module_plan>",
         "",
-        "生成要求补充：请严格按照上述模块规划输出阶段结构，阶段数量必须与模块数量一致，不得擅自合并、删除或新增阶段；如果教师文档与规划冲突，以教师文档中的明确要求为准，但不要偏离规划的整体模块划分。",
+        "生成要求补充：请严格按照上述模块规划输出阶段结构，阶段数量必须与模块数量一致。教师文档提供业务事实和考核要求；当前模块规划决定模块对应关系及执行路径，不得自行重排、合并、删除、新增阶段或连线。",
         "严禁把单个模块拆成“阶段4（上）/阶段4（中）/阶段4（下）”“阶段4-1/阶段4-2”或“4.1/4.2”这类额外阶段。若模块内部存在多个子任务，请放进同一阶段的描述、开场白、提示词或子标题里，而不是新增阶段编号。",
         "每个模块对应的最终阶段只允许一个智能体角色，禁止在同一阶段里同时扮演、轮流扮演或切换多个角色；若教师文档需要不同角色，必须拆成不同阶段分别生成。",
         flowType === "graph"
@@ -1847,6 +1845,8 @@ function formatModulePlanForPrompt(plan?: TrainingScriptPlan): string {
                 "4. 每条边的 transitionPrompt 必须体现该线路语境；不同分支不要共用同一段泛化衔接提示词。",
                 "5. 每条边必须包含 isDefault；同一个 from 下只能一条 isDefault=1，其他出口必须为 0。",
                 "6. 注入时会按 `## 🔀 非线性跳转关系` 的 edges 创建连线，而不是按阶段顺序串联。",
+                "7. 阶段编号只是文档索引，不表示执行先后；严禁把相邻编号推断为前驱或后继。每条角色线路的结束必须沿其 END 连线结束，不进入另一角色线路。",
+                "8. 所有阶段的 flowCondition、提示词内跳转关键词和分支判定必须与本规划的出边一致。isDefault 不是无条件通行许可。",
             ].join("\n")
             : "线性生成要求：不需要输出 `## 🔀 非线性跳转关系`；按阶段顺序输出 `## 🔄 阶段跳转关系` 即可。",
     ].join("\n");
@@ -1859,15 +1859,32 @@ export function buildTeacherDocWithPlan(
     return modulePlan ? `${teacherDocContent}${formatModulePlanForPrompt(modulePlan)}` : teacherDocContent;
 }
 
+type TrainingStreamOptions = {
+    signal?: AbortSignal;
+    maxTokens?: number;
+    endStageNumber?: number;
+};
+
 export async function* generateTrainingScriptStream(
     teacherDocContent: string,
     config: ApiConfig & { model: string },
     promptTemplate?: string,
     scriptMode: ScriptMode = "general",
-    modulePlan?: TrainingScriptPlan
+    modulePlan?: TrainingScriptPlan,
+    userSuggestions?: string,
+    priorScript?: string,
+    streamOptions: TrainingStreamOptions = {},
 ): AsyncGenerator<string, void, unknown> {
-    const prompt = buildScriptGeneratorPrompt(buildTeacherDocWithPlan(teacherDocContent, modulePlan), promptTemplate, scriptMode);
-    yield* callLLMStream(prompt, config, 0.3, SCRIPT_SYSTEM_PROMPT);
+    const prompt = [
+        buildScriptGeneratorPrompt(buildTeacherDocWithPlan(teacherDocContent, modulePlan), promptTemplate, scriptMode),
+        userSuggestions?.trim()
+            ? `\n\n【用户建议】\n${userSuggestions.trim()}\n请在不违反教师任务文档明确要求和模块规划结构的前提下落实这些建议。`
+            : "",
+        priorScript?.trim()
+            ? `\n\n【重新生成参考剧本】\n${priorScript.trim()}\n请结合用户建议修订内容，并重新输出完整剧本。`
+            : "",
+    ].filter(Boolean).join("");
+    yield* callLLMStream(prompt, config, 0.3, SCRIPT_SYSTEM_PROMPT, streamOptions);
 }
 
 /**
@@ -1879,8 +1896,63 @@ const RUBRIC_SYSTEM_PROMPT = `你是一个专业的训练评价标准生成器�
 
 const SCRIPT_CONTINUE_SYSTEM_PROMPT = `你是训练剧本续写助手。你会基于已有的半成品剧本继续向后补全，保持同一风格和结构。
 每个阶段只允许智能体扮演一个角色，严禁在同一阶段混入多个角色。
-必须一直续写到完整文档结束，并将 ${TRAINING_SCRIPT_COMPLETE_MARKER} 作为最后一个非空行。
+严格按本轮阶段范围输出，完成范围内阶段后停止。仅在所有阶段和文档尾部都完成时输出 ${TRAINING_SCRIPT_COMPLETE_MARKER}。
+非线性执行顺序以模块规划的 edges 为准，阶段编号只用于文档定位。
 只输出“新增补全部分”，不要重复已有内容，不要解释说明。`;
+
+function buildScriptContinuationPrompt(
+    teacherDocContent: string,
+    partialContent: string,
+    promptTemplate: string | undefined,
+    scriptMode: ScriptMode,
+    modulePlan: TrainingScriptPlan | undefined,
+    userSuggestions: string | undefined,
+    resumeStageNumber: number | undefined,
+    endStageNumber?: number,
+): string {
+    const customRequirements = (promptTemplate?.trim() || getBuiltInScriptTemplate(scriptMode))
+        .split("{teacherDoc}").join("（教师任务文档见下方独立区块）");
+    const tailOnly = partialContent.includes("断点定位：所有规划阶段均已生成") ||
+        Boolean(resumeStageNumber && modulePlan?.modules?.length && resumeStageNumber > modulePlan.modules.length);
+
+    return [
+        "你需要续写一份训练剧本配置。只生成断点处缺失的内容。",
+        "",
+        "【生成约束】",
+        customRequirements,
+        "每个阶段必须使用独立的 `<!-- STAGE_START:N -->` 与 `<!-- STAGE_END:N -->` 标记，以及 `### 阶段N: 阶段名称` 标题。",
+        "阶段字段应完整：虚拟训练官名字、模型、声音、形象、阶段描述、背景图、互动轮次、flowCondition、transitionPrompt、开场白、提示词。",
+        "同一阶段只保留一个智能体角色；严格遵循教师文档和模块规划。",
+        "阶段生成后按模板补齐阶段跳转关系和配置说明；若模块规划为非线性流程，按规划输出非线性跳转 JSON。",
+        `完整文档最后一个非空行必须是 ${TRAINING_SCRIPT_COMPLETE_MARKER}。`,
+        "",
+        "【教师任务文档】",
+        teacherDocContent,
+        modulePlan ? `\n【模块规划】\n${formatModulePlanForPrompt(modulePlan)}` : "",
+        userSuggestions?.trim() ? `\n【用户建议】\n${userSuggestions.trim()}` : "",
+        "",
+        "【断点附近上下文】",
+        partialContent,
+        "",
+        modulePlan?.flowType === 'graph'
+            ? `【本轮阶段的固定出口】\n${modulePlan.modules.map((_, index) => index + 1)
+                .filter((number) => number >= (resumeStageNumber || 1) && number <= (endStageNumber || modulePlan.modules.length))
+                .map((number) => buildPlannedStageRouting(modulePlan, number)).join('\n\n')}`
+            : '',
+        tailOnly
+            ? "所有规划阶段已经完整，只输出文档尾部缺失内容，不要重写任何阶段。"
+            : resumeStageNumber
+                ? `从阶段${resumeStageNumber}开始，只输出该阶段及其后的缺失内容。如果目标阶段已有残缺正文，从该阶段标题起完整重写。不要重复上一完整阶段。`
+                : "只输出断点之后尚缺的内容，不要重复已完整阶段。",
+        !tailOnly && endStageNumber
+            ? `本轮范围严格限定为阶段${resumeStageNumber || 1}至阶段${endStageNumber}，按模块规划中的对应标题写出这些文档片段。每个阶段完整结束后才开始下一个；范围外的阶段留待后续请求。文档排列顺序与非线性执行路径相互独立。`
+            : '',
+        !tailOnly && endStageNumber && modulePlan && endStageNumber < modulePlan.modules.length
+            ? `本轮结束于 <!-- STAGE_END:${endStageNumber} -->，不要输出文档尾部、线性跳转表或 ${TRAINING_SCRIPT_COMPLETE_MARKER}。`
+            : `本轮包含最后阶段或仅补文档尾部时，按原模板补齐尾部，并以 ${TRAINING_SCRIPT_COMPLETE_MARKER} 结束。`,
+        "仅输出续写内容，不要添加解释或前言。",
+    ].filter(Boolean).join("\n");
+}
 
 const SCRIPT_STRUCTURE_REPAIR_SYSTEM_PROMPT = `你是训练剧本结构修复助手。你的任务是把一份阶段结构错误的训练剧本修复为可注入的完整 Markdown。
 每个阶段只允许智能体扮演一个角色，若发现同一阶段混入多个角色，应整理为单角色表达。
@@ -1893,10 +1965,19 @@ const RUBRIC_CONTINUE_SYSTEM_PROMPT = `你是评分标准续写助手。你会�
 export async function* generateTrainingRubricStream(
     teacherDocContent: string,
     config: ApiConfig & { model: string },
-    promptTemplate?: string
+    promptTemplate?: string,
+    priorRubric?: string,
+    userSuggestions?: string,
+    streamOptions: TrainingStreamOptions = {},
 ): AsyncGenerator<string, void, unknown> {
-    const prompt = buildRubricGeneratorPrompt(teacherDocContent, promptTemplate);
-    yield* callLLMStream(prompt, config, 0.2, RUBRIC_SYSTEM_PROMPT);
+    const prompt = [
+        buildRubricGeneratorPrompt(teacherDocContent, promptTemplate),
+        userSuggestions?.trim() ? `\n\n【用户建议】\n${userSuggestions.trim()}` : "",
+        priorRubric?.trim()
+            ? `\n\n【重新生成参考评分标准】\n${priorRubric.trim()}\n请结合用户建议修订，并重新输出完整评分标准。`
+            : "",
+    ].filter(Boolean).join("");
+    yield* callLLMStream(prompt, config, 0.2, RUBRIC_SYSTEM_PROMPT, streamOptions);
 }
 
 export async function continueTrainingScript(
@@ -1905,22 +1986,19 @@ export async function continueTrainingScript(
     config: ApiConfig & { model: string },
     promptTemplate?: string,
     scriptMode: ScriptMode = "general",
-    modulePlan?: TrainingScriptPlan
+    modulePlan?: TrainingScriptPlan,
+    userSuggestions?: string,
+    resumeStageNumber?: number,
 ): Promise<string> {
-    const basePrompt = buildScriptGeneratorPrompt(buildTeacherDocWithPlan(teacherDocContent, modulePlan), promptTemplate, scriptMode);
-    const prompt = [
-        SCRIPT_CONTINUE_SYSTEM_PROMPT,
-        "",
-        "你需要对一个被中断的训练剧本进行断点续写。",
-        "",
-        "【原始生成要求】",
-        basePrompt,
-        "",
-        "【已生成内容（不要重复）】",
+    const prompt = buildScriptContinuationPrompt(
+        teacherDocContent,
         partialContent,
-        "",
-        `请从断点处继续输出后续内容，直到文档完整结束，并以 ${TRAINING_SCRIPT_COMPLETE_MARKER} 作为最后一个非空行。只输出新增续写部分。`,
-    ].join("\n");
+        promptTemplate,
+        scriptMode,
+        modulePlan,
+        userSuggestions,
+        resumeStageNumber,
+    );
 
     const content = await callLLM(prompt, config, 0.2, SCRIPT_CONTINUE_SYSTEM_PROMPT);
     return stripMarkdownFence(content);
@@ -1932,24 +2010,23 @@ export async function* continueTrainingScriptStream(
     config: ApiConfig & { model: string },
     promptTemplate?: string,
     scriptMode: ScriptMode = "general",
-    modulePlan?: TrainingScriptPlan
+    modulePlan?: TrainingScriptPlan,
+    userSuggestions?: string,
+    resumeStageNumber?: number,
+    streamOptions: TrainingStreamOptions = {},
 ): AsyncGenerator<string, void, unknown> {
-    const basePrompt = buildScriptGeneratorPrompt(buildTeacherDocWithPlan(teacherDocContent, modulePlan), promptTemplate, scriptMode);
-    const prompt = [
-        SCRIPT_CONTINUE_SYSTEM_PROMPT,
-        "",
-        "你需要对一个被中断的训练剧本进行断点续写。",
-        "",
-        "【原始生成要求】",
-        basePrompt,
-        "",
-        "【已生成内容（不要重复）】",
+    const prompt = buildScriptContinuationPrompt(
+        teacherDocContent,
         partialContent,
-        "",
-        `请从断点处继续输出后续内容，直到文档完整结束，并以 ${TRAINING_SCRIPT_COMPLETE_MARKER} 作为最后一个非空行。只输出新增续写部分。`,
-    ].join("\n");
+        promptTemplate,
+        scriptMode,
+        modulePlan,
+        userSuggestions,
+        resumeStageNumber,
+        streamOptions.endStageNumber,
+    );
 
-    yield* callLLMStream(prompt, config, 0.2, SCRIPT_CONTINUE_SYSTEM_PROMPT);
+    yield* callLLMStream(prompt, config, 0.2, SCRIPT_CONTINUE_SYSTEM_PROMPT, streamOptions);
 }
 
 export async function repairTrainingScriptStructure(
@@ -1958,7 +2035,8 @@ export async function repairTrainingScriptStructure(
     config: ApiConfig & { model: string },
     promptTemplate?: string,
     scriptMode: ScriptMode = "general",
-    modulePlan?: TrainingScriptPlan
+    modulePlan?: TrainingScriptPlan,
+    signal?: AbortSignal,
 ): Promise<string> {
     if (!modulePlan) {
         return stripMarkdownFence(brokenScript);
@@ -1968,9 +2046,11 @@ export async function repairTrainingScriptStructure(
     }
 
     const endpoint = normalizeChatCompletionEndpoint(config.baseUrl);
+    const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(90_000)]) : AbortSignal.timeout(90_000);
     const response = await fetch(endpoint, {
         method: "POST",
         headers: buildLlmHeaders(config.apiKey),
+        signal: requestSignal,
         body: JSON.stringify(buildTemperatureCompatiblePayload({
             model: config.model,
             maxTokens: 3200,
@@ -2052,7 +2132,8 @@ export async function* continueTrainingRubricStream(
     teacherDocContent: string,
     partialContent: string,
     config: ApiConfig & { model: string },
-    promptTemplate?: string
+    promptTemplate?: string,
+    streamOptions: TrainingStreamOptions = {},
 ): AsyncGenerator<string, void, unknown> {
     const basePrompt = buildRubricGeneratorPrompt(teacherDocContent, promptTemplate);
     const prompt = [
@@ -2069,5 +2150,5 @@ export async function* continueTrainingRubricStream(
         "请从断点处继续输出后续内容，直到文档完整结束。只输出新增续写部分。",
     ].join("\n");
 
-    yield* callLLMStream(prompt, config, 0.2, RUBRIC_CONTINUE_SYSTEM_PROMPT);
+    yield* callLLMStream(prompt, config, 0.2, RUBRIC_CONTINUE_SYSTEM_PROMPT, streamOptions);
 }

@@ -1,0 +1,170 @@
+[
+  {
+    "group": {
+      "branchCode": "T1_B1",
+      "finalTraining": 1,
+      "branchName": "基本指令案例",
+      "cases": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    "taskName": "PLC能力训练-训练1-基本指令案例",
+    "cases": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "stageCount": 30,
+    "file": "plc_case_pipeline/03_composed/t1_b1_cases_01_06.md"
+  },
+  {
+    "group": {
+      "branchCode": "T1_B2",
+      "finalTraining": 1,
+      "branchName": "状态表法程序设计",
+      "cases": [
+        7,
+        8
+      ]
+    },
+    "taskName": "PLC能力训练-训练1-状态表法程序设计",
+    "cases": [
+      7,
+      8
+    ],
+    "stageCount": 10,
+    "file": "plc_case_pipeline/03_composed/t1_b2_cases_07_08.md"
+  },
+  {
+    "group": {
+      "branchCode": "T1_B3",
+      "finalTraining": 1,
+      "branchName": "定时器指令案例",
+      "cases": [
+        9,
+        10,
+        11,
+        12,
+        13
+      ]
+    },
+    "taskName": "PLC能力训练-训练1-定时器指令案例",
+    "cases": [
+      9,
+      10,
+      11,
+      12,
+      13
+    ],
+    "stageCount": 25,
+    "file": "plc_case_pipeline/03_composed/t1_b3_cases_09_13.md"
+  },
+  {
+    "group": {
+      "branchCode": "T2_B1",
+      "finalTraining": 2,
+      "branchName": "指令综合应用",
+      "cases": [
+        14,
+        15,
+        16,
+        17,
+        18
+      ]
+    },
+    "taskName": "PLC能力训练-训练2-指令综合应用",
+    "cases": [
+      14,
+      15,
+      16,
+      17,
+      18
+    ],
+    "stageCount": 25,
+    "file": "plc_case_pipeline/03_composed/t2_b1_cases_14_18.md"
+  },
+  {
+    "group": {
+      "branchCode": "T2_B2",
+      "finalTraining": 2,
+      "branchName": "结构化程序设计",
+      "cases": [
+        19,
+        20,
+        21,
+        22,
+        23
+      ]
+    },
+    "taskName": "PLC能力训练-训练2-结构化程序设计",
+    "cases": [
+      19,
+      20,
+      21,
+      22,
+      23
+    ],
+    "stageCount": 25,
+    "file": "plc_case_pipeline/03_composed/t2_b2_cases_19_23.md"
+  },
+  {
+    "group": {
+      "branchCode": "T3_B1",
+      "finalTraining": 3,
+      "branchName": "顺序控制系统设计",
+      "cases": [
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ]
+    },
+    "taskName": "PLC能力训练-训练3-顺序控制系统设计",
+    "cases": [
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "stageCount": 40,
+    "file": "plc_case_pipeline/03_composed/t3_b1_cases_24_31.md"
+  },
+  {
+    "group": {
+      "branchCode": "T3_B2",
+      "finalTraining": 3,
+      "branchName": "工艺对象设计",
+      "cases": [
+        32,
+        33,
+        34,
+        35
+      ]
+    },
+    "taskName": "PLC能力训练-训练3-工艺对象设计",
+    "cases": [
+      32,
+      33,
+      34,
+      35
+    ],
+    "stageCount": 20,
+    "file": "plc_case_pipeline/03_composed/t3_b2_cases_32_35.md"
+  }
+]

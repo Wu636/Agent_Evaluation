@@ -1,4 +1,5 @@
 import { execFile } from "child_process";
+import { existsSync } from "fs";
 import { mkdtemp, rm, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
@@ -116,7 +117,11 @@ interface ScriptFlow {
   flowCondition?: string;
 }
 
-const SKILL_DIR = path.resolve(process.cwd(), "..", ".agents", "skills", "training-split-injector");
+const SKILL_DIR_CANDIDATES = [
+  path.resolve(process.cwd(), "..", ".agents", "skills", "training-split-injector"),
+  path.resolve(process.cwd(), ".agents", "skills", "training-split-injector"),
+];
+const SKILL_DIR = SKILL_DIR_CANDIDATES.find((candidate) => existsSync(candidate)) || SKILL_DIR_CANDIDATES[0];
 const POLYMAS_BASE = "https://cloudapi.polymas.com/teacher-course/abilityTrain";
 const PYTHON_DEPENDENCY_CHECK = "import requests, dotenv";
 const PYTHON_DEPENDENCIES = "requests python-dotenv";
@@ -493,9 +498,8 @@ async function buildMergePlan(body: MergeRequestBody, credentials: PolymasCreden
     });
     connections.push({ from: orderedSources[orderedSources.length - 1].title, to: "END", type: "end", label: "末尾训练结束" });
   } else {
-    connections.push({ from: "START", to: orderedSources[0].title, type: "start", label: "先进入入口训练" });
-    connections.push({ from: orderedSources[0].title, to: "分支选择", type: "branch", label: "入口训练结束后选择分支" });
-    orderedSources.slice(1).forEach((source) => {
+    connections.push({ from: "START", to: "分支选择", type: "start", label: "先进入分支选择卡" });
+    orderedSources.forEach((source) => {
       connections.push({ from: "分支选择", to: source.title, type: "branch", label: `选择 ${source.title}` });
       connections.push({ from: source.title, to: "END", type: "end", label: "分支训练结束" });
     });

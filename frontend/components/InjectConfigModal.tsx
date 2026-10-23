@@ -12,7 +12,7 @@ import {
     loadLLMSettingsFromStorage,
 } from "@/lib/llm/settings";
 import { diagnoseTrainingScript } from "@/lib/training-generator/script-tools";
-import { ParsedTaskConfig, parseRubricMarkdown, parseTaskConfig, parseTrainingScript, serializeTrainingScriptMarkdown } from "@/lib/training-injector/parser";
+import { ParsedTaskConfig, parseRubricMarkdown, parseTaskConfig, parseTrainingScript, parseTrainingScriptFlowConfig, serializeTrainingScriptMarkdown } from "@/lib/training-injector/parser";
 import { TrainingInjectionOptions } from "@/components/TrainingInjectionOptions";
 
 interface InjectConfigModalProps {
@@ -200,6 +200,7 @@ export function InjectConfigModal({
     const [customCombinedText, setCustomCombinedText] = useState("");
     const [customScriptText, setCustomScriptText] = useState("");
     const [customRubricText, setCustomRubricText] = useState("");
+    const generatedDocsRef = useRef({ scriptMarkdown, rubricMarkdown });
     const [parsedJsonExpanded, setParsedJsonExpanded] = useState(false);
     const [structuredEditorExpanded, setStructuredEditorExpanded] = useState(false);
     const [expandedStructuredStages, setExpandedStructuredStages] = useState<Record<number, boolean>>({});
@@ -230,8 +231,12 @@ export function InjectConfigModal({
     const effectiveRubricMd = customDocMode === "combined"
         ? (customCombinedText.trim() ? customCombinedText : rubricMarkdown)
         : (customRubricText.trim() ? customRubricText : rubricMarkdown);
+    const scriptSourceLabel = customDocMode === "combined"
+        ? (customCombinedText.trim() ? "自定义合并文档" : "当前生成的剧本")
+        : (customScriptText.trim() ? "自定义剧本文档" : "当前生成的剧本");
     const reviewTaskConfig = effectiveScriptMd ? parseTaskConfig(effectiveScriptMd) : null;
     const reviewParsedSteps = effectiveScriptMd ? parseTrainingScript(effectiveScriptMd) : [];
+    const reviewScriptFlow = effectiveScriptMd ? parseTrainingScriptFlowConfig(effectiveScriptMd) : null;
     const reviewScriptDiagnostics = effectiveScriptMd ? diagnoseTrainingScript(effectiveScriptMd) : null;
     const reviewRubricItems = effectiveRubricMd ? parseRubricMarkdown(effectiveRubricMd) : [];
     const reviewParsedJson = reviewParsedSteps.length > 0
@@ -282,6 +287,18 @@ export function InjectConfigModal({
         setInjectScript(!!scriptMarkdown);
         setInjectRubric(!!rubricMarkdown);
     }, [scriptMarkdown, rubricMarkdown, isOpen]);
+
+    // 新生成结果到来时，旧草稿不得继续覆盖用户正在查看的新剧本。
+    useEffect(() => {
+        const previous = generatedDocsRef.current;
+        if (previous.scriptMarkdown === scriptMarkdown && previous.rubricMarkdown === rubricMarkdown) return;
+        generatedDocsRef.current = { scriptMarkdown, rubricMarkdown };
+        setCustomCombinedText("");
+        setCustomScriptText("");
+        setCustomRubricText("");
+        setCustomDocMode("combined");
+        setCustomDocExpanded(false);
+    }, [scriptMarkdown, rubricMarkdown]);
 
     // 没有本系统生成结果时，直接展开上传区，并默认按剧本/评分标准分开导入。
     useEffect(() => {
@@ -1103,6 +1120,10 @@ export function InjectConfigModal({
             setError("请至少选择一项注入内容");
             return;
         }
+        if (injectScript && reviewScriptFlow?.flowType === "graph" && injectMode === "append") {
+            setError("非线性剧本需选择“全部清除后重建”，才能按文档创建分支连线。");
+            return;
+        }
 
         // 自定义文档验证
         if (hasCustomDoc) {
@@ -1721,12 +1742,23 @@ export function InjectConfigModal({
                                     injectScript={injectScript}
                                     injectRubric={injectRubric}
                                     injectMode={injectMode}
+                                    appendDisabledReason={injectScript && reviewScriptFlow?.flowType === "graph"
+                                        ? "非线性分支需要完整重建；追加模式会破坏分支关系。"
+                                        : undefined}
                                     hasScript={Boolean(effectiveScriptMd)}
                                     hasRubric={Boolean(effectiveRubricMd)}
                                     onInjectScriptChange={setInjectScript}
                                     onInjectRubricChange={setInjectRubric}
                                     onInjectModeChange={setInjectMode}
                                 />
+                                {injectScript && effectiveScriptMd && (
+                                    <p className="text-xs text-slate-600">
+                                        本次实际注入：{scriptSourceLabel}，{reviewParsedSteps.length} 个阶段，
+                                        {reviewScriptFlow?.flowType === "graph"
+                                            ? `非线性分支 ${reviewScriptFlow.edges.length} 条连线`
+                                            : "线性流程"}。
+                                    </p>
+                                )}
 
                                 <div className="pt-3 border-t border-slate-100 space-y-2">
                                     <label className="text-xs font-medium text-slate-700 block">课程封面图风格（可选）</label>

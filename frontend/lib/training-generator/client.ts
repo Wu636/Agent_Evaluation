@@ -6,6 +6,8 @@ import { ScriptMode, TrainingFlowPlanningPreference, TrainingPlanRequestOptions,
 import { loadLLMSettingsFromStorage } from "@/lib/llm/settings";
 
 export interface TrainingGenerateParams {
+    /** 正常生成，或从 priorScript 定位缺口后只续写缺失部分。 */
+    requestMode?: "generate" | "continue_script";
     /** 文件模式：传入 File 对象（服务端解析内容） */
     file?: File;
     /** 文本粘贴模式：直接传入文本内容 */
@@ -15,6 +17,10 @@ export interface TrainingGenerateParams {
     generateRubric: boolean;
     scriptMode?: ScriptMode;
     modulePlan?: TrainingScriptPlan;
+    userSuggestions?: string;
+    /** 手动重新生成时作为首轮参考；自动续写只截取断点附近内容。 */
+    priorScript?: string;
+    priorRubric?: string;
     /** 自定义剧本生成 Prompt（含 {teacherDoc} 占位符）*/
     scriptPromptTemplate?: string;
     /** 自定义评分标准 Prompt（含 {teacherDoc} 占位符）*/
@@ -29,7 +35,8 @@ export interface TrainingGenerateParams {
  * - 文本模式：用 JSON 发送文本内容
  */
 export async function streamTrainingGenerate(params: TrainingGenerateParams): Promise<void> {
-    const { file, teacherDocContent, teacherDocName, generateScript, generateRubric, scriptMode = "general", modulePlan,
+    const { requestMode = "generate", file, teacherDocContent, teacherDocName, generateScript, generateRubric, scriptMode = "general", modulePlan,
+            userSuggestions, priorScript, priorRubric,
             scriptPromptTemplate, rubricPromptTemplate, onEvent, signal } = params;
     const settings = loadLLMSettingsFromStorage("trainingGenerate");
 
@@ -64,10 +71,14 @@ export async function streamTrainingGenerate(params: TrainingGenerateParams): Pr
                 const formData = new FormData();
                 formData.append("file", file);
                 formData.append("teacherDocName", teacherDocName);
+                formData.append("requestMode", requestMode);
                 formData.append("generateScript", String(generateScript));
                 formData.append("generateRubric", String(generateRubric));
                 formData.append("scriptMode", scriptMode);
                 if (modulePlan) formData.append("modulePlan", JSON.stringify(modulePlan));
+                if (userSuggestions) formData.append("userSuggestions", userSuggestions);
+                if (priorScript) formData.append("priorScript", priorScript);
+                if (priorRubric) formData.append("priorRubric", priorRubric);
                 formData.append("apiKey", settings.apiKey || "");
                 formData.append("apiUrl", settings.apiUrl || "");
                 formData.append("model", settings.model || "");
@@ -86,10 +97,14 @@ export async function streamTrainingGenerate(params: TrainingGenerateParams): Pr
                     body: JSON.stringify({
                         teacherDocContent: teacherDocContent || "",
                         teacherDocName,
+                        requestMode,
                         generateScript,
                         generateRubric,
                         scriptMode,
                         modulePlan,
+                        userSuggestions,
+                        priorScript,
+                        priorRubric,
                         apiKey: settings.apiKey || "",
                         apiUrl: settings.apiUrl || "",
                         model: settings.model || "",

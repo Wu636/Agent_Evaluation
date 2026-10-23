@@ -191,6 +191,8 @@ export const MODEL_NAME_MAPPING: Record<string, string> = {
   "claude-opus-4": "Claude Opus 4",
   "claude-opus-4-6": "claude-opus-4-6",
   "Claude Opus 4.6": "claude-opus-4-6",
+  "claude-opus-4-8": "claude-opus-4-8",
+  "Claude Opus 4.8": "claude-opus-4-8",
   "grok-4": "grok-4",
 };
 
@@ -215,6 +217,7 @@ export const AVAILABLE_MODELS = [
   { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", description: "Latest Haiku" },
   { id: "claude-opus-4", name: "Claude Opus 4", description: "Most capable Claude" },
   { id: "claude-opus-4-6", name: "Claude Opus 4.6", description: "Latest Opus" },
+  { id: "claude-opus-4-8", name: "Claude Opus 4.8", description: "Latest Opus" },
   { id: "grok-4", name: "Grok-4", description: "xAI's model" },
 ];
 
@@ -229,6 +232,7 @@ export function normalizeModelId(model: string | undefined | null): string {
   // 兼容历史/别名写法，统一存储为 canonical id
   if (raw === "Claude Sonnet 4.6") return "claude-sonnet-4-6";
   if (raw === "Claude Opus 4.6") return "claude-opus-4-6";
+  if (raw === "Claude Opus 4.8") return "claude-opus-4-8";
   return raw;
 }
 

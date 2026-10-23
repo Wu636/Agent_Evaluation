@@ -12,19 +12,25 @@ export const TRAINING_FLOW_END_NODE_ID = "__END__";
 
 /** 生成请求 */
 export interface TrainingGenerateRequest {
+    requestMode?: "generate" | "continue_script"; // 正常生成或从已有剧本手动断点续写
     teacherDocContent: string;   // 教师文档内容
     teacherDocName: string;      // 教师文档名称
     generateScript: boolean;     // 是否生成训练剧本配置
     generateRubric: boolean;     // 是否生成评分标准
     scriptMode?: ScriptMode;     // 剧本模式
     modulePlan?: TrainingScriptPlan; // 模块规划
+    userSuggestions?: string;    // 用户对剧本生成的补充建议
+    priorScript?: string;        // 手动重新生成时供首轮生成参考的旧剧本
+    priorRubric?: string;        // 手动重新生成评分标准时供首轮生成参考的旧标准
 }
 
 /** SSE 事件类型 */
 export type TrainingSSEEvent =
     | { type: 'start'; phase: 'script' | 'rubric'; message: string }
+    | { type: 'progress'; phase: 'script' | 'rubric'; message: string }
     | { type: 'script_mode_detected'; requestedMode: ScriptMode; resolvedMode: ConcreteScriptMode; label: string }
     | { type: 'chunk'; phase: 'script' | 'rubric'; content: string }
+    | { type: 'phase_snapshot'; phase: 'script' | 'rubric'; fullContent: string }
     | { type: 'phase_complete'; phase: 'script' | 'rubric'; fullContent: string }
     | { type: 'complete'; script?: string; rubric?: string; taskName: string; resolvedScriptMode?: ConcreteScriptMode }
     | { type: 'error'; message: string };
@@ -33,6 +39,8 @@ export type TrainingSSEEvent =
 
 export interface ScriptModulePlan {
     id: string;
+    /** 可选：模板重构时映射回源训练卡片的 stepId。 */
+    sourceStepIds?: string[];
     title: string;
     moduleType: ScriptModuleType;
     objective: string;

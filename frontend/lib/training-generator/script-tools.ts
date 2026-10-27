@@ -1,4 +1,4 @@
-import { isScriptFieldLine, matchStageHeading, normalizeTrainingScriptSource, parseTaskConfig, parseTrainingScript, parseTrainingScriptFlowConfig, repairTrainingScriptForParsing, serializeTrainingStage } from "@/lib/training-injector/parser";
+import { collectTrainingScriptStageRanges, isScriptFieldLine, matchStageHeading, normalizeTrainingScriptSource, parseTaskConfig, parseTrainingScript, parseTrainingScriptFlowConfig, repairTrainingScriptForParsing, serializeTrainingStage } from "@/lib/training-injector/parser";
 import { ScriptFlowEdge, TRAINING_FLOW_END_NODE_ID, TrainingScriptPlan } from "./types";
 import { detectMultiRoleTextSignal } from "./plan-validation";
 
@@ -57,21 +57,6 @@ function hasOddFenceCount(markdown: string): boolean {
     return fenceCount % 2 === 1;
 }
 
-function parseStageBoundaryComment(line: string): {
-    type: "start" | "end";
-    stageNumber: number | null;
-} | null {
-    const match = String(line || "").trim().match(
-        /^<!--\s*STAGE_(START|END)\s*:?\s*([0-9一二三四五六七八九十]*)\s*-->\s*$/i
-    );
-    if (!match) return null;
-
-    return {
-        type: match[1].toLowerCase() === "start" ? "start" : "end",
-        stageNumber: match[2] ? extractStageNumberFromHeading(`### 阶段${match[2]}: 临时标题`) : null,
-    };
-}
-
 export function hasTrainingScriptCompleteMarker(markdown: string): boolean {
     const raw = String(markdown || "");
     const normalized = normalizeTrainingScriptSource(raw);
@@ -108,32 +93,9 @@ export function extractStageNumberFromHeading(heading: string): number | null {
 
 export function extractScriptStructure(markdown: string): ScriptStructure {
     const lines = repairTrainingScriptForParsing(markdown).split("\n");
-    const stageStarts: number[] = [];
-    const topLevelHeadings: number[] = [];
-    const explicitStageStarts = lines
-        .map((line, index) => ({ boundary: parseStageBoundaryComment(line), index }))
-        .filter((entry) => entry.boundary?.type === "start");
-    let inCodeBlock = false;
+    const stageRanges = collectTrainingScriptStageRanges(lines);
 
-    if (explicitStageStarts.length > 0) {
-        stageStarts.push(...explicitStageStarts.map((entry) => entry.index));
-    } else {
-        lines.forEach((line, index) => {
-            const trimmed = line.trim();
-            if (trimmed.startsWith("```")) {
-                inCodeBlock = !inCodeBlock;
-                return;
-            }
-            if (inCodeBlock) return;
-            if (matchStageHeading(trimmed)) {
-                stageStarts.push(index);
-            } else if (/^##+\s+/.test(trimmed) && !isScriptFieldLine(trimmed)) {
-                topLevelHeadings.push(index);
-            }
-        });
-    }
-
-    if (stageStarts.length === 0) {
+    if (stageRanges.length === 0) {
         return {
             prefix: markdown.trim(),
             stages: [],
@@ -142,31 +104,13 @@ export function extractScriptStructure(markdown: string): ScriptStructure {
     }
 
     const stages: ScriptStageSection[] = [];
-    const stageEnds: number[] = [];
-    const firstStageStart = stageStarts[0];
+    const firstStageStart = stageRanges[0].start;
     const prefix = joinLines(lines.slice(0, firstStageStart));
 
-    stageStarts.forEach((start, index) => {
-        const nextStageStart = stageStarts[index + 1];
-        const startBoundary = parseStageBoundaryComment(lines[start]);
-        const matchingEnd = startBoundary
-            ? lines.findIndex((line, lineIndex) => {
-                if (lineIndex <= start || lineIndex >= (nextStageStart ?? lines.length)) return false;
-                const boundary = parseStageBoundaryComment(line);
-                if (boundary?.type !== "end") return false;
-                return boundary.stageNumber === null ||
-                    startBoundary.stageNumber === null ||
-                    boundary.stageNumber === startBoundary.stageNumber;
-            })
-            : -1;
-        const nextTopLevel = startBoundary
-            ? undefined
-            : topLevelHeadings.find((headingIndex) => headingIndex > start);
-        const end = matchingEnd >= 0 ? matchingEnd + 1 : nextStageStart ?? nextTopLevel ?? lines.length;
+    stageRanges.forEach(({ start, end }, index) => {
         const stageLines = lines.slice(start, end);
         const heading = stageLines.find((line) => matchStageHeading(line.trim()))?.trim() || stageLines[0]?.trim() || `### 阶段${index + 1}`;
         const stepName = matchStageHeading(heading)?.stepName || heading.split(/[:：]/).slice(1).join(":").trim() || `阶段${index + 1}`;
-        stageEnds.push(end);
         stages.push({
             index,
             heading,
@@ -175,7 +119,7 @@ export function extractScriptStructure(markdown: string): ScriptStructure {
         });
     });
 
-    const suffixStart = stageEnds[stageEnds.length - 1] ?? lines.length;
+    const suffixStart = stageRanges[stageRanges.length - 1].end;
     const suffix = joinLines(lines.slice(suffixStart));
 
     return { prefix, stages, suffix };

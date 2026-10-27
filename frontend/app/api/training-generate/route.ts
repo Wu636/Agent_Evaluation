@@ -31,7 +31,7 @@ import { guardTrainingStream, TrainingStreamTimeoutError } from "@/lib/training-
 import { findIncompleteTrainingScriptStageIndex } from "@/lib/training-generator/script-completion";
 import { parseRubricMarkdown, parseTaskConfig, parseTrainingScript, repairTrainingScriptForParsing } from "@/lib/training-injector/parser";
 import { convertDocxToText } from "@/lib/converters/docx-converter";
-import { ScriptMode, TrainingScriptPlan } from "@/lib/training-generator/types";
+import { ScriptMode, TrainingGenerateRequestMode, TrainingScriptPlan } from "@/lib/training-generator/types";
 import WordExtractor from 'word-extractor';
 
 // Vercel 函数配置
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
                 let userSuggestions: string | undefined;
                 let priorScript: string | undefined;
                 let priorRubric: string | undefined;
-                let requestMode: "generate" | "continue_script" = "generate";
+                let requestMode: TrainingGenerateRequestMode = "generate";
 
                 const contentType = request.headers.get("content-type") || "";
 
@@ -128,7 +128,8 @@ export async function POST(request: NextRequest) {
                     const formData = await request.formData();
                     const file = formData.get("file") as File | null;
                     teacherDocName = formData.get("teacherDocName") as string || "文档";
-                    requestMode = formData.get("requestMode") === "continue_script" ? "continue_script" : "generate";
+                    const mode = formData.get("requestMode");
+                    requestMode = mode === "continue_script" || mode === "resume_script" ? mode : "generate";
                     generateScript = formData.get("generateScript") === "true";
                     generateRubric = formData.get("generateRubric") === "true";
                     scriptMode = (formData.get("scriptMode") as ScriptMode) || "general";
@@ -171,7 +172,7 @@ export async function POST(request: NextRequest) {
                     // JSON 模式（文本粘贴）
                     const payload = await request.json();
                     ({ teacherDocContent, teacherDocName, generateScript, generateRubric, apiKey, apiUrl, model, scriptPromptTemplate, rubricPromptTemplate, scriptMode = "general", modulePlan, userSuggestions, priorScript, priorRubric } = payload);
-                    requestMode = payload.requestMode === "continue_script" ? "continue_script" : "generate";
+                    requestMode = payload.requestMode === "continue_script" || payload.requestMode === "resume_script" ? payload.requestMode : "generate";
                 }
 
                 if (!teacherDocContent || !teacherDocContent.trim()) {
@@ -731,6 +732,11 @@ export async function POST(request: NextRequest) {
                 let fullRubric = "";
                 let resolvedScriptMode: ScriptMode = scriptMode || "general";
                 const teacherDocForScript = buildTeacherDocWithPlan(teacherDocContent, modulePlan);
+                if (requestMode === "resume_script" && (!generateScript || !priorScript?.trim())) {
+                    send({ type: 'error', message: '恢复自动续写需要已有剧本内容' });
+                    close();
+                    return;
+                }
 
                 // 手动断点续写只处理当前已有剧本的缺口，不重新生成已完成阶段。
                 if (requestMode === "continue_script") {
@@ -897,22 +903,27 @@ export async function POST(request: NextRequest) {
                         }
                     }
 
-                    fullScript = await generatePhaseWithRetry(
-                        'script',
-                        resolvedScriptMode === "general"
-                            ? '开始生成剧本配置...'
-                            : `开始生成${getScriptModeLabel(resolvedScriptMode)}剧本配置...`,
-                        (attempt, signal) => generateTrainingScriptStream(
-                            teacherDocContent,
-                            apiConfig,
-                            scriptPromptTemplate || undefined,
-                            resolvedScriptMode || "general",
-                            modulePlan,
-                            userSuggestions,
-                            priorScript,
-                            { signal, maxTokens: attempt > 1 ? 8000 : undefined },
-                        )
-                    );
+                    if (requestMode === "resume_script") {
+                        fullScript = normalizeGeneratedScript(priorScript!);
+                        send({ type: 'phase_snapshot', phase: 'script', fullContent: fullScript });
+                    } else {
+                        fullScript = await generatePhaseWithRetry(
+                            'script',
+                            resolvedScriptMode === "general"
+                                ? '开始生成剧本配置...'
+                                : `开始生成${getScriptModeLabel(resolvedScriptMode)}剧本配置...`,
+                            (attempt, signal) => generateTrainingScriptStream(
+                                teacherDocContent,
+                                apiConfig,
+                                scriptPromptTemplate || undefined,
+                                resolvedScriptMode || "general",
+                                modulePlan,
+                                userSuggestions,
+                                priorScript,
+                                { signal, maxTokens: attempt > 1 ? 8000 : undefined },
+                            )
+                        );
+                    }
                     fullScript = normalizeGeneratedScript(fullScript);
 
                     for (let continuationAttempt = 1; continuationAttempt <= maxContinuationAttempts; continuationAttempt++) {
@@ -961,6 +972,11 @@ export async function POST(request: NextRequest) {
 
                         const scriptBeforeContinue = fullScript;
                         const continuationWindow = getScriptContinuationWindow(fullScript);
+                        if (stalledContinuationAttempts > 0 && continuationWindow.endStageNumber) {
+                            // Repeating a truncated stage with the same multi-stage budget
+                            // recreates the same breakpoint. Finish this stage on its own.
+                            continuationWindow.endStageNumber = continuationWindow.resumeStageNumber;
+                        }
                         const rangeLabel = continuationWindow.endStageNumber
                             ? `阶段${continuationWindow.resumeStageNumber}${continuationWindow.endStageNumber > continuationWindow.resumeStageNumber ? `–${continuationWindow.endStageNumber}` : ''}`
                             : `阶段${continuationWindow.resumeStageNumber}及文档尾部`;
@@ -982,6 +998,7 @@ export async function POST(request: NextRequest) {
                             nearbyStageChars: continuationWindow.context.length,
                         });
 
+                        let continuationError: unknown;
                         try {
                             for await (const chunk of guardTrainingStream((signal) => continueTrainingScriptStream(
                                 teacherDocContent,
@@ -1019,14 +1036,9 @@ export async function POST(request: NextRequest) {
                             );
                             fullScript = merged;
                             publishSnapshot(fullScript);
-                            const advanced = getScriptContinuationWindow(fullScript).resumeStageNumber > continuationWindow.resumeStageNumber;
-                            stalledContinuationAttempts = advanced || fullScript.length > scriptBeforeContinue.length + 200
-                                ? 0 : stalledContinuationAttempts + 1;
-                            if (stalledContinuationAttempts >= 3) {
-                                throw new Error(`模型连续三轮未补全${rangeLabel}，已保留已有剧本。请检查模型服务后再次生成。`);
-                            }
                         } catch (continueErr) {
                             if (generationAbort.signal.aborted) throw continueErr;
+                            continuationError = continueErr;
                             console.warn("[training-generate] 剧本断点续写失败，准备继续续写重试:", continueErr);
                             if (continued.trim()) {
                                 try {
@@ -1044,13 +1056,19 @@ export async function POST(request: NextRequest) {
                                 }
                             }
                             publishSnapshot(fullScript);
-                            if (fullScript === scriptBeforeContinue ||
-                                (getScriptContinuationWindow(fullScript).resumeStageNumber <= continuationWindow.resumeStageNumber && fullScript.length <= scriptBeforeContinue.length + 200)) {
-                                stalledContinuationAttempts += 1;
-                            }
-                            const mergeFailure = continueErr instanceof Error && /^续写结果/.test(continueErr.message);
-                            if (stalledContinuationAttempts >= 3 || (!isRetryableStreamError(continueErr) && !mergeFailure)) {
-                                throw continueErr;
+                        }
+
+                        const advanced = validateScriptStructure(fullScript).ok ||
+                            getScriptContinuationWindow(fullScript).resumeStageNumber > continuationWindow.resumeStageNumber;
+                        stalledContinuationAttempts = advanced ? 0 : stalledContinuationAttempts + 1;
+                        if (stalledContinuationAttempts >= 3) {
+                            throw new Error(`模型连续三轮未补全${rangeLabel}，已保留已有剧本。可点击“断点续写”继续。`);
+                        }
+
+                        if (continuationError) {
+                            const mergeFailure = continuationError instanceof Error && /^续写结果/.test(continuationError.message);
+                            if (!isRetryableStreamError(continuationError) && !mergeFailure) {
+                                throw continuationError;
                             }
                             if (continuationAttempt < maxContinuationAttempts && Date.now() <= scriptContinueDeadline) {
                                 send({
@@ -1060,7 +1078,7 @@ export async function POST(request: NextRequest) {
                                 });
                                 continue;
                             }
-                            throw continueErr;
+                            throw continuationError;
                         }
                     }
 
@@ -1075,6 +1093,9 @@ export async function POST(request: NextRequest) {
 
                 // 2. 生成评分标准
                 if (generateRubric) {
+                    if (requestMode === "resume_script") {
+                        send({ type: 'phase_snapshot', phase: 'rubric', fullContent: '' });
+                    }
                     let rubricContinueDeadline: number | null = null;
                     fullRubric = await generatePhaseWithRetry(
                         'rubric',

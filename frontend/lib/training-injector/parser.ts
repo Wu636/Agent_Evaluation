@@ -394,6 +394,8 @@ export function normalizeTrainingScriptSource(markdown: string): string {
 export function matchStageHeading(line: string): StageHeadingMatch | null {
     const stripped = String(line || "").trim();
     if (!stripped) return null;
+    // Routing rows describe connections; they are not new stage definitions.
+    if (/^(?:[-*+•]\s*)?(?:#{2,6}\s*)?(?:阶段\s*[0-9一二三四五六七八九十]+|第\s*[0-9一二三四五六七八九十]+\s*阶段)\s*(?:-+>|=>|→|⇒)/.test(stripped)) return null;
 
     const patterns = [
         /^(?:[-*+•]\s*)?#{2,6}\s*阶段\s*([0-9一二三四五六七八九十]+)\s*[：:\-—–、.．）)]\s*(.+)$/i,
@@ -469,31 +471,9 @@ export function repairTrainingScriptForParsing(markdown: string): string {
     return repairedLines.join("\n").trim();
 }
 
-function collectStageBlockRanges(lines: string[]): Array<{ start: number; end: number }> {
-    const explicitStageStarts = lines
-        .map((line, index) => ({ boundary: parseStageBoundaryComment(line), index }))
-        .filter((entry) => entry.boundary?.type === "start");
-
-    if (explicitStageStarts.length > 0) {
-        return explicitStageStarts.map((entry, index) => {
-            const nextStageStart = explicitStageStarts[index + 1]?.index ?? lines.length;
-            const matchingEndIndex = lines.findIndex((line, lineIndex) => {
-                if (lineIndex <= entry.index || lineIndex >= nextStageStart) return false;
-                const boundary = parseStageBoundaryComment(line);
-                if (boundary?.type !== "end") return false;
-                return boundary.stageNumber === null ||
-                    entry.boundary?.stageNumber === null ||
-                    boundary.stageNumber === entry.boundary?.stageNumber;
-            });
-
-            return {
-                start: entry.index,
-                end: matchingEndIndex >= 0 ? matchingEndIndex + 1 : nextStageStart,
-            };
-        });
-    }
-
-    const stageStarts: number[] = [];
+export function collectTrainingScriptStageRanges(lines: string[]): Array<{ start: number; end: number }> {
+    const starts: Array<{ start: number; stageNumber: number | null; hasHeading: boolean }> = [];
+    const sections: number[] = [];
     let inCodeBlock = false;
 
     lines.forEach((line, index) => {
@@ -504,16 +484,37 @@ function collectStageBlockRanges(lines: string[]): Array<{ start: number; end: n
         }
         if (inCodeBlock) return;
 
-        if (matchStageHeading(trimmed)) {
-            stageStarts.push(index);
+        const boundary = parseStageBoundaryComment(trimmed);
+        const heading = matchStageHeading(trimmed);
+        if (boundary?.type === "start") {
+            starts.push({ start: index, stageNumber: boundary.stageNumber, hasHeading: false });
+        } else if (heading) {
+            const pending = starts.at(-1);
+            if (pending && !pending.hasHeading) {
+                pending.stageNumber = heading.stageNumber;
+                pending.hasHeading = true;
+            } else {
+                // A continuation may introduce boundaries into a legacy document.
+                // Keep both marked stages and headings without markers.
+                starts.push({ start: index, stageNumber: heading.stageNumber, hasHeading: true });
+            }
+        } else if (/^##+\s+/.test(trimmed) && !isScriptFieldLine(trimmed)) {
+            sections.push(index);
         }
     });
 
-    return stageStarts.map((start, index) => {
-        return {
-            start,
-            end: stageStarts[index + 1] ?? lines.length,
-        };
+    return starts.map((entry, index) => {
+        const nextStart = starts[index + 1]?.start ?? lines.length;
+        const matchingEnd = lines.findIndex((line, lineIndex) => {
+            if (lineIndex <= entry.start || lineIndex >= nextStart) return false;
+            const boundary = parseStageBoundaryComment(line);
+            return boundary?.type === "end" && (
+                boundary.stageNumber === null || entry.stageNumber === null ||
+                boundary.stageNumber === entry.stageNumber
+            );
+        });
+        const nextSection = sections.find((section) => section > entry.start && section < nextStart);
+        return { start: entry.start, end: matchingEnd >= 0 ? matchingEnd + 1 : nextSection ?? nextStart };
     });
 }
 
@@ -811,7 +812,7 @@ export function normalizeValue(raw: string): string {
 export function parseTrainingScript(markdown: string): ParsedStep[] {
     const normalized = repairTrainingScriptForParsing(markdown);
     const lines = normalized.split("\n");
-    const stageRanges = collectStageBlockRanges(lines);
+    const stageRanges = collectTrainingScriptStageRanges(lines);
 
     if (stageRanges.length > 0) {
         return stageRanges
@@ -1051,7 +1052,7 @@ function splitScriptDocumentStructure(markdown?: string): {
     }
 
     const lines = normalized.split("\n");
-    const stageRanges = collectStageBlockRanges(lines);
+    const stageRanges = collectTrainingScriptStageRanges(lines);
     if (stageRanges.length === 0) {
         return {
             prefix: normalized.trim(),

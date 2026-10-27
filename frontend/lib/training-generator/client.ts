@@ -2,12 +2,12 @@
  * 训练配置生成器 - 前端 SSE 客户端封装
  */
 
-import { ScriptMode, TrainingFlowPlanningPreference, TrainingPlanRequestOptions, TrainingSSEEvent, TrainingScriptPlan, TrainingScriptPlanResponse } from "./types";
+import { ScriptMode, TrainingGenerateRequestMode, TrainingFlowPlanningPreference, TrainingPlanRequestOptions, TrainingSSEEvent, TrainingScriptPlan, TrainingScriptPlanResponse } from "./types";
 import { loadLLMSettingsFromStorage } from "@/lib/llm/settings";
 
 export interface TrainingGenerateParams {
     /** 正常生成，或从 priorScript 定位缺口后只续写缺失部分。 */
-    requestMode?: "generate" | "continue_script";
+    requestMode?: TrainingGenerateRequestMode;
     /** 文件模式：传入 File 对象（服务端解析内容） */
     file?: File;
     /** 文本粘贴模式：直接传入文本内容 */
@@ -54,14 +54,32 @@ export async function streamTrainingGenerate(params: TrainingGenerateParams): Pr
 
     const maxAttempts = 2;
     let lastError: unknown;
+    let latestScript = "";
+    let attemptMode = requestMode;
+    let attemptPriorScript = priorScript;
+    let attemptScriptMode = scriptMode;
+    const handleEvent = (event: TrainingSSEEvent) => {
+        if (event.type === "script_mode_detected") attemptScriptMode = event.resolvedMode;
+        if (event.type === "chunk" && event.phase === "script") latestScript += event.content;
+        if ((event.type === "phase_snapshot" || event.type === "phase_complete") && event.phase === "script") {
+            latestScript = event.fullContent;
+        }
+        onEvent(event);
+    };
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
             if (attempt > 1) {
+                if (generateScript && latestScript.trim()) {
+                    attemptMode = requestMode === "continue_script" ? "continue_script" : "resume_script";
+                    attemptPriorScript = latestScript;
+                }
                 onEvent({
                     type: "start",
                     phase: generateScript ? "script" : "rubric",
-                    message: `检测到生成中断，系统自动重试中（${attempt}/${maxAttempts}）...`,
+                    message: attemptMode === "resume_script"
+                        ? `检测到生成中断，正在从最新剧本断点恢复（${attempt}/${maxAttempts}）...`
+                        : `检测到生成中断，系统自动重试中（${attempt}/${maxAttempts}）...`,
                 });
             }
 
@@ -71,13 +89,13 @@ export async function streamTrainingGenerate(params: TrainingGenerateParams): Pr
                 const formData = new FormData();
                 formData.append("file", file);
                 formData.append("teacherDocName", teacherDocName);
-                formData.append("requestMode", requestMode);
+                formData.append("requestMode", attemptMode);
                 formData.append("generateScript", String(generateScript));
                 formData.append("generateRubric", String(generateRubric));
-                formData.append("scriptMode", scriptMode);
+                formData.append("scriptMode", attemptScriptMode);
                 if (modulePlan) formData.append("modulePlan", JSON.stringify(modulePlan));
                 if (userSuggestions) formData.append("userSuggestions", userSuggestions);
-                if (priorScript) formData.append("priorScript", priorScript);
+                if (attemptPriorScript) formData.append("priorScript", attemptPriorScript);
                 if (priorRubric) formData.append("priorRubric", priorRubric);
                 formData.append("apiKey", settings.apiKey || "");
                 formData.append("apiUrl", settings.apiUrl || "");
@@ -97,13 +115,13 @@ export async function streamTrainingGenerate(params: TrainingGenerateParams): Pr
                     body: JSON.stringify({
                         teacherDocContent: teacherDocContent || "",
                         teacherDocName,
-                        requestMode,
+                        requestMode: attemptMode,
                         generateScript,
                         generateRubric,
-                        scriptMode,
+                        scriptMode: attemptScriptMode,
                         modulePlan,
                         userSuggestions,
-                        priorScript,
+                        priorScript: attemptPriorScript,
                         priorRubric,
                         apiKey: settings.apiKey || "",
                         apiUrl: settings.apiUrl || "",
@@ -146,7 +164,7 @@ export async function streamTrainingGenerate(params: TrainingGenerateParams): Pr
                             const data = JSON.parse(trimmed.slice(6)) as TrainingSSEEvent;
                             if (data.type === "complete") hasCompleteEvent = true;
                             if (data.type === "error") hasErrorEvent = true;
-                            onEvent(data);
+                            handleEvent(data);
                         } catch {
                             // 忽略无法解析的行
                         }
@@ -158,7 +176,7 @@ export async function streamTrainingGenerate(params: TrainingGenerateParams): Pr
                         const data = JSON.parse(buffer.trim().slice(6)) as TrainingSSEEvent;
                         if (data.type === "complete") hasCompleteEvent = true;
                         if (data.type === "error") hasErrorEvent = true;
-                        onEvent(data);
+                        handleEvent(data);
                     } catch {
                         // ignore
                     }
@@ -174,7 +192,7 @@ export async function streamTrainingGenerate(params: TrainingGenerateParams): Pr
             return;
         } catch (error) {
             lastError = error;
-            if (attempt < maxAttempts && shouldRetry(error)) {
+            if (!signal?.aborted && attempt < maxAttempts && shouldRetry(error)) {
                 continue;
             }
             throw error;

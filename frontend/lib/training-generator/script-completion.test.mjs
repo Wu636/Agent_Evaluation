@@ -43,6 +43,12 @@ test('无阶段边界的旧版输出缺少完整标志时，重生成末阶段',
     assert.equal(findIncompleteTrainingScriptStageIndex(stages, steps, 17, false), 16);
 });
 
+test('旧版剧本在阶段5截断、规划还有后续阶段时，先补齐阶段5', () => {
+    const { stages, steps } = fixture(5, '继续分析证据。');
+    for (const stage of stages) stage.markdown = stage.heading;
+    assert.equal(findIncompleteTrainingScriptStageIndex(stages, steps, 8, false), 4);
+});
+
 test('完整文档通过阶段完整性检查', () => {
     const { stages, steps } = fixture();
     assert.equal(findIncompleteTrainingScriptStageIndex(stages, steps, 17, true), -1);

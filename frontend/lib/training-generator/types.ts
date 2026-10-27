@@ -7,12 +7,13 @@ export type ConcreteScriptMode = Exclude<ScriptMode, "auto">;
 export type ScriptModuleType = ConcreteScriptMode;
 export type TrainingFlowType = "linear" | "graph";
 export type TrainingFlowPlanningPreference = "auto" | TrainingFlowType;
+export type TrainingGenerateRequestMode = "generate" | "continue_script" | "resume_script";
 
 export const TRAINING_FLOW_END_NODE_ID = "__END__";
 
 /** 生成请求 */
 export interface TrainingGenerateRequest {
-    requestMode?: "generate" | "continue_script"; // 正常生成或从已有剧本手动断点续写
+    requestMode?: TrainingGenerateRequestMode; // 正常生成、手动续写或断流后恢复自动续写
     teacherDocContent: string;   // 教师文档内容
     teacherDocName: string;      // 教师文档名称
     generateScript: boolean;     // 是否生成训练剧本配置

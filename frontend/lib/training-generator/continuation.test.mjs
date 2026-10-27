@@ -102,8 +102,9 @@ function modelResponse(parts, signal, delayMs = 0) {
     }), { headers: { 'content-type': 'text/event-stream' } });
 }
 
-async function runRoute(t, { incomplete = 8, hangOnce = false, omitTargetOnce = false, omitTargetAlways = false, failureMode } = {}) {
+async function runRoute(t, { incomplete = 8, hangOnce = false, omitTargetOnce = false, omitTargetAlways = false, legacyInitial = false, growingPartial = false, partialUntilSingle = false, resumeFromBreakpoint = false, generateRubric = false, failureMode } = {}) {
     const calls = [];
+    const initialScript = prefix() + Array.from({ length: incomplete - 1 }, (_, index) => stage(index + 1, { tag: '原有完整阶段' })).join('\n\n') + '\n\n' + stage(incomplete, { partial: true });
     let abortedRequests = 0;
     t.mock.method(console, 'log', () => {});
     t.mock.method(console, 'info', () => {});
@@ -117,9 +118,14 @@ async function runRoute(t, { incomplete = 8, hangOnce = false, omitTargetOnce = 
         if (failureMode === 'service') return Response.json({ code: 500, stackTrace: [
             JSON.stringify({ error: { type: 'aigateway_error', code: 'unknown_service_err', requestid: `fixture-failure-${calls.length}` } }), '503 Service Unavailable from upstream',
         ] }, { status: 500 });
-        if (calls.length === 1) return modelResponse([
-            prefix() + Array.from({ length: incomplete - 1 }, (_, index) => stage(index + 1, { tag: '原有完整阶段' })).join('\n\n') + '\n\n' + stage(incomplete, { partial: true }),
-        ], init.signal);
+        if (generateRubric && payload.messages[0].content.includes('训练评价标准生成器')) {
+            return modelResponse(['# 评价标准\n\n## 专业分析（100分）\n\n### 1. 分析依据（100分）\n根据教师文档完整分析。'], init.signal);
+        }
+        if (calls.length === 1 && !resumeFromBreakpoint) {
+            let initial = initialScript;
+            if (legacyInitial) initial = initial.replace(/^<!-- STAGE_(?:START|END):\d+ -->\n?/gm, '');
+            return modelResponse([initial], init.signal);
+        }
         if (hangOnce && calls.length === 2) return new Response(new ReadableStream({
             start(controller) { init.signal.addEventListener('abort', () => { abortedRequests++; controller.error(init.signal.reason); }, { once: true }); },
         }), { headers: { 'content-type': 'text/event-stream' } });
@@ -128,6 +134,9 @@ async function runRoute(t, { incomplete = 8, hangOnce = false, omitTargetOnce = 
         assert.ok(range, '续写必须请求明确阶段范围');
         const first = Number(range[1]);
         const last = Number(range[2]);
+        if (growingPartial || (partialUntilSingle && first === 6 && first !== last)) {
+            return modelResponse([stage(first, { partial: true, tag: '仍未结束的阶段' }) + '\n' + '反复扩写但阶段尚未完成。'.repeat(calls.length * 50)], init.signal);
+        }
         if (omitTargetAlways || (omitTargetOnce && calls.length === 2)) return modelResponse([stage(first + 1)], init.signal);
         const parts = Array.from({ length: last - first + 1 }, (_, index) => stage(first + index));
         if (last === 17) parts.push(`\n\n## 🔄 阶段跳转关系\n阶段9 -> 阶段10\n\n${marker}`);
@@ -142,13 +151,15 @@ async function runRoute(t, { incomplete = 8, hangOnce = false, omitTargetOnce = 
     const { POST } = routeLoad('app/api/training-generate/route.ts');
     const response = await POST(new Request('http://fixture.invalid/api/training-generate', {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
-            teacherDocContent: teacherDoc, teacherDocName: '四条角色分支', generateScript: true, generateRubric: false,
+            teacherDocContent: teacherDoc, teacherDocName: '四条角色分支', generateScript: true, generateRubric,
             apiKey: 'fixture-key', apiUrl: 'https://model.invalid/v1', model: 'gpt-6.1-sol', modulePlan: planFixture(), userSuggestions: '用户建议：保持四条角色线路。',
+            requestMode: resumeFromBreakpoint ? 'resume_script' : 'generate',
+            priorScript: resumeFromBreakpoint ? initialScript : undefined,
         }),
     }));
     const events = (await response.text()).split('\n').filter((line) => line.startsWith('data: ')).map((line) => JSON.parse(line.slice(6)));
     const error = events.find((event) => event.type === 'error');
-    if (omitTargetAlways || failureMode) {
+    if (omitTargetAlways || growingPartial || failureMode) {
         assert.ok(error, '连续缺少目标阶段应结束本轮生成并明确报错');
         return { calls, events, error };
     }
@@ -266,12 +277,12 @@ test('续写流没有正文时按时取消、更新等待进度并自动重试�
     assert.equal(abortedRequests, 1);
     assert.ok(events.some((event) => event.type === 'progress' && /断点续写/.test(event.message) && /已接收 0 字符/.test(event.message)));
     assert.ok(events.some((event) => event.type === 'start' && /续写请求失败/.test(event.message)));
-    assert.match(calls[2].messages[1].content, /本轮范围严格限定为阶段8至阶段9/);
+    assert.match(calls[2].messages[1].content, /本轮范围严格限定为阶段8至阶段8/);
 });
 
 test('模型漏写目标阶段时保持断点重试，不伪造阶段结束标记或跳过阶段8', { timeout: 10000 }, async (t) => {
     const { calls, result } = await runRoute(t, { omitTargetOnce: true });
-    assert.match(calls[2].messages[1].content, /本轮范围严格限定为阶段8至阶段9/);
+    assert.match(calls[2].messages[1].content, /本轮范围严格限定为阶段8至阶段8/);
     assert.equal(parser.parseTrainingScript(result.script).length, 17);
 });
 
@@ -287,6 +298,104 @@ test('连续三轮没有补出目标阶段时结束等待，已有完整阶段�
     assert.equal(calls.length, 4, '首轮生成加三次无进展续写');
     assert.ok(!events.some((event) => event.type === 'complete'));
     assert.match(events.filter((event) => event.type === 'phase_snapshot').at(-1).fullContent, /原有完整阶段7/);
+});
+
+test('相邻阶段反复截断时缩小到单阶段，补齐后继续推进', { timeout: 10000 }, async (t) => {
+    const { calls, result } = await runRoute(t, { incomplete: 5, partialUntilSingle: true });
+    const ranges = calls.slice(1).map((call) => call.messages[1].content.match(/本轮范围严格限定为阶段(\d+)至阶段(\d+)/)?.slice(1).map(Number));
+    assert.deepEqual(ranges.slice(0, 3), [[5, 5], [6, 7], [6, 6]]);
+    assert.deepEqual(ranges[3], [7, 8]);
+    assert.equal(parser.parseTrainingScript(result.script).length, 17);
+});
+
+test('同阶段正文每轮增加也计为停滞，三轮后保留内容并结束自动循环', { timeout: 10000 }, async (t) => {
+    const { calls, events, error } = await runRoute(t, { incomplete: 6, growingPartial: true });
+    assert.equal(calls.length, 4, '首轮生成加三次阶段未推进的续写');
+    assert.match(error.message, /连续三轮/);
+    assert.match(events.filter((event) => event.type === 'phase_snapshot').at(-1).fullContent, /原有完整阶段5/);
+});
+
+test('原剧本没有阶段边界而续写带边界时，保留前4阶段并从阶段5继续推进', { timeout: 10000 }, async (t) => {
+    const { calls, result } = await runRoute(t, { incomplete: 5, legacyInitial: true });
+    assert.match(calls[1].messages[1].content, /本轮范围严格限定为阶段5至阶段5/);
+    assert.match(calls[2].messages[1].content, /本轮范围严格限定为阶段6至阶段7/);
+    const steps = parser.parseTrainingScript(result.script);
+    assert.equal(steps.length, 17);
+    assert.match(steps[3].llmPrompt, /原有完整阶段4/);
+    assert.match(steps[4].llmPrompt, /新版阶段5/);
+});
+
+test('连接恢复后直接从已有阶段5开始自动补完，不重新生成整份剧本', { timeout: 10000 }, async (t) => {
+    const { calls, events, result } = await runRoute(t, { incomplete: 5, resumeFromBreakpoint: true });
+    assert.match(calls[0].messages[1].content, /本轮范围严格限定为阶段5至阶段5/);
+    assert.match(calls[1].messages[1].content, /本轮范围严格限定为阶段6至阶段7/);
+    assert.match(events.find((event) => event.type === 'phase_snapshot').fullContent, /原有完整阶段4/);
+    assert.match(parser.parseTrainingScript(result.script)[3].llmPrompt, /原有完整阶段4/);
+});
+
+test('自动恢复补齐剧本后继续生成评分标准，并替换中断前的评分内容', { timeout: 10000 }, async (t) => {
+    const { events, result } = await runRoute(t, { incomplete: 17, resumeFromBreakpoint: true, generateRubric: true });
+    const rubricReset = events.findIndex((event) => event.type === 'phase_snapshot' && event.phase === 'rubric' && event.fullContent === '');
+    const rubricChunk = events.findIndex((event) => event.type === 'chunk' && event.phase === 'rubric');
+    assert.ok(rubricReset >= 0 && rubricReset < rubricChunk);
+    assert.match(result.rubric, /专业分析/);
+    assert.equal(parser.parseTrainingScript(result.script).length, 17);
+});
+
+function interruptedEventResponse(events) {
+    let sent = false;
+    return new Response(new ReadableStream({
+        pull(controller) {
+            if (sent) return controller.error(new Error('terminated'));
+            sent = true;
+            controller.enqueue(new TextEncoder().encode(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')));
+        },
+    }));
+}
+
+for (const fileMode of [false, true]) {
+    test(`前端断流重试携带最新阶段快照，恢复自动续写（${fileMode ? '文件' : '文本'}模式）`, async (t) => {
+        const calls = [];
+        const snapshot = prefix() + stage(1) + '\n\n' + stage(2, { partial: true });
+        t.mock.method(globalThis, 'fetch', async (_url, init) => {
+            calls.push(fileMode ? Object.fromEntries(init.body.entries()) : JSON.parse(init.body));
+            if (calls.length === 1) return interruptedEventResponse([
+                { type: 'script_mode_detected', requestedMode: 'auto', resolvedMode: 'roleplay', label: '角色扮演' },
+                { type: 'chunk', phase: 'script', content: '早期剧本内容' },
+                { type: 'phase_snapshot', phase: 'script', fullContent: snapshot },
+            ]);
+            return new Response(`data: ${JSON.stringify({ type: 'complete', taskName: '恢复完成', script: snapshot })}\n\n`);
+        });
+        const clientLoad = sourceLoader({ '@/lib/llm/settings': { loadLLMSettingsFromStorage: () => ({}) } });
+        await clientLoad('lib/training-generator/client.ts').streamTrainingGenerate({
+            teacherDocContent: teacherDoc, teacherDocName: '断流测试',
+            file: fileMode ? new File([teacherDoc], '教师文档.md') : undefined,
+            generateScript: true, generateRubric: true, scriptMode: 'auto', modulePlan: planFixture(),
+            priorScript: '仅供重新生成参考的旧剧本', onEvent() {},
+        });
+        assert.equal(calls.length, 2);
+        assert.equal(calls[0].requestMode, 'generate');
+        assert.equal(calls[1].requestMode, 'resume_script');
+        assert.equal(calls[1].priorScript, snapshot);
+        assert.equal(calls[1].scriptMode, 'roleplay', '恢复时保留首次识别的剧本模式');
+        assert.equal(String(calls[1].generateRubric), 'true', '保留后续评分标准生成');
+    });
+}
+
+test('用户取消生成时结束当前请求，不触发前端自动重试', async (t) => {
+    const controller = new AbortController();
+    let calls = 0;
+    t.mock.method(globalThis, 'fetch', async () => {
+        calls++;
+        controller.abort();
+        throw new Error('timeout');
+    });
+    const clientLoad = sourceLoader({ '@/lib/llm/settings': { loadLLMSettingsFromStorage: () => ({}) } });
+    await assert.rejects(clientLoad('lib/training-generator/client.ts').streamTrainingGenerate({
+        teacherDocContent: teacherDoc, teacherDocName: '取消测试', generateScript: true, generateRubric: false,
+        signal: controller.signal, onEvent() {},
+    }), /timeout/);
+    assert.equal(calls, 1);
 });
 
 test('上游content_filter且没有正文时立即报错，不把空结果送进12轮续写', { timeout: 10000 }, async (t) => {

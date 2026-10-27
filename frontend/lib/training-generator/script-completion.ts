@@ -16,7 +16,7 @@ function hasStageEnd(markdown: string, stageNumber: number): boolean {
 export function findIncompleteTrainingScriptStageIndex(
     stages: StageSection[],
     parsedSteps: ParsedStage[],
-    expectedStageCount: number,
+    _expectedStageCount: number,
     hasCompleteMarker: boolean,
 ): number {
     const incompleteIndex = stages.findIndex((stage, index) => {
@@ -27,7 +27,6 @@ export function findIncompleteTrainingScriptStageIndex(
         const step = parsedSteps[index];
         const promptLastLine = String(step?.llmPrompt || "").trim().split("\n").at(-1)?.trim() || "";
         const promptEndsMidSentence = index === stages.length - 1 &&
-            stages.length >= expectedStageCount &&
             /(?:[，,：:、（(]|不|未|应|需|并|及|或|与|和|而|但|且|将|对|在|由|为|以|按|如|若|当|则|的)$/.test(promptLastLine);
         const hasStageStart = /^<!--\s*STAGE_START\s*:?\s*\d+\s*-->\s*$/im.test(stage.markdown);
 
@@ -43,7 +42,7 @@ export function findIncompleteTrainingScriptStageIndex(
 
     // Legacy output has no stage boundaries. Until the document ends, the final
     // stage may be a fragment even when its mandatory fields have some text.
-    if (stages.length > 0 && stages.length >= expectedStageCount && !hasCompleteMarker &&
+    if (stages.length > 0 && !hasCompleteMarker &&
         !hasStageEnd(stages[stages.length - 1].markdown, stages.length)) {
         return stages.length - 1;
     }

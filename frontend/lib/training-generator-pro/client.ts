@@ -15,6 +15,8 @@ export interface ProTrainingGenerateParams {
   userGenerationAdvice?: string;
   /** 自定义 Prompt 模板（含 {teacherDoc} 占位符）*/
   promptTemplate?: string;
+  /** 生成配置时跳过评分标准章节 */
+  skipRubricSections?: boolean;
   onEvent: (event: ProTrainingSSEEvent) => void;
   signal?: AbortSignal;
 }
@@ -31,6 +33,7 @@ export async function streamProTrainingGenerate(
     teacherDocName,
     userGenerationAdvice,
     promptTemplate,
+    skipRubricSections,
     onEvent,
     signal,
   } = params;
@@ -74,6 +77,7 @@ export async function streamProTrainingGenerate(
           formData.append("userGenerationAdvice", userGenerationAdvice);
         }
         if (promptTemplate) formData.append("promptTemplate", promptTemplate);
+        if (skipRubricSections) formData.append("skipRubricSections", "true");
 
         response = await fetch("/api/training-generate-pro", {
           method: "POST",
@@ -92,6 +96,7 @@ export async function streamProTrainingGenerate(
             model: settings.model || "",
             userGenerationAdvice: userGenerationAdvice || "",
             promptTemplate,
+            skipRubricSections: Boolean(skipRubricSections),
           }),
           signal,
         });

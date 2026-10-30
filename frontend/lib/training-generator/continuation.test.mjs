@@ -498,3 +498,105 @@ test('模型持续输出但超过单轮总时长时仍按时退出，留给下�
         }, { firstTokenTimeoutMs: 100, idleTimeoutMs: 100, timeoutMs: 20 })) { /* consume */ }
     }, (error) => error instanceof TrainingStreamTimeoutError && /单次生成超过/.test(error.message));
 });
+
+test('线性规划只清除显式非线性区块，保留普通分支教学标题', () => {
+    const script = [
+        '# 线性训练 - 训练剧本配置',
+        '',
+        '## 📝 训练阶段',
+        '',
+        '## 🔀 非线性跳转关系',
+        '```json',
+        '{"flowType":"graph","edges":[]}',
+        '```',
+        '',
+        '## 📖 配置说明',
+        '保持线性流程。',
+    ].join('\n');
+    const stripped = tools.stripNonlinearFlowConfigBlocks(script, { explicitNonlinearOnly: true });
+    assert.equal(stripped.includes('非线性跳转关系'), false);
+    assert.equal(stripped.includes('配置说明'), true);
+
+    const teaching = '# 线性训练\n\n## 分支流程\n根据学生回答选择回应。';
+    assert.equal(
+        tools.stripNonlinearFlowConfigBlocks(teaching, { explicitNonlinearOnly: true }).includes('分支流程'),
+        true,
+    );
+});
+
+test('跳过评分标准章节只影响剧本生成，评分标准仍使用完整文档', { timeout: 10000 }, async (t) => {
+    const rubricMarker = '评分标准唯一正文标记';
+    const doc = `# 任务目标\n${'任务要求与流程说明。'.repeat(500)}\n# 评分标准\n${rubricMarker}\n病史采集 20 分。`;
+    const calls = [];
+
+    t.mock.method(console, 'log', () => {});
+    t.mock.method(console, 'info', () => {});
+    t.mock.method(console, 'warn', () => {});
+    t.mock.method(console, 'error', () => {});
+    t.mock.method(globalThis, 'fetch', async (_url, init) => {
+        const payload = JSON.parse(init.body);
+        calls.push(payload);
+        if (payload.messages[0].content.includes('训练评价标准生成器')) {
+            return modelResponse(['# 评价标准\n\n## 病史采集（20分）'], init.signal);
+        }
+        return modelResponse([`${stage(17)}\n\n${marker}`], init.signal, 2);
+    });
+
+    const routeLoad = sourceLoader({
+        '@/lib/training-generator/stream-control': {
+            guardTrainingStream: (factory, options) => guardTrainingStream(factory, { ...options, firstTokenTimeoutMs: 100, idleTimeoutMs: 100, timeoutMs: 1500, progressIntervalMs: 5 }),
+            TrainingStreamTimeoutError,
+        },
+    });
+    const { POST } = routeLoad('app/api/training-generate/route.ts');
+    const priorScript = prefix() + Array.from(
+        { length: 16 },
+        (_, index) => stage(index + 1, { tag: '跳过评分标准前保留阶段' }),
+    ).join('\n\n');
+
+    const scriptResponse = await POST(new Request('http://fixture.invalid/api/training-generate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+            requestMode: 'continue_script',
+            teacherDocContent: doc,
+            teacherDocName: '评分标准测试',
+            generateScript: true,
+            generateRubric: false,
+            skipRubricSections: true,
+            apiKey: 'fixture-key',
+            apiUrl: 'https://model.invalid/v1',
+            model: 'gpt-6.1-sol',
+            scriptMode: 'roleplay',
+            modulePlan: planFixture(),
+            priorScript,
+        }),
+    }));
+    await scriptResponse.text();
+
+    assert.ok(calls.length > 0, '应发起剧本续写请求');
+    for (const call of calls) {
+        assert.ok(!call.messages[1].content.includes(rubricMarker), '剧本生成不应包含评分标准正文');
+        assert.match(call.messages[1].content, /以下章节已为剧本生成省略/);
+    }
+
+    const rubricCallsStart = calls.length;
+    const rubricResponse = await POST(new Request('http://fixture.invalid/api/training-generate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+            teacherDocContent: doc,
+            teacherDocName: '评分标准测试',
+            generateScript: false,
+            generateRubric: true,
+            skipRubricSections: true,
+            apiKey: 'fixture-key',
+            apiUrl: 'https://model.invalid/v1',
+            model: 'gpt-6.1-sol',
+        }),
+    }));
+    await rubricResponse.text();
+
+    assert.ok(calls.length > rubricCallsStart, '应发起评分标准请求');
+    assert.ok(calls[rubricCallsStart].messages[1].content.includes(rubricMarker), '评分标准生成仍需完整文档');
+});

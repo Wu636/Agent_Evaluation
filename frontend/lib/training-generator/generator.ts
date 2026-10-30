@@ -14,6 +14,7 @@ import {
     ScriptMode,
     ScriptPlanValidationIssue,
     TRAINING_FLOW_END_NODE_ID,
+    TeacherDocSource,
     TrainingFlowPlanningPreference,
     TrainingFlowType,
     TrainingScriptPlan,
@@ -959,7 +960,19 @@ type PlanningPromptVariant = {
     note?: string;
 };
 
-function buildPlanningPromptVariants(normalizedDoc: string): PlanningPromptVariant[] {
+function buildPlanningPromptVariants(
+    normalizedDoc: string,
+    teacherDocSource: TeacherDocSource = "original",
+): PlanningPromptVariant[] {
+    if (teacherDocSource === "extracted") {
+        return [{
+            label: "重点提取文档",
+            teacherDoc: normalizedDoc,
+            maxTokens: 2200,
+            note: "[系统说明] 该教师文档为用户已审阅的长文档重点提取版，已保留任务目标、流程、角色、评分点与硬性约束；请直接据此规划，不要再假设文档被额外压缩。",
+        }];
+    }
+
     const compressedDoc = compressTeacherDocForPlanning(normalizedDoc, 6500);
     const aggressiveDoc = compressTeacherDocForPlanning(normalizedDoc, 4200);
     const variants: PlanningPromptVariant[] = [];
@@ -1476,6 +1489,7 @@ export async function planTrainingScriptModules(
         usePreviousPlan?: boolean;
         currentPlan?: TrainingScriptPlan;
         previousPlan?: TrainingScriptPlan;
+        teacherDocSource?: TeacherDocSource;
     }
 ): Promise<{
     plan: TrainingScriptPlan;
@@ -1491,7 +1505,7 @@ export async function planTrainingScriptModules(
     const model = MODEL_NAME_MAPPING[rawModel] || rawModel;
     const endpoint = normalizeChatCompletionEndpoint(baseUrl);
     const normalizedDoc = normalizeTeacherDocForPlanning(teacherDocContent);
-    const planningVariants = buildPlanningPromptVariants(normalizedDoc);
+    const planningVariants = buildPlanningPromptVariants(normalizedDoc, options?.teacherDocSource);
     const flowPreference = options?.flowPreference || "auto";
     const effectiveCurrentPlan = options?.currentPlan
         ? applyPlanningFeedbackStructureHints(options.currentPlan, options.planningFeedback, options.previousPlan)
@@ -1536,7 +1550,11 @@ export async function planTrainingScriptModules(
     if (!response.ok) {
         const errorText = await response.text().catch(() => "");
         if (response.status === 504) {
-            throw new Error("剧本规划超时（HTTP 504）。系统已自动按文档长度降级为压缩规划，但仍然超时。建议删去逐字稿、长篇示例和参考答案后再规划。");
+            throw new Error(
+                options?.teacherDocSource === "extracted"
+                    ? "剧本规划超时（HTTP 504）。当前使用的是已审阅的重点提取版；请改用严格档重新提取，或删减附录后再规划。"
+                    : "剧本规划超时（HTTP 504）。系统已自动按文档长度降级为压缩规划，但仍然超时。建议删去逐字稿、长篇示例和参考答案后再规划。"
+            );
         }
         throw new Error(`剧本规划失败：${summarizeLlmHttpError(response.status, errorText)}`);
     }

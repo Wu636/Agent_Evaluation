@@ -3,7 +3,7 @@ import type { TrainingType } from "@/lib/oral-training/config";
  * 训练配置生成器 - 前端 SSE 客户端封装
  */
 
-import { ScriptMode, TrainingGenerateRequestMode, TrainingFlowPlanningPreference, TrainingPlanRequestOptions, TrainingSSEEvent, TrainingScriptPlan, TrainingScriptPlanResponse } from "./types";
+import { ScriptMode, TeacherDocSource, TrainingGenerateRequestMode, TrainingFlowPlanningPreference, TrainingPlanRequestOptions, TrainingSSEEvent, TrainingScriptPlan, TrainingScriptPlanResponse } from "./types";
 import { loadLLMSettingsFromStorage } from "@/lib/llm/settings";
 
 export interface TrainingGenerateParams {
@@ -27,6 +27,8 @@ export interface TrainingGenerateParams {
     scriptPromptTemplate?: string;
     /** 自定义评分标准 Prompt（含 {teacherDoc} 占位符）*/
     rubricPromptTemplate?: string;
+    /** 剧本生成时跳过评分标准章节；评分标准生成仍使用完整文档 */
+    skipRubricSections?: boolean;
     onEvent: (event: TrainingSSEEvent) => void;
     signal?: AbortSignal;
 }
@@ -38,7 +40,7 @@ export interface TrainingGenerateParams {
  */
 export async function streamTrainingGenerate(params: TrainingGenerateParams): Promise<void> {
     const { requestMode = "generate", file, teacherDocContent, teacherDocName, generateScript, generateRubric, scriptMode = "general", modulePlan,
-            userSuggestions, priorScript, priorRubric,
+            userSuggestions, priorScript, priorRubric, skipRubricSections,
             scriptPromptTemplate, rubricPromptTemplate, onEvent, signal } = params;
     const settings = loadLLMSettingsFromStorage("trainingGenerate");
 
@@ -103,6 +105,7 @@ export async function streamTrainingGenerate(params: TrainingGenerateParams): Pr
                 formData.append("apiKey", settings.apiKey || "");
                 formData.append("apiUrl", settings.apiUrl || "");
                 formData.append("model", settings.model || "");
+                if (skipRubricSections) formData.append("skipRubricSections", "true");
                 if (scriptPromptTemplate) formData.append("scriptPromptTemplate", scriptPromptTemplate);
                 if (rubricPromptTemplate) formData.append("rubricPromptTemplate", rubricPromptTemplate);
 
@@ -130,6 +133,7 @@ export async function streamTrainingGenerate(params: TrainingGenerateParams): Pr
                         apiKey: settings.apiKey || "",
                         apiUrl: settings.apiUrl || "",
                         model: settings.model || "",
+                        skipRubricSections: Boolean(skipRubricSections),
                         scriptPromptTemplate,
                         rubricPromptTemplate,
                     }),
@@ -216,6 +220,7 @@ export interface TrainingPlanParams {
     usePreviousPlan?: boolean;
     currentPlan?: TrainingScriptPlan;
     previousPlan?: TrainingScriptPlan;
+    teacherDocSource?: TeacherDocSource;
 }
 
 export interface ModuleRegenerateParams {
@@ -228,6 +233,8 @@ export interface ModuleRegenerateParams {
     feedback: string;
     usePreviousResult: boolean;
     currentStageMarkdown?: string;
+    /** 局部重生成属于剧本生成，可跳过评分标准章节 */
+    skipRubricSections?: boolean;
 }
 
 async function readErrorMessage(response: Response, fallback: string): Promise<string> {
@@ -257,6 +264,7 @@ export async function createTrainingScriptPlan(params: TrainingPlanParams): Prom
         usePreviousPlan: params.usePreviousPlan,
         currentPlan: params.currentPlan,
         previousPlan: params.previousPlan,
+        teacherDocSource: params.teacherDocSource,
     };
 
     if (params.file) {
@@ -267,6 +275,7 @@ export async function createTrainingScriptPlan(params: TrainingPlanParams): Prom
         if (options.planningFeedback) formData.append("planningFeedback", options.planningFeedback);
         if (options.flowPreference) formData.append("flowPreference", options.flowPreference);
         if (typeof options.usePreviousPlan === "boolean") formData.append("usePreviousPlan", String(options.usePreviousPlan));
+        if (options.teacherDocSource) formData.append("teacherDocSource", options.teacherDocSource);
         if (options.currentPlan) formData.append("currentPlan", JSON.stringify(options.currentPlan));
         if (options.previousPlan) formData.append("previousPlan", JSON.stringify(options.previousPlan));
         formData.append("apiKey", settings.apiKey || "");
@@ -290,6 +299,7 @@ export async function createTrainingScriptPlan(params: TrainingPlanParams): Prom
                 usePreviousPlan: options.usePreviousPlan ?? false,
                 currentPlan: options.currentPlan,
                 previousPlan: options.previousPlan,
+                teacherDocSource: options.teacherDocSource || "original",
                 apiKey: settings.apiKey || "",
                 apiUrl: settings.apiUrl || "",
                 model: settings.model || "",
@@ -327,6 +337,7 @@ export async function regenerateTrainingScriptModule(params: ModuleRegeneratePar
         formData.append("feedback", params.feedback);
         formData.append("usePreviousResult", String(params.usePreviousResult));
         if (params.currentStageMarkdown) formData.append("currentStageMarkdown", params.currentStageMarkdown);
+        if (params.skipRubricSections) formData.append("skipRubricSections", "true");
         formData.append("apiKey", settings.apiKey || "");
         formData.append("apiUrl", settings.apiUrl || "");
         formData.append("model", settings.model || "");
@@ -348,6 +359,7 @@ export async function regenerateTrainingScriptModule(params: ModuleRegeneratePar
                 feedback: params.feedback,
                 usePreviousResult: params.usePreviousResult,
                 currentStageMarkdown: params.currentStageMarkdown || "",
+                skipRubricSections: Boolean(params.skipRubricSections),
                 apiKey: settings.apiKey || "",
                 apiUrl: settings.apiUrl || "",
                 model: settings.model || "",

@@ -190,7 +190,6 @@ export function parseProStages(markdown: string): ProStageConfig[] {
         extractField(block, "用户称呼") ||
         "",
       userRoleDescription: extractField(block, "用户扮演角色描述") || "",
-      scriptModel: extractField(block, "剧本模型") || "Doubao-Seed-2.0-pro",
       scriptPrompt: scriptPrompt || "",
       dialogueEndStrategy: parseEndStrategy(
         extractField(block, "对话结束策略"),

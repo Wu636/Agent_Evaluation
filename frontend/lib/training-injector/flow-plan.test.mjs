@@ -80,3 +80,94 @@ test('显式默认分支即使排在后面也保持唯一，重复默认分支�
   branches[2].isDefault = 1;
   assert.throws(() => resolveScriptFlowPlan(flow, steps), /多条默认连线/);
 });
+
+function linearMarkdown() {
+  return [
+    '# 线性训练 - 训练剧本配置',
+    '',
+    '## 📋 基础配置',
+    '- **任务名称**: 线性训练',
+    '- **任务描述**: 线性流程。',
+    '',
+    '## 📝 训练阶段',
+    '',
+    '<!-- STAGE_START:1 -->',
+    '### 阶段1: 咨询',
+    '**阶段描述**: 完成咨询。',
+    '**互动轮次**: 3',
+    '**flowCondition**: DONE',
+    '**transitionPrompt**:',
+    '```',
+    '继续。',
+    '```',
+    '**开场白**:',
+    '> 你好',
+    '**提示词**:',
+    '```markdown',
+    '# Role',
+    '你是顾问。',
+    '## 分支流程',
+    '根据学生回答选择回应。',
+    '```',
+    '<!-- STAGE_END:1 -->',
+    '',
+    '## 🔄 阶段跳转关系',
+    '- 阶段1 → END：DONE',
+  ].join('\n');
+}
+
+test('空白的非线性区块不会让线性剧本被改判', () => {
+  const markdown = `${linearMarkdown()}\n\n## 🔀 非线性跳转关系\n\n本训练为线性流程，没有跳转连线。`;
+  const flow = parseTrainingScriptFlowConfig(markdown);
+  assert.equal(flow.flowType, 'linear');
+  assert.deepEqual(resolveScriptFlowPlan(flow, parseTrainingScript(markdown)), []);
+});
+
+test('外层 markdown 包裹的线性剧本不会因空区块改判', () => {
+  const wrapped = [
+    '```markdown',
+    linearMarkdown(),
+    '',
+    '## 🔀 非线性跳转关系',
+    '',
+    '本训练为线性流程，没有跳转连线。',
+    '```',
+  ].join('\n');
+  assert.equal(parseTrainingScriptFlowConfig(wrapped).flowType, 'linear');
+});
+
+test('flowType 为中文线性或缺失且没有连线时保持线性', () => {
+  const { markdown } = fixture();
+  for (const json of ['{"flowType":"线性","edges":[]}', '{"edges":[]}']) {
+    const relaxed = markdown.replace(/```json\n[\s\S]*?\n```$/, `\`\`\`json\n${json}\n\`\`\``);
+    assert.equal(parseTrainingScriptFlowConfig(relaxed).flowType, 'linear');
+  }
+});
+
+test('提示词内部的分支流程标题不会被误判为非线性区块', () => {
+  const markdown = linearMarkdown();
+  const steps = parseTrainingScript(markdown);
+  assert.equal(steps.length, 1);
+  assert.match(steps[0].llmPrompt, /## 分支流程/);
+  assert.equal(parseTrainingScriptFlowConfig(markdown).flowType, 'linear');
+});
+
+test('合并文档中的评分标准标题不会影响剧本流程判定', () => {
+  const markdown = [
+    linearMarkdown(),
+    '',
+    '---',
+    '',
+    '# 线性训练 - 评价标准',
+    '',
+    '## 总分：100 分',
+    '',
+    '## 分支流程（20分）',
+    '',
+    '**评价描述：** 能按流程完成咨询。',
+    '',
+    '**评分区间：**',
+    '- 18–20 分：表现优秀',
+  ].join('\n');
+  assert.equal(parseTrainingScriptFlowConfig(markdown).flowType, 'linear');
+});

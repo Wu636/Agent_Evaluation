@@ -5,6 +5,7 @@ import { MODEL_NAME_MAPPING } from "@/lib/config";
 import { convertDocxToText } from "@/lib/converters/docx-converter";
 import { ApiConfig } from "@/lib/llm/types";
 import { regenerateTrainingScriptModule, validateTrainingScriptPlan } from "@/lib/training-generator/generator";
+import { stripRubricSections } from "@/lib/training-generator/doc-sections";
 import { TrainingScriptPlan } from "@/lib/training-generator/types";
 
 export const runtime = "nodejs";
@@ -23,6 +24,7 @@ export async function POST(request: NextRequest) {
         let feedback = "";
         let usePreviousResult = true;
         let currentStageMarkdown = "";
+        let skipRubricSections = false;
 
         const contentType = request.headers.get("content-type") || "";
 
@@ -39,6 +41,7 @@ export async function POST(request: NextRequest) {
             feedback = formData.get("feedback") as string || "";
             usePreviousResult = formData.get("usePreviousResult") !== "false";
             currentStageMarkdown = formData.get("currentStageMarkdown") as string || "";
+            skipRubricSections = formData.get("skipRubricSections") === "true";
 
             if (!file) {
                 return NextResponse.json({ error: "未收到文件" }, { status: 400 });
@@ -71,6 +74,7 @@ export async function POST(request: NextRequest) {
                 feedback = "",
                 usePreviousResult = true,
                 currentStageMarkdown = "",
+                skipRubricSections = false,
             } = payload);
         }
 
@@ -78,6 +82,15 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "文档内容为空，请检查文件格式" }, { status: 400 });
         }
         teacherDocContent = withOralTrainingContext(teacherDocContent, trainingType);
+
+        let scriptDocContent = teacherDocContent;
+        if (skipRubricSections) {
+            const trimmed = stripRubricSections(teacherDocContent);
+            if (trimmed.removedSections.length > 0) {
+                const removedTitles = trimmed.removedSections.map((section) => section.title).join("、");
+                scriptDocContent = `${trimmed.content}\n\n[系统说明] 以下章节已为剧本生成省略：${removedTitles}。请勿编造分值、权重或评分区间；考核重点以任务要求与流程为准。`;
+            }
+        }
 
         if (!modulePlan) {
             return NextResponse.json({ error: "缺少模块规划，无法执行单模块重生成" }, { status: 400 });
@@ -110,7 +123,7 @@ export async function POST(request: NextRequest) {
         }
 
         const stageMarkdown = await regenerateTrainingScriptModule(
-            teacherDocContent,
+            scriptDocContent,
             apiConfig,
             modulePlan,
             modulePlan.modules[targetIndex],

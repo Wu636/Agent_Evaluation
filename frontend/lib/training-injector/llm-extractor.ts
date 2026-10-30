@@ -201,7 +201,9 @@ export async function extractScriptConfig(
         },
         steps: [],
         flowConfig: {
-            flowType: parsed.flowConfig?.flowType === "graph" ? "graph" : "linear",
+            // 图结构必须由实际连线证明；LLM 只声明 graph 却没有 edges 时不得
+            // 覆盖剧本 Markdown 的线性判定。
+            flowType: "linear",
             edges: [],
         },
     };

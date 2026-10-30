@@ -23,6 +23,7 @@ import {
   Globe,
   Lock,
   MessageSquareText,
+  Scissors,
 } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ProTrainingSSEEvent } from "@/lib/training-generator-pro/types";
@@ -41,6 +42,7 @@ import {
   PRO_TEMPLATE_VERSION,
 } from "@/lib/training-generator-pro/prompts";
 import { loadLLMSettingsFromStorage } from "@/lib/llm/settings";
+import { stripRubricSections } from "@/lib/training-generator/doc-sections";
 import { getConfigFingerprint, renderPresetDialogue, type PresetDialogueRecord } from "@/lib/training-generator-pro/dialogue";
 import { parseProMarkdown } from "@/lib/training-injector-pro/parser";
 
@@ -187,6 +189,7 @@ export function TrainingGenerateProInterface() {
   const [inputMode, setInputMode] = useState<"file" | "text">("file");
   const [teacherDocContent, setTeacherDocContent] = useState("");
   const [teacherDocName, setTeacherDocName] = useState("");
+  const [skipRubricSections, setSkipRubricSections] = useState(false);
   const [userGenerationAdvice, setUserGenerationAdvice] = useState("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [generatedContent, setGeneratedContent] = useState("");
@@ -521,6 +524,7 @@ export function TrainingGenerateProInterface() {
         userGenerationAdvice: userGenerationAdvice.trim() || undefined,
         promptTemplate:
           promptTemplate !== PRO_SCRIPT_TEMPLATE ? promptTemplate : undefined,
+        skipRubricSections,
         onEvent: (event: ProTrainingSSEEvent) => {
           switch (event.type) {
             case "start":
@@ -550,7 +554,7 @@ export function TrainingGenerateProInterface() {
         setPhase("error");
       }
     }
-  }, [teacherDocContent, uploadedFile, teacherDocName, userGenerationAdvice, promptTemplate]);
+  }, [teacherDocContent, uploadedFile, teacherDocName, userGenerationAdvice, promptTemplate, skipRubricSections]);
 
   const handleCancel = useCallback(() => {
     abortRef.current?.abort();
@@ -602,6 +606,10 @@ export function TrainingGenerateProInterface() {
   }, []);
 
   const canGenerate = !!(teacherDocContent.trim() || uploadedFile);
+  const rubricSkipPreview = React.useMemo(() => {
+    if (!skipRubricSections || uploadedFile || teacherDocContent.startsWith("[已上传文件")) return null;
+    return stripRubricSections(teacherDocContent);
+  }, [skipRubricSections, uploadedFile, teacherDocContent]);
   const activeContent = isEditing ? editContent : generatedContent;
   const currentConfigFingerprint = generatedContent ? getConfigFingerprint(isEditing ? editContent : generatedContent) : "";
   const dialogueIsStale = Boolean(dialogueRecord && dialogueRecord.configFingerprint !== currentConfigFingerprint);
@@ -824,6 +832,46 @@ export function TrainingGenerateProInterface() {
                   disabled={phase === "generating"}
                 />
               )}
+
+              <label
+                className={`mt-4 flex items-start gap-3 rounded-xl border p-3 transition-all ${
+                  phase === "generating" ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+                } ${
+                  skipRubricSections
+                    ? "border-indigo-300 bg-indigo-50"
+                    : "border-slate-200 bg-white hover:border-indigo-200"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={skipRubricSections}
+                  disabled={phase === "generating"}
+                  onChange={(event) => setSkipRubricSections(event.target.checked)}
+                  className="sr-only"
+                />
+                <div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-all ${skipRubricSections ? "border-indigo-500 bg-indigo-500" : "border-slate-300"}`}>
+                  {skipRubricSections && <Check className="h-3.5 w-3.5 text-white" />}
+                </div>
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Scissors className="h-4 w-4 text-indigo-500" />
+                    <span className="text-sm font-medium text-slate-700">生成配置时跳过评分标准章节</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-500">可选</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    自动移除评分标准、评分细则等章节，减少输入长度。
+                  </p>
+                  {skipRubricSections && rubricSkipPreview && (
+                    rubricSkipPreview.removedSections.length > 0 ? (
+                      <p className="mt-1 text-xs text-emerald-600">
+                        已识别 {rubricSkipPreview.removedSections.length} 个评分标准章节，可减少约 {rubricSkipPreview.removedChars} 字
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-amber-600">未识别到可移除的独立评分标准章节，将按原文生成。</p>
+                    )
+                  )}
+                </div>
+              </label>
             </div>
           </div>
 

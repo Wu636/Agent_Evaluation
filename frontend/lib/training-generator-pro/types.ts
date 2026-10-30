@@ -59,7 +59,6 @@ export interface ProStageConfig {
   userRoleName: string; // 用户扮演角色名称
   userAssignName?: string; // AI 对用户的指定称呼
   userRoleDescription: string; // 用户扮演角色描述
-  scriptModel: string; // 剧本模型（剧本提示词模型）
   scriptPrompt: string; // 阶段剧本提示词（长文本，5维度结构）
   dialogueEndStrategy: ProDialogueEndStrategy; // 对话结束策略
   skippable: boolean; // 是否可跳过

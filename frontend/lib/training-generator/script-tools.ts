@@ -212,9 +212,14 @@ export function buildSerializableGraphEdges(plan: TrainingScriptPlan): Array<{
         });
 }
 
-function stripNonlinearFlowConfigBlocks(markdown: string): string {
+export function stripNonlinearFlowConfigBlocks(
+    markdown: string,
+    options: { explicitNonlinearOnly?: boolean } = {},
+): string {
     const lines = String(markdown || "").split("\n");
-    const headingPattern = /^#{1,6}\s*(?:(?:🔀|🔄)\s*)?(?:(?:非线性|分支|图结构|流程图|多线路)[\s\S]{0,32}(?:跳转|流程|连线|关系)|(?:阶段|线性)跳转关系)(?:\s|$|[（(])/i;
+    const headingPattern = options.explicitNonlinearOnly
+        ? /^#{1,6}\s*(?:🔀\s*)?非线性(?:阶段)?(?:跳转)?(?:流程|连线|关系)\s*(?:[（(][^）)]*[）)])?\s*$/i
+        : /^#{1,6}\s*(?:(?:🔀|🔄)\s*)?(?:(?:非线性|分支|图结构|流程图|多线路)[\s\S]{0,32}(?:跳转|流程|连线|关系)|(?:阶段|线性)跳转关系)(?:\s|$|[（(])/i;
     const genericSectionPattern = /^#{1,6}\s+\S/;
     const keptLines: string[] = [];
     let inCodeBlock = false;
@@ -456,6 +461,14 @@ export function diagnoseTrainingScript(markdown: string, modulePlan?: TrainingSc
         issues.push({
             level: "error",
             message: "模块规划为非线性图结构，但当前剧本缺少 `## 🔀 非线性跳转关系` 区块，注入后会退化为线性流程。",
+            field: "flowConfig",
+        });
+    }
+
+    if (modulePlan?.flowType === "linear" && flowConfig.flowType === "graph") {
+        issues.push({
+            level: "error",
+            message: "模块规划为线性流程，但当前剧本包含 `## 🔀 非线性跳转关系` 区块；请重新生成或删除该区块，避免注入时被改判为非线性。",
             field: "flowConfig",
         });
     }

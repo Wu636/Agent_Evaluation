@@ -242,6 +242,18 @@ export function parseStageBoundaryComment(line: string): {
     };
 }
 
+function isExplicitFlowConfigSectionHeading(line: string): boolean {
+    const stripped = String(line || "").trim();
+    if (!stripped) return false;
+
+    // Only explicit document-level flow sections may close a damaged prompt
+    // fence. Generic headings such as "## 分支流程" are common inside prompts
+    // and must stay inside their fenced block.
+    return /^#{1,3}\s*(?:🔀\s*)?非线性(?:阶段)?(?:跳转)?(?:流程|连线|关系)\s*(?:[（(][^）)]*[）)])?\s*$/i.test(stripped) ||
+        /^#{1,3}\s*(?:🔄\s*)?阶段跳转关系\s*(?:[（(][^）)]*[）)])?\s*$/i.test(stripped) ||
+        /^#{1,3}\s*(?:📖\s*)?配置说明\s*(?:[（(][^）)]*[）)])?\s*$/i.test(stripped);
+}
+
 function isStructuralBoundaryLine(line: string): boolean {
     const stripped = String(line || "").trim();
     if (!stripped) return false;
@@ -249,9 +261,7 @@ function isStructuralBoundaryLine(line: string): boolean {
     return Boolean(matchStageHeading(stripped)) ||
         /^<!--\s*STAGE_(?:START|END)\b/i.test(stripped) ||
         stripped === "<!-- TRAINING_SCRIPT_COMPLETE -->" ||
-        /^#{1,6}\s*(?:🔀\s*)?(?:非线性|分支|图结构|流程图|多线路)[\s\S]{0,32}(?:跳转|流程|连线|关系)(?:\s|$|[（(])/i.test(stripped) ||
-        /^#{1,6}\s*(?:🔄\s*)?阶段跳转关系\b/i.test(stripped) ||
-        /^#{1,6}\s*(?:📖\s*)?配置说明\b/i.test(stripped);
+        isExplicitFlowConfigSectionHeading(stripped);
 }
 
 function closeDanglingCodeBlocksBeforeStructuralBoundaries(markdown: string): string {
@@ -843,21 +853,28 @@ export function parseTrainingScript(markdown: string): ParsedStep[] {
     return [];
 }
 
+function readFenceRunLength(line: string): number {
+    const match = String(line || "").trim().match(/^(`{3,}|~{3,})/);
+    return match ? match[1].length : 0;
+}
+
 function findNonlinearFlowBlock(markdown: string): string {
     const normalized = repairTrainingScriptForParsing(markdown);
     const lines = normalized.split("\n");
     const headingPattern = /^#{1,6}\s*(?:🔀\s*)?(?:非线性|分支|图结构|流程图|多线路)[\s\S]{0,32}(?:跳转|流程|连线|关系)(?:\s|$|[（(])/i;
     const genericSectionPattern = /^#{1,6}\s+\S/;
     let startIndex = -1;
-    let inCodeBlock = false;
+    let fenceLength = 0;
 
     for (let index = 0; index < lines.length; index++) {
         const trimmed = lines[index].trim();
-        if (trimmed.startsWith("```")) {
-            inCodeBlock = !inCodeBlock;
+        const fence = readFenceRunLength(trimmed);
+        if (fence > 0) {
+            if (fenceLength === 0) fenceLength = fence;
+            else if (fence >= fenceLength) fenceLength = 0;
             continue;
         }
-        if (inCodeBlock) continue;
+        if (fenceLength > 0) continue;
         if (headingPattern.test(trimmed)) {
             startIndex = index;
             break;
@@ -867,14 +884,16 @@ function findNonlinearFlowBlock(markdown: string): string {
     if (startIndex < 0) return "";
 
     let endIndex = lines.length;
-    inCodeBlock = false;
+    fenceLength = 0;
     for (let index = startIndex + 1; index < lines.length; index++) {
         const trimmed = lines[index].trim();
-        if (trimmed.startsWith("```")) {
-            inCodeBlock = !inCodeBlock;
+        const fence = readFenceRunLength(trimmed);
+        if (fence > 0) {
+            if (fenceLength === 0) fenceLength = fence;
+            else if (fence >= fenceLength) fenceLength = 0;
             continue;
         }
-        if (inCodeBlock) continue;
+        if (fenceLength > 0) continue;
         if (genericSectionPattern.test(trimmed)) {
             endIndex = index;
             break;
@@ -974,9 +993,18 @@ function parseFlowEdgesFromBullets(block: string): ParsedFlowEdge[] {
     return edges;
 }
 
+const GRAPH_FLOW_TYPES = new Set([
+    "graph", "nonlinear", "branch", "branching", "图", "图结构", "非线性", "分支", "多线路",
+]);
+
+function normalizeFlowTypeValue(value: unknown): string {
+    return String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+}
+
 /**
  * 解析训练剧本中的非线性跳转关系。
- * 线性剧本不需要该区块；只有检测到 “## 🔀 非线性跳转关系” 一类区块时才返回 graph。
+ * 线性剧本不需要该区块；标题、正文或评分标准里的普通“分支/流程”字样
+ * 不能单独作为非线性声明，必须出现图连线或显式 flowType 才返回 graph。
  */
 export function parseTrainingScriptFlowConfig(markdown: string): ParsedFlowConfig {
     const block = findNonlinearFlowBlock(markdown);
@@ -994,22 +1022,39 @@ export function parseTrainingScriptFlowConfig(markdown: string): ParsedFlowConfi
             const edges = rawEdges
                 .map((edge) => normalizeFlowEdge(edge))
                 .filter((edge): edge is ParsedFlowEdge => Boolean(edge));
-            const rawFlowType = String(parsed.flowType || "").toLowerCase();
-            return {
-                flowType: rawFlowType === "linear" && edges.length === 0 ? "linear" : "graph",
-                edges,
-            };
+            if (edges.length > 0) {
+                return { flowType: "graph", edges };
+            }
+
+            const flowType = normalizeFlowTypeValue(parsed.flowType);
+            if (GRAPH_FLOW_TYPES.has(flowType)) {
+                // 显式声明图结构但没有可用连线：保留 graph，让注入预检报错。
+                return { flowType: "graph", edges: [] };
+            }
+            // 未声明、中文“线性”或其他未知值且没有连线时都按线性处理。
+            return { flowType: "linear", edges: [] };
         } catch {
             // 继续尝试行级兜底解析
         }
     }
 
     const bulletEdges = parseFlowEdgesFromBullets(block);
-    return {
-        // 找到图结构标题但解析失败时保留 graph，让注入预检明确报错。
-        flowType: "graph",
-        edges: bulletEdges,
-    };
+    if (bulletEdges.length > 0) {
+        return { flowType: "graph", edges: bulletEdges };
+    }
+
+    const brokenFlowType = normalizeFlowTypeValue(
+        block.match(/["']?flowType["']?\s*:\s*["']?([^"'\s,}]+)/i)?.[1]
+    );
+    if (GRAPH_FLOW_TYPES.has(brokenFlowType)) {
+        // JSON 损坏但明确声明了图结构时保留 graph，避免静默退化为线性。
+        return { flowType: "graph", edges: [] };
+    }
+    if (!brokenFlowType && /["']?edges["']?\s*:/i.test(block)) {
+        return { flowType: "graph", edges: [] };
+    }
+
+    return { flowType: "linear", edges: [] };
 }
 
 function formatInlineScriptField(label: string, value: string): string {

@@ -26,6 +26,7 @@ import {
     normalizeTrainingScriptCompletion,
     hasTrainingScriptCompleteMarker,
     hasUnclosedTrainingScriptFence,
+    stripNonlinearFlowConfigBlocks,
     TRAINING_SCRIPT_COMPLETE_MARKER,
 } from "@/lib/training-generator/script-tools";
 import { guardTrainingStream, TrainingStreamTimeoutError } from "@/lib/training-generator/stream-control";
@@ -33,6 +34,7 @@ import { findIncompleteTrainingScriptStageIndex } from "@/lib/training-generator
 import { parseRubricMarkdown, parseTaskConfig, parseTrainingScript, repairTrainingScriptForParsing } from "@/lib/training-injector/parser";
 import { convertDocxToText } from "@/lib/converters/docx-converter";
 import { ScriptMode, TrainingGenerateRequestMode, TrainingScriptPlan } from "@/lib/training-generator/types";
+import { stripRubricSections } from "@/lib/training-generator/doc-sections";
 import WordExtractor from 'word-extractor';
 
 // Vercel 函数配置
@@ -121,6 +123,7 @@ export async function POST(request: NextRequest) {
                 let userSuggestions: string | undefined;
                 let priorScript: string | undefined;
                 let priorRubric: string | undefined;
+                let skipRubricSections = false;
                 let requestMode: TrainingGenerateRequestMode = "generate";
 
                 const contentType = request.headers.get("content-type") || "";
@@ -144,6 +147,7 @@ export async function POST(request: NextRequest) {
                     userSuggestions = formData.get("userSuggestions") as string || undefined;
                     priorScript = formData.get("priorScript") as string || undefined;
                     priorRubric = formData.get("priorRubric") as string || undefined;
+                    skipRubricSections = formData.get("skipRubricSections") === "true";
                     modulePlan = (() => {
                         const raw = formData.get("modulePlan") as string || "";
                         return raw ? JSON.parse(raw) : undefined;
@@ -176,6 +180,7 @@ export async function POST(request: NextRequest) {
                     const payload = await request.json();
                     trainingType = parseTrainingType(payload.trainingType);
                     ({ teacherDocContent, teacherDocName, generateScript, generateRubric, apiKey, apiUrl, model, scriptPromptTemplate, rubricPromptTemplate, scriptMode = "general", modulePlan, userSuggestions, priorScript, priorRubric } = payload);
+                    skipRubricSections = payload.skipRubricSections === true;
                     requestMode = payload.requestMode === "continue_script" || payload.requestMode === "resume_script" ? payload.requestMode : "generate";
                 }
 
@@ -191,6 +196,21 @@ export async function POST(request: NextRequest) {
                 }
 
                 teacherDocContent = withOralTrainingContext(teacherDocContent, trainingType);
+
+                // 剧本生成不需要评分标准章节；评分标准生成仍使用完整文档。
+                let scriptDocContent = teacherDocContent;
+                if (generateScript && skipRubricSections) {
+                    const trimmed = stripRubricSections(teacherDocContent);
+                    if (trimmed.removedSections.length > 0) {
+                        const removedTitles = trimmed.removedSections.map((section) => section.title).join("、");
+                        scriptDocContent = `${trimmed.content}\n\n[系统说明] 以下章节已为剧本生成省略：${removedTitles}。请勿编造分值、权重或评分区间；考核重点以任务要求与流程为准。`;
+                        console.info("[training-generate] 剧本生成已跳过评分标准章节", {
+                            removedSections: trimmed.removedSections,
+                            removedChars: trimmed.removedChars,
+                            keptChars: scriptDocContent.length,
+                        });
+                    }
+                }
 
                 if (modulePlan) {
                     const validation = validateTrainingScriptPlan(modulePlan);
@@ -558,9 +578,14 @@ export async function POST(request: NextRequest) {
                     const completed = repairTrainingScriptForParsing(
                         normalizeTrainingScriptCompletion(applyScriptContinuationGuards(content)),
                     );
+                    if (!hasTrainingScriptCompleteMarker(completed)) return completed;
                     // 残缺提示词后追加图 JSON 会把它混入阶段正文；仅在文档结束后恢复全图。
-                    return hasTrainingScriptCompleteMarker(completed)
-                        ? ensureNonlinearFlowConfigMarkdown(completed, modulePlan)
+                    if (modulePlan?.flowType === "graph") {
+                        return ensureNonlinearFlowConfigMarkdown(completed, modulePlan);
+                    }
+                    // 规划为线性时清掉模型残留的显式非线性区块，避免注入端再次改判。
+                    return modulePlan
+                        ? stripNonlinearFlowConfigBlocks(completed, { explicitNonlinearOnly: true })
                         : completed;
                 };
 
@@ -742,7 +767,7 @@ export async function POST(request: NextRequest) {
                 let fullScript = "";
                 let fullRubric = "";
                 let resolvedScriptMode: ScriptMode = scriptMode || "general";
-                const teacherDocForScript = buildTeacherDocWithPlan(teacherDocContent, modulePlan);
+                const teacherDocForScript = buildTeacherDocWithPlan(scriptDocContent, modulePlan);
                 if (requestMode === "resume_script" && (!generateScript || !priorScript?.trim())) {
                     send({ type: 'error', message: '恢复自动续写需要已有剧本内容' });
                     close();
@@ -790,7 +815,7 @@ export async function POST(request: NextRequest) {
                     let lastSnapshotAt = 0;
                     try {
                         for await (const chunk of guardTrainingStream((signal) => continueTrainingScriptStream(
-                            teacherDocContent,
+                            scriptDocContent,
                             continuationWindow.context,
                             apiConfig,
                             scriptPromptTemplate || undefined,
@@ -924,7 +949,7 @@ export async function POST(request: NextRequest) {
                                 ? '开始生成剧本配置...'
                                 : `开始生成${getScriptModeLabel(resolvedScriptMode)}剧本配置...`,
                             (attempt, signal) => generateTrainingScriptStream(
-                                teacherDocContent,
+                                scriptDocContent,
                                 apiConfig,
                                 scriptPromptTemplate || undefined,
                                 resolvedScriptMode || "general",
@@ -958,7 +983,7 @@ export async function POST(request: NextRequest) {
                             });
                             try {
                                 fullScript = normalizeGeneratedScript(await repairTrainingScriptStructure(
-                                    teacherDocContent,
+                                    scriptDocContent,
                                     fullScript,
                                     apiConfig,
                                     scriptPromptTemplate || undefined,
@@ -1003,7 +1028,7 @@ export async function POST(request: NextRequest) {
                             endStageNumber: continuationWindow.endStageNumber,
                             flowType: modulePlan?.flowType,
                             edgeCount: modulePlan?.edges.length || 0,
-                            teacherDocChars: teacherDocContent.length,
+                            teacherDocChars: scriptDocContent.length,
                             modulePlanChars: modulePlan ? JSON.stringify(modulePlan).length : 0,
                             userSuggestionsChars: userSuggestions?.length || 0,
                             nearbyStageChars: continuationWindow.context.length,
@@ -1012,7 +1037,7 @@ export async function POST(request: NextRequest) {
                         let continuationError: unknown;
                         try {
                             for await (const chunk of guardTrainingStream((signal) => continueTrainingScriptStream(
-                                teacherDocContent,
+                                scriptDocContent,
                                 continuationWindow.context,
                                 apiConfig,
                                 scriptPromptTemplate || undefined,

@@ -13,6 +13,7 @@ import {
   PRO_SCRIPT_SYSTEM_PROMPT,
 } from "@/lib/training-generator-pro/prompts";
 import { convertDocxToText } from "@/lib/converters/docx-converter";
+import { stripRubricSections } from "@/lib/training-generator/doc-sections";
 import WordExtractor from "word-extractor";
 
 // Vercel 函数配置
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
         let model: string;
         let promptTemplate: string | undefined;
         let userGenerationAdvice: string;
+        let skipRubricSections = false;
 
         const contentType = request.headers.get("content-type") || "";
 
@@ -73,6 +75,7 @@ export async function POST(request: NextRequest) {
           userGenerationAdvice = String(
             formData.get("userGenerationAdvice") || "",
           ).trim();
+          skipRubricSections = formData.get("skipRubricSections") === "true";
 
           const file = formData.get("file") as File | null;
           if (!file) {
@@ -105,6 +108,7 @@ export async function POST(request: NextRequest) {
           model = body.model || "";
           promptTemplate = body.promptTemplate || undefined;
           userGenerationAdvice = String(body.userGenerationAdvice || "").trim();
+          skipRubricSections = body.skipRubricSections === true;
         }
 
         if (!teacherDocContent.trim()) {
@@ -139,8 +143,19 @@ export async function POST(request: NextRequest) {
         sendEvent({ type: "start", message: "正在生成能力训练 Pro 配置..." });
 
         // 构建 Prompt
+        let scriptDocContent = teacherDocContent;
+        if (skipRubricSections) {
+          const trimmed = stripRubricSections(teacherDocContent);
+          if (trimmed.removedSections.length > 0) {
+            const removedTitles = trimmed.removedSections
+              .map((section) => section.title)
+              .join("、");
+            scriptDocContent = `${trimmed.content}\n\n[系统说明] 以下章节已为剧本生成省略：${removedTitles}。请勿编造分值、权重或评分区间；考核重点以任务要求与流程为准。`;
+          }
+        }
+
         const prompt = buildProScriptGeneratorPrompt(
-          teacherDocContent,
+          scriptDocContent,
           promptTemplate || undefined,
           userGenerationAdvice,
         );

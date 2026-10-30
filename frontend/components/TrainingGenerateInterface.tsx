@@ -28,6 +28,7 @@ import {
     Plus,
     Trash2,
     Crosshair,
+    Scissors,
 } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import {
@@ -63,7 +64,30 @@ import { isProPromptTemplate } from "@/lib/training-generator-pro/prompts";
 import { SettingsModal } from "./SettingsModal";
 import { InjectConfigModal } from "./InjectConfigModal";
 import { TrainingOptimizationModal } from "./TrainingOptimizationModal";
+import { DocExtractionModal } from "./DocExtractionModal";
 import { OptimizationLoopResult } from "@/lib/training-optimizer/types";
+import { loadLLMSettingsFromStorage } from "@/lib/llm/settings";
+import { streamDocExtraction } from "@/lib/training-generator/doc-extraction/client";
+import {
+    buildDocFingerprint,
+    buildExtractionOutline,
+} from "@/lib/training-generator/doc-extraction/pipeline";
+import { stripRubricSections } from "@/lib/training-generator/doc-sections";
+import {
+    buildExtractionCacheKey,
+    pruneDocExtractions,
+    readDocExtraction,
+    writeDocExtraction,
+} from "@/lib/training-generator/doc-extraction/storage";
+import {
+    DOC_EXTRACTION_MIN_CHARS,
+    DOC_EXTRACTION_PROMPT_VERSION,
+    DOC_EXTRACTION_STRONG_HINT_CHARS,
+    type DocExtractionProgress,
+    type DocExtractionResult,
+    type ExtractionMode,
+} from "@/lib/training-generator/doc-extraction/types";
+import type { TeacherDocSource } from "@/lib/training-generator/types";
 
 type GeneratePhase = "idle" | "generating" | "completed" | "error";
 type ResultTab = "script" | "rubric";
@@ -77,6 +101,7 @@ const TEACHER_DOC_CACHE_STORE = "teacher-doc-state";
 const TEACHER_DOC_CACHE_KEY = "latest";
 const TEACHER_DOC_CACHE_VERSION = 1;
 const TEACHER_DOC_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DOC_EXTRACTION_META_VERSION = 1;
 
 interface CachedModulePlanState {
     _v: number;
@@ -98,6 +123,15 @@ interface CachedTeacherDocState {
     fileName: string;
     fileType: string;
     fileLastModified: number;
+}
+
+interface CachedDocExtractionMeta {
+    _v: number;
+    fingerprint: string;
+    source: TeacherDocSource;
+    mode: ExtractionMode;
+    cacheKey: string;
+    updatedAt: number;
 }
 
 interface OptimizationSnapshot {
@@ -598,6 +632,12 @@ function reorderModules(modules: ScriptModulePlan[], draggedId: string, targetId
     return nextModules;
 }
 
+const DOC_EXTRACTION_MODE_OPTIONS: Array<{ value: ExtractionMode; label: string; short: string }> = [
+    { value: "light", label: "轻度（8–10k 字）", short: "轻度" },
+    { value: "balanced", label: "均衡（6–8k 字）", short: "均衡" },
+    { value: "strict", label: "严格（4–6k 字）", short: "严格" },
+];
+
 export function TrainingGenerateInterface({ trainingType = "ability" }: { trainingType?: "ability" | "oral" }) {
     // Cached drafts are browser-only. Keep the first render identical to the
     // server, then show the restored workspace after hydration.
@@ -612,6 +652,8 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
     const OPTIMIZATION_SNAPSHOT_KEY = cacheKey("training-generate-optimization-snapshots");
     const PROMPT_SETTINGS_KEY = cacheKey("training-prompt-settings");
     const databaseName = cacheKey("training-generate-teacher-doc");
+    const docExtractionDatabaseName = cacheKey("training-generate-doc-extraction");
+    const DOC_EXTRACTION_META_KEY = cacheKey("training-generate-doc-extraction-meta");
     const loadCachedTeacherDocState = () => readTeacherDocCache(databaseName);
     const saveCachedTeacherDocState = (state: CachedTeacherDocState) => writeTeacherDocCache(state, databaseName);
 
@@ -623,6 +665,20 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
     const [teacherDocCacheHydrated, setTeacherDocCacheHydrated] = useState(false);
     const [teacherDocCacheRestored, setTeacherDocCacheRestored] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // --- 长文档重点提取 ---
+    const [docExtractionResult, setDocExtractionResult] = useState<DocExtractionResult | null>(null);
+    const [effectiveDocSource, setEffectiveDocSource] = useState<TeacherDocSource>("original");
+    const [extractionMode, setExtractionMode] = useState<ExtractionMode>("light");
+    const [useLongDocExtraction, setUseLongDocExtraction] = useState(false);
+    const [skipRubricSections, setSkipRubricSections] = useState(false);
+    const [showDocExtractionModal, setShowDocExtractionModal] = useState(false);
+    const [extractingDoc, setExtractingDoc] = useState(false);
+    const [docExtractionProgress, setDocExtractionProgress] = useState<DocExtractionProgress | null>(null);
+    const [docExtractionError, setDocExtractionError] = useState("");
+    const [docExtractionNotice, setDocExtractionNotice] = useState("");
+    const docExtractionAbortRef = useRef<AbortController | null>(null);
+    const docExtractionKeyRef = useRef("");
 
     // --- 生成选项 ---
     const [generateScript, setGenerateScript] = useState(true);
@@ -715,6 +771,41 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
                 if (cachedDoc.textContent.trim() || cachedDoc.fileBlob) {
                     setTeacherDocCacheRestored(true);
                 }
+
+                const restoreExtraction = async () => {
+                    if (typeof window === "undefined") return;
+                    let meta: CachedDocExtractionMeta | null = null;
+                    try {
+                        const raw = localStorage.getItem(DOC_EXTRACTION_META_KEY);
+                        meta = raw ? JSON.parse(raw) as CachedDocExtractionMeta : null;
+                    } catch {
+                        return;
+                    }
+                    if (!meta || meta._v !== DOC_EXTRACTION_META_VERSION) return;
+
+                    const fingerprint = cachedDoc.inputMode === "text"
+                        ? (cachedDoc.textContent.trim() ? buildDocFingerprint({ content: cachedDoc.textContent.trim() }) : "")
+                        : (cachedDoc.fileName
+                            ? buildDocFingerprint({
+                                fileName: cachedDoc.fileName,
+                                fileSize: cachedDoc.fileBlob?.size ?? 0,
+                                fileLastModified: cachedDoc.fileLastModified,
+                            })
+                            : "");
+                    if (!fingerprint || fingerprint !== meta.fingerprint) return;
+
+                    const cachedResult = await readDocExtraction(docExtractionDatabaseName, meta.cacheKey);
+                    if (cancelled || !cachedResult) return;
+                    docExtractionKeyRef.current = meta.cacheKey;
+                    setDocExtractionResult(cachedResult);
+                    setEffectiveDocSource(meta.source === "extracted" ? "extracted" : "original");
+                    setExtractionMode(meta.mode);
+                    setUseLongDocExtraction(true);
+                    if (meta.source === "extracted") {
+                        setDocExtractionNotice(`已恢复重点提取版（${cachedResult.extractedChars} 字 / 原文 ${cachedResult.originalChars} 字）。`);
+                    }
+                };
+                await restoreExtraction();
             } catch {
                 // ignore cache restore failures
             } finally {
@@ -728,6 +819,25 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
             cancelled = true;
         };
     }, []);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        // 等待教师文档缓存与提取结果恢复完成，避免挂载时误删待恢复的元信息。
+        if (!teacherDocCacheHydrated) return;
+        if (!docExtractionResult || !docExtractionKeyRef.current) {
+            localStorage.removeItem(DOC_EXTRACTION_META_KEY);
+            return;
+        }
+        const meta: CachedDocExtractionMeta = {
+            _v: DOC_EXTRACTION_META_VERSION,
+            fingerprint: docExtractionResult.docFingerprint,
+            source: effectiveDocSource,
+            mode: docExtractionResult.mode,
+            cacheKey: docExtractionKeyRef.current,
+            updatedAt: Date.now(),
+        };
+        localStorage.setItem(DOC_EXTRACTION_META_KEY, JSON.stringify(meta));
+    }, [docExtractionResult, effectiveDocSource, teacherDocCacheHydrated, DOC_EXTRACTION_META_KEY]);
 
     // 有缓存内容时显示 completed 状态
     useEffect(() => {
@@ -1093,6 +1203,13 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
 
     // 获取文档内容（文本模式）或文件对象（文件模式）
     const getDocContent = useCallback(async (): Promise<{ content?: string; file?: File; name: string } | null> => {
+        const documentName = inputMode === "text" ? "粘贴文档" : file?.name || "文档";
+        if (effectiveDocSource === "extracted" && docExtractionResult?.extractedMarkdown.trim()) {
+            return {
+                content: docExtractionResult.extractedMarkdown.trim(),
+                name: `${documentName}（重点提取版）`,
+            };
+        }
         if (inputMode === "text") {
             if (!textContent.trim()) return null;
             return { content: textContent.trim(), name: "粘贴文档" };
@@ -1100,7 +1217,7 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
         if (!file) return null;
         // 文件模式：直接返回 File 对象，让服务端解析
         return { file, name: file.name };
-    }, [inputMode, textContent, file]);
+    }, [inputMode, textContent, file, effectiveDocSource, docExtractionResult]);
 
     const handlePlanScript = useCallback(async (options?: {
         planningFeedback?: string;
@@ -1136,6 +1253,7 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
                 usePreviousPlan: options?.usePreviousPlan,
                 currentPlan: options?.currentPlan,
                 previousPlan: options?.previousPlan,
+                teacherDocSource: effectiveDocSource === "extracted" && docExtractionResult ? "extracted" : "original",
             });
             setModulePlan(result.plan);
             setLastSystemPlan(result.plan);
@@ -1156,7 +1274,205 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
         } finally {
             setPlanning(false);
         }
-    }, [trainingType, generateScript, getDocContent, planningFlowPreference, planningSuggestion, syncDominantMode]);
+    }, [trainingType, generateScript, getDocContent, planningFlowPreference, planningSuggestion, syncDominantMode, effectiveDocSource, docExtractionResult]);
+
+    const invalidatePlanForDocSourceChange = (message: string) => {
+        setModulePlan(null);
+        setLastSystemPlan(null);
+        setPlanValidation([]);
+        setPlanAutofillApplied(false);
+        setPlanAutofillFields([]);
+        setPlanAutofillTaskFields([]);
+        setPlanAutofillModuleFields({});
+        setPlanCacheRestored(false);
+        setShowPlanEditor(false);
+        if (typeof window !== "undefined") localStorage.removeItem(MODULE_PLAN_CACHE_KEY);
+        setRepairFeedback({ type: "success", message });
+    };
+
+    const resetDocExtraction = () => {
+        docExtractionAbortRef.current?.abort();
+        docExtractionAbortRef.current = null;
+        docExtractionKeyRef.current = "";
+        setDocExtractionResult(null);
+        setEffectiveDocSource("original");
+        setExtractingDoc(false);
+        setDocExtractionProgress(null);
+        setDocExtractionError("");
+        setDocExtractionNotice("");
+        setUseLongDocExtraction(false);
+        setShowDocExtractionModal(false);
+        if (typeof window !== "undefined") localStorage.removeItem(DOC_EXTRACTION_META_KEY);
+    };
+
+    const getRawTeacherDoc = (): { content?: string; file?: File; name: string } | null => {
+        if (inputMode === "text") {
+            if (!textContent.trim()) return null;
+            return { content: textContent.trim(), name: "粘贴文档" };
+        }
+        if (!file) return null;
+        return { file, name: file.name };
+    };
+
+    const startDocExtraction = async (feedback = "") => {
+        if (!isApiConfigured()) {
+            setShowSettings(true);
+            return;
+        }
+        const raw = getRawTeacherDoc();
+        if (!raw) {
+            setDocExtractionError("请先提供教师任务文档");
+            return;
+        }
+
+        const fingerprint = raw.file
+            ? buildDocFingerprint({
+                fileName: raw.file.name,
+                fileSize: raw.file.size,
+                fileLastModified: raw.file.lastModified,
+            })
+            : buildDocFingerprint({ content: raw.content || "" });
+        const settings = loadLLMSettingsFromStorage("trainingGenerate");
+        const cacheKey = buildExtractionCacheKey({
+            fingerprint,
+            mode: extractionMode,
+            promptVersion: DOC_EXTRACTION_PROMPT_VERSION,
+            feedback,
+            model: settings.model,
+        });
+        const previousOutline = feedback && docExtractionResult
+            ? buildExtractionOutline(docExtractionResult)
+            : undefined;
+
+        docExtractionAbortRef.current?.abort();
+        const controller = new AbortController();
+        docExtractionAbortRef.current = controller;
+        setExtractingDoc(true);
+        setDocExtractionError("");
+        setDocExtractionProgress(null);
+        setDocExtractionNotice("");
+        setShowDocExtractionModal(true);
+
+        try {
+            await streamDocExtraction({
+                teacherDocName: raw.name,
+                file: raw.file,
+                content: raw.content,
+                mode: extractionMode,
+                feedback: feedback || undefined,
+                previousOutline,
+                docFingerprint: fingerprint,
+                signal: controller.signal,
+                onEvent: (event) => {
+                    if (event.type === "progress") {
+                        setDocExtractionProgress({
+                            stage: event.stage,
+                            current: event.current,
+                            total: event.total,
+                            message: event.message,
+                        });
+                        return;
+                    }
+                    if (event.type === "skip") {
+                        setExtractingDoc(false);
+                        setDocExtractionProgress(null);
+                        setDocExtractionNotice(event.message);
+                        setUseLongDocExtraction(false);
+                        setShowDocExtractionModal(false);
+                        return;
+                    }
+                    if (event.type === "result") {
+                        docExtractionKeyRef.current = cacheKey;
+                        setDocExtractionResult(event.result);
+                        setExtractingDoc(false);
+                        setDocExtractionProgress(null);
+                        setUseLongDocExtraction(true);
+                        setDocExtractionNotice("");
+                        // 新提取结果需重新审阅采纳；若此前已启用旧版，先回退到原文并让规划失效。
+                        if (effectiveDocSource === "extracted") {
+                            setEffectiveDocSource("original");
+                            invalidatePlanForDocSourceChange("已生成新的重点提取版，请审阅并采纳后重新规划模块。");
+                        }
+                        void (async () => {
+                            await writeDocExtraction(docExtractionDatabaseName, cacheKey, event.result);
+                            await pruneDocExtractions(docExtractionDatabaseName, fingerprint);
+                        })();
+                        return;
+                    }
+                    if (event.type === "error") {
+                        setExtractingDoc(false);
+                        setDocExtractionProgress(null);
+                        setDocExtractionError(event.message);
+                    }
+                },
+            });
+        } catch (error) {
+            if (controller.signal.aborted) {
+                setExtractingDoc(false);
+                setDocExtractionProgress(null);
+                return;
+            }
+            setExtractingDoc(false);
+            setDocExtractionProgress(null);
+            setDocExtractionError(error instanceof Error ? error.message : "文档重点提取失败");
+        } finally {
+            if (docExtractionAbortRef.current === controller) {
+                docExtractionAbortRef.current = null;
+            }
+        }
+    };
+
+    const adoptDocExtraction = (result: DocExtractionResult) => {
+        setDocExtractionResult(result);
+        setEffectiveDocSource("extracted");
+        setUseLongDocExtraction(true);
+        setShowDocExtractionModal(false);
+        setDocExtractionNotice(`已启用重点提取版（${result.extractedChars} 字 / 原文 ${result.originalChars} 字），规划与生成将使用该版本。`);
+        invalidatePlanForDocSourceChange("已启用重点提取版，请重新规划模块后再生成。");
+    };
+
+    const enableExtractedDoc = () => {
+        if (!docExtractionResult) return;
+        setEffectiveDocSource("extracted");
+        setUseLongDocExtraction(true);
+        setDocExtractionNotice(`已启用重点提取版（${docExtractionResult.extractedChars} 字 / 原文 ${docExtractionResult.originalChars} 字）。`);
+        invalidatePlanForDocSourceChange("已启用重点提取版，请重新规划模块后再生成。");
+    };
+
+    const restoreOriginalDoc = () => {
+        setEffectiveDocSource("original");
+        setShowDocExtractionModal(false);
+        setDocExtractionNotice("已切回原文，规划将重新使用原始教师文档。");
+        invalidatePlanForDocSourceChange("已切回原文，请重新规划模块后再生成。");
+    };
+
+    const handleDocExtractionResultEdited = (next: DocExtractionResult) => {
+        setDocExtractionResult(next);
+        if (docExtractionKeyRef.current) {
+            void writeDocExtraction(docExtractionDatabaseName, docExtractionKeyRef.current, next);
+        }
+        setDocExtractionNotice(
+            next.checks.some((check) => check.level === "error")
+                ? "提取结果已修改，仍有需确认的检查项，可直接采纳。"
+                : "提取结果已修改并重新审计。",
+        );
+    };
+
+    const cancelDocExtraction = () => {
+        docExtractionAbortRef.current?.abort();
+        docExtractionAbortRef.current = null;
+        setExtractingDoc(false);
+        setDocExtractionProgress(null);
+        setShowDocExtractionModal(false);
+    };
+
+    const closeDocExtractionModal = () => {
+        if (extractingDoc) {
+            cancelDocExtraction();
+            return;
+        }
+        setShowDocExtractionModal(false);
+    };
 
     const openPlanRegenerateModal = useCallback(() => {
         setPlanRegenerateFeedback(planningSuggestion);
@@ -1306,6 +1622,14 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
     }, []);
 
     const hasInput = inputMode === "text" ? textContent.trim().length > 0 : file !== null;
+    const teacherDocCharCount = inputMode === "text" ? textContent.trim().length : 0;
+    const canStartDocExtraction = hasInput && (inputMode === "file" || teacherDocCharCount >= DOC_EXTRACTION_MIN_CHARS);
+    const canSkipRubricSections = hasInput;
+    const rubricSkipPreview = React.useMemo(() => {
+        if (!skipRubricSections || inputMode !== "text") return null;
+        return stripRubricSections(textContent);
+    }, [skipRubricSections, inputMode, textContent]);
+    const docExtractionHasErrors = Boolean(docExtractionResult?.checks.some((check) => check.level === "error"));
     const hasSelection = generateScript || generateRubric;
     const hasPlanErrors = planValidation.some((item) => item.level === "error");
     const canGenerate = hasInput && hasSelection && phase !== "generating" && !hasPlanErrors;
@@ -1381,6 +1705,7 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
                 userSuggestions: generateScript ? planningSuggestion.trim() : undefined,
                 scriptPromptTemplate: scriptTemplate !== activeDefaultScriptTemplate ? scriptTemplate : undefined,
                 rubricPromptTemplate: rubricTemplate !== DEFAULT_RUBRIC_TEMPLATE ? rubricTemplate : undefined,
+                skipRubricSections: generateScript && skipRubricSections,
                 signal: controller.signal,
                 onEvent: (event: TrainingSSEEvent) => {
                     switch (event.type) {
@@ -1464,6 +1789,7 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
         rubricTemplate,
         scriptMode,
         scriptTemplate,
+        skipRubricSections,
         clearOptimizationHistory,
         repairInterruptedScriptContent,
     ]);
@@ -1518,6 +1844,7 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
                 userSuggestions: planningSuggestion.trim() || undefined,
                 priorScript: originalScript,
                 scriptPromptTemplate: scriptTemplate !== activeDefaultScriptTemplate ? scriptTemplate : undefined,
+                skipRubricSections,
                 signal: controller.signal,
                 onEvent: (event: TrainingSSEEvent) => {
                     switch (event.type) {
@@ -1593,6 +1920,7 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
         scriptContent,
         scriptMode,
         scriptTemplate,
+        skipRubricSections,
         taskName,
         trainingType,
     ]);
@@ -1664,6 +1992,7 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
                 priorRubric: shouldRegenRubric ? rubricContent : undefined,
                 scriptPromptTemplate: scriptTemplate !== activeDefaultScriptTemplate ? scriptTemplate : undefined,
                 rubricPromptTemplate: rubricTemplate !== DEFAULT_RUBRIC_TEMPLATE ? rubricTemplate : undefined,
+                skipRubricSections: shouldRegenScript && skipRubricSections,
                 signal: controller.signal,
                 onEvent: (event: TrainingSSEEvent) => {
                     switch (event.type) {
@@ -1763,12 +2092,14 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
         setFile(f);
         setErrorMessage("");
         setTeacherDocCacheRestored(false);
+        resetDocExtraction();
     };
 
     const clearFile = () => {
         setFile(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
         setTeacherDocCacheRestored(false);
+        resetDocExtraction();
     };
 
     // --- 复制 & 下载 ---
@@ -2027,6 +2358,7 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
                 feedback: moduleRegenFeedback,
                 usePreviousResult: moduleRegenUsePrevious,
                 currentStageMarkdown,
+                skipRubricSections,
             });
 
             setScriptContent((prev) => replaceStageInScript(prev, result.stageIndex, result.stageMarkdown));
@@ -2039,7 +2371,7 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
         } finally {
             setModuleRegenerating(false);
         }
-    }, [trainingType, getDocContent, modulePlan, moduleRegenFeedback, moduleRegenTargetId, moduleRegenUsePrevious, scriptStructure.stages]);
+    }, [trainingType, getDocContent, modulePlan, moduleRegenFeedback, moduleRegenTargetId, moduleRegenUsePrevious, scriptStructure.stages, skipRubricSections]);
 
     const openModuleRegenerateModal = useCallback((moduleId: string) => {
         setModuleRegenTargetId(moduleId);
@@ -2220,10 +2552,218 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
                                     onChange={(e) => {
                                         setTextContent(e.target.value);
                                         setTeacherDocCacheRestored(false);
+                                        resetDocExtraction();
                                     }}
                                     placeholder="将教师任务文档内容粘贴到此处..."
                                     className="w-full h-48 p-4 border border-slate-200 rounded-xl text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 resize-none transition-all"
                                 />
+                            )}
+
+                            {inputMode === "text" && hasInput && (
+                                <p className="mt-2 text-xs text-slate-400">
+                                    当前约 {teacherDocCharCount} 字
+                                    {teacherDocCharCount >= DOC_EXTRACTION_STRONG_HINT_CHARS && (
+                                        <span className="text-amber-600">，建议先做重点提取以降低超时风险</span>
+                                    )}
+                                </p>
+                            )}
+
+                            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                                {!docExtractionResult ? (
+                                    <>
+                                        <label
+                                            className={`flex items-start gap-3 rounded-xl border p-3 transition-all ${useLongDocExtraction
+                                                ? "border-indigo-300 bg-indigo-50"
+                                                : "border-slate-200 bg-white hover:border-indigo-200"
+                                                } ${!hasInput ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={useLongDocExtraction}
+                                                disabled={!hasInput || extractingDoc}
+                                                onChange={(event) => setUseLongDocExtraction(event.target.checked)}
+                                                className="sr-only"
+                                            />
+                                            <div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-all ${useLongDocExtraction ? "border-indigo-500 bg-indigo-500" : "border-slate-300"}`}>
+                                                {useLongDocExtraction && <Check className="h-3.5 w-3.5 text-white" />}
+                                            </div>
+                                            <div>
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    <Sparkles className="h-4 w-4 text-indigo-500" />
+                                                    <span className="text-sm font-medium text-slate-700">长文档重点提取</span>
+                                                    <span className="rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-500">可选</span>
+                                                </div>
+                                                <p className="mt-1 text-xs text-slate-500">
+                                                    先提取任务目标、流程、角色与评分要点，审阅后用于规划与生成，降低超时风险
+                                                </p>
+                                                {inputMode === "text" && teacherDocCharCount >= DOC_EXTRACTION_STRONG_HINT_CHARS && (
+                                                    <p className="mt-1 text-xs text-amber-600">当前约 {teacherDocCharCount} 字，强烈建议先做重点提取</p>
+                                                )}
+                                            </div>
+                                        </label>
+
+                                        {useLongDocExtraction && (
+                                            <div className="mt-3 space-y-2">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-xs text-slate-500">提取档位</span>
+                                                    <div className="flex rounded-lg border border-slate-200 bg-white p-0.5">
+                                                        {DOC_EXTRACTION_MODE_OPTIONS.map((modeOption) => (
+                                                            <button
+                                                                key={modeOption.value}
+                                                                type="button"
+                                                                onClick={() => setExtractionMode(modeOption.value)}
+                                                                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${extractionMode === modeOption.value
+                                                                    ? "bg-indigo-50 text-indigo-600"
+                                                                    : "text-slate-500 hover:text-slate-700"
+                                                                    }`}
+                                                            >
+                                                                {modeOption.label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void startDocExtraction("")}
+                                                    disabled={!canStartDocExtraction || extractingDoc}
+                                                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                >
+                                                    <Sparkles className="h-3.5 w-3.5" />
+                                                    开始提取
+                                                </button>
+                                                {!canStartDocExtraction && inputMode === "text" && hasInput && (
+                                                    <p className="text-xs text-slate-500">文档不足 {DOC_EXTRACTION_MIN_CHARS} 字，无需重点提取。</p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div className="flex items-start gap-2">
+                                                <Sparkles className={`mt-0.5 h-4 w-4 ${effectiveDocSource === "extracted" ? "text-emerald-500" : "text-slate-400"}`} />
+                                                <div>
+                                                    <p className={`text-xs font-medium ${effectiveDocSource === "extracted" ? "text-emerald-700" : "text-slate-600"}`}>
+                                                        {effectiveDocSource === "extracted" ? "已使用重点提取版" : "已生成重点提取版（未启用）"}
+                                                    </p>
+                                                    <p className="mt-0.5 text-xs text-slate-500">
+                                                        {docExtractionResult.extractedChars} 字 / 原文 {docExtractionResult.originalChars} 字 · 压缩 {Math.round(docExtractionResult.stats.compressionRatio * 100)}%
+                                                        {docExtractionHasErrors && <span className="text-red-600"> · 有需确认项</span>}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-1.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowDocExtractionModal(true)}
+                                                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-50"
+                                                >
+                                                    查看结果
+                                                </button>
+                                                {effectiveDocSource === "extracted" ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={restoreOriginalDoc}
+                                                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-50"
+                                                    >
+                                                        切回原文
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={enableExtractedDoc}
+                                                        className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-700 transition-colors hover:bg-emerald-100"
+                                                    >
+                                                        启用提取版
+                                                    </button>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowDocExtractionModal(true)}
+                                                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-50"
+                                                >
+                                                    重新提取
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200 pt-2">
+                                            <span className="text-[11px] text-slate-400">切换档位后需重新提取才会生效</span>
+                                            <div className="flex rounded-lg border border-slate-200 bg-white p-0.5">
+                                                {DOC_EXTRACTION_MODE_OPTIONS.map((modeOption) => (
+                                                    <button
+                                                        key={modeOption.value}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setExtractionMode(modeOption.value);
+                                                            setDocExtractionNotice("已切换提取档位，重新提取后生效。");
+                                                        }}
+                                                        className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-all ${extractionMode === modeOption.value
+                                                            ? "bg-indigo-50 text-indigo-600"
+                                                            : "text-slate-500 hover:text-slate-700"
+                                                            }`}
+                                                    >
+                                                        {modeOption.short}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            {canSkipRubricSections && (
+                                <label
+                                    className={`mt-4 flex items-start gap-3 rounded-xl border p-3 transition-all cursor-pointer ${skipRubricSections
+                                        ? "border-indigo-300 bg-indigo-50"
+                                        : "border-slate-200 bg-white hover:border-indigo-200"
+                                        }`}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={skipRubricSections}
+                                        onChange={(event) => setSkipRubricSections(event.target.checked)}
+                                        className="sr-only"
+                                    />
+                                    <div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-all ${skipRubricSections ? "border-indigo-500 bg-indigo-500" : "border-slate-300"}`}>
+                                        {skipRubricSections && <Check className="h-3.5 w-3.5 text-white" />}
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                            <Scissors className="h-4 w-4 text-indigo-500" />
+                                            <span className="text-sm font-medium text-slate-700">生成剧本时跳过评分标准章节</span>
+                                            <span className="rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-500">可选</span>
+                                        </div>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            自动移除评分标准、评分细则等章节，评分标准生成仍使用完整文档。
+                                        </p>
+                                        {skipRubricSections && inputMode === "text" && rubricSkipPreview && (
+                                            rubricSkipPreview.removedSections.length > 0 ? (
+                                                <p className="mt-1 text-xs text-emerald-600">
+                                                    已识别 {rubricSkipPreview.removedSections.length} 个评分标准章节，可减少约 {rubricSkipPreview.removedChars} 字
+                                                </p>
+                                            ) : (
+                                                <p className="mt-1 text-xs text-amber-600">未识别到可移除的独立评分标准章节，将按原文生成。</p>
+                                            )
+                                        )}
+                                    </div>
+                                </label>
+                            )}
+
+                            {extractingDoc && (
+                                <div className="mt-2 flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    <span className="flex-1 truncate">{docExtractionProgress?.message || "正在提取长文档重点..."}</span>
+                                    <button type="button" onClick={cancelDocExtraction} className="text-indigo-600 hover:underline">
+                                        取消
+                                    </button>
+                                </div>
+                            )}
+
+                            {docExtractionNotice && (
+                                <p className="mt-2 text-xs text-emerald-600">{docExtractionNotice}</p>
+                            )}
+                            {docExtractionError && !showDocExtractionModal && (
+                                <p className="mt-2 text-xs text-red-600">{docExtractionError}</p>
                             )}
                         </div>
                     </div>
@@ -3691,6 +4231,24 @@ export function TrainingGenerateInterface({ trainingType = "ability" }: { traini
 
             {/* 设置弹窗 */}
             <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+
+            <DocExtractionModal
+                isOpen={showDocExtractionModal}
+                result={docExtractionResult}
+                mode={extractionMode}
+                extracting={extractingDoc}
+                progress={docExtractionProgress}
+                errorMessage={docExtractionError}
+                isExtractedActive={effectiveDocSource === "extracted"}
+                onClose={closeDocExtractionModal}
+                onCancelExtraction={cancelDocExtraction}
+                onAdopt={adoptDocExtraction}
+                onReextract={(feedback) => {
+                    void startDocExtraction(feedback);
+                }}
+                onRestoreOriginal={restoreOriginalDoc}
+                onResultEdited={handleDocExtractionResultEdited}
+            />
 
             <TrainingOptimizationModal
                 trainingType={trainingType}

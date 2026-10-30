@@ -8,6 +8,8 @@ export type ScriptModuleType = ConcreteScriptMode;
 export type TrainingFlowType = "linear" | "graph";
 export type TrainingFlowPlanningPreference = "auto" | TrainingFlowType;
 export type TrainingGenerateRequestMode = "generate" | "continue_script" | "resume_script";
+/** 教师文档来源：原文，或用户已审阅的长文档重点提取版。 */
+export type TeacherDocSource = "original" | "extracted";
 
 export const TRAINING_FLOW_END_NODE_ID = "__END__";
 
@@ -23,6 +25,7 @@ export interface TrainingGenerateRequest {
     userSuggestions?: string;    // 用户对剧本生成的补充建议
     priorScript?: string;        // 手动重新生成时供首轮生成参考的旧剧本
     priorRubric?: string;        // 手动重新生成评分标准时供首轮生成参考的旧标准
+    skipRubricSections?: boolean; // 剧本生成时跳过评分标准章节；评分标准生成仍使用完整文档
 }
 
 /** SSE 事件类型 */
@@ -95,6 +98,8 @@ export interface TrainingPlanRequestOptions {
     usePreviousPlan?: boolean;
     currentPlan?: TrainingScriptPlan;
     previousPlan?: TrainingScriptPlan;
+    /** 提取版已由用户审阅，规划阶段不再做隐藏压缩。 */
+    teacherDocSource?: TeacherDocSource;
 }
 
 // ─── Prompt 模板市场 ───────────────────────────────────────────────────────

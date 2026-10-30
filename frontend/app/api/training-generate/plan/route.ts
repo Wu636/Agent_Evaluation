@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { MODEL_NAME_MAPPING } from "@/lib/config";
 import { ApiConfig } from "@/lib/llm/types";
 import { planTrainingScriptModules, validateTrainingScriptPlan } from "@/lib/training-generator/generator";
-import { TrainingFlowPlanningPreference } from "@/lib/training-generator/types";
+import { TeacherDocSource, TrainingFlowPlanningPreference } from "@/lib/training-generator/types";
 import { convertDocxToText } from "@/lib/converters/docx-converter";
 import WordExtractor from "word-extractor";
 
@@ -17,6 +17,10 @@ export const maxDuration = 180;
 
 function normalizeFlowPreference(value: unknown): TrainingFlowPlanningPreference {
     return value === "linear" || value === "graph" ? value : "auto";
+}
+
+function normalizeTeacherDocSource(value: unknown): TeacherDocSource {
+    return value === "extracted" ? "extracted" : "original";
 }
 
 export async function POST(request: NextRequest) {
@@ -32,6 +36,7 @@ export async function POST(request: NextRequest) {
         let usePreviousPlan = false;
         let currentPlan = undefined;
         let previousPlan = undefined;
+        let teacherDocSource: TeacherDocSource = "original";
 
         const contentType = request.headers.get("content-type") || "";
 
@@ -43,6 +48,7 @@ export async function POST(request: NextRequest) {
             planningFeedback = formData.get("planningFeedback") as string || "";
             flowPreference = normalizeFlowPreference(formData.get("flowPreference"));
             usePreviousPlan = formData.get("usePreviousPlan") === "true";
+            teacherDocSource = normalizeTeacherDocSource(formData.get("teacherDocSource"));
             currentPlan = (() => {
                 const raw = formData.get("currentPlan") as string || "";
                 return raw ? JSON.parse(raw) : undefined;
@@ -83,11 +89,13 @@ export async function POST(request: NextRequest) {
                 usePreviousPlan = false,
                 currentPlan = undefined,
                 previousPlan = undefined,
+                teacherDocSource = "original",
                 apiKey = "",
                 apiUrl = "",
                 model = "",
             } = payload);
             flowPreference = normalizeFlowPreference(flowPreference);
+            teacherDocSource = normalizeTeacherDocSource(teacherDocSource);
         }
 
         if (!teacherDocContent.trim()) {
@@ -111,6 +119,7 @@ export async function POST(request: NextRequest) {
             flowPreference,
             usePreviousPlan,
             currentPlan,
+            teacherDocSource,
             previousPlan,
         });
         const validation = validateTrainingScriptPlan(result.plan);

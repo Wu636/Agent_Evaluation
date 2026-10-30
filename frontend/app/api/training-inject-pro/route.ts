@@ -49,6 +49,7 @@ const POLYMAS_IMAGE_FALLBACK_API_KEY =
   process.env.POLYMAS_IMAGE_FALLBACK_API_KEY ||
   "sk-jqzsYB7vjZ6NEdfsP7oZ17Gti45cSMrHSCxQJzq7hz8Coq7h";
 
+const DEFAULT_STEP_MODEL_CODE = "deepseek-v4-flash";
 const STAGE_POSITION_X = 0;
 const STAGE_POSITION_Y_GAP = 220;
 
@@ -1198,7 +1199,8 @@ async function createStage(
     userNameType: 2,
     userAssignName,
     userDescription: userDescription || null,
-    modelCode: normalizeModelId(stage.scriptModel),
+    // 平台阶段模型统一使用默认模型，不随生成的配置变化。
+    modelCode: DEFAULT_STEP_MODEL_CODE,
     llm: llmPrompt || null,
     llmPrompt: llmPrompt || null,
     isSkipStep: Number(Boolean(stage.skippable)),

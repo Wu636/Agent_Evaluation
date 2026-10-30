@@ -1,4 +1,4 @@
-import { collectTrainingScriptStageRanges, isScriptFieldLine, matchStageHeading, normalizeTrainingScriptSource, parseTaskConfig, parseTrainingScript, parseTrainingScriptFlowConfig, repairTrainingScriptForParsing, serializeTrainingStage } from "@/lib/training-injector/parser";
+import { collectTrainingScriptStageRanges, isScriptFieldLine, matchStageHeading, normalizeTrainingScriptSource, parseTaskConfig, parseTrainingScript, parseTrainingScriptFlowConfig, parseStageBoundaryComment, repairTrainingScriptForParsing, serializeTrainingStage } from "@/lib/training-injector/parser";
 import { ScriptFlowEdge, TRAINING_FLOW_END_NODE_ID, TrainingScriptPlan } from "./types";
 import { detectMultiRoleTextSignal } from "./plan-validation";
 
@@ -130,8 +130,18 @@ export function replaceStageInScript(markdown: string, stageIndex: number, nextS
     if (!structure.stages[stageIndex]) return markdown;
     const hadCompletionMarker = hasTrainingScriptCompleteMarker(markdown);
 
+    const stageNumber = extractStageNumberFromHeading(structure.stages[stageIndex].heading) ?? stageIndex + 1;
+    const nextStageBody = nextStageMarkdown.split("\n")
+        .filter((line) => !parseStageBoundaryComment(line))
+        .join("\n").trim();
+    const markedReplacement = [
+        `<!-- STAGE_START:${stageNumber} -->`,
+        nextStageBody,
+        `<!-- STAGE_END:${stageNumber} -->`,
+    ].join("\n");
+
     const updatedStages = structure.stages.map((stage, index) => (
-        index === stageIndex ? nextStageMarkdown.trim() : stage.markdown.trim()
+        index === stageIndex ? markedReplacement : stage.markdown.trim()
     ));
 
     const updatedMarkdown = [structure.prefix, updatedStages.join("\n\n"), structure.suffix]

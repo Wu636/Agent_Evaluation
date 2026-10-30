@@ -1,0 +1,15 @@
+{
+  "targetTaskId": "T3oB0YxCYdgRpeht",
+  "courseId": "Z8DbqVMm04HlAVmqra0X",
+  "libraryFolderId": "kzeElbuplO",
+  "path": "existing system HTTP injection flow",
+  "status": "configuration_verified",
+  "nodes": 12,
+  "flows": 13,
+  "scores": 6,
+  "totalScore": 100,
+  "requirementsVerified": 30,
+  "draft": true,
+  "studentRuntimeTest": "待实际学生端验证",
+  "teacherReviewIssues": 4
+}

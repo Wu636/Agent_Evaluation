@@ -1,0 +1,15 @@
+{
+  "trainTaskId": "T3oB0YxCYdgRpeht",
+  "courseId": "Z8DbqVMm04HlAVmqra0X",
+  "libraryFolderId": "kzeElbuplO",
+  "bundleSha256": "6e85c7703168daa58d26d98968658914bf087fc60ab23f500a82977253ae2f26",
+  "scriptSha256": "b291f8b80755de3901c658f2a10023b65e841b3b74e42fd204dd3a658ca1fc02",
+  "rubricSha256": "ebfc6797070f562f50c113b91762882709d4b7b0849ce8e06c43492f4eb52f4f",
+  "verified": true,
+  "errors": [],
+  "nodes": 12,
+  "flows": 13,
+  "scores": 6,
+  "draft": true,
+  "studentRuntimeTest": "待实际学生端验证"
+}

@@ -1,0 +1,15 @@
+{
+  "realProjectParser": "passed",
+  "stages": 12,
+  "explicitConditionalFlows": 12,
+  "implicitStartFlows": 1,
+  "scores": [
+    22,
+    22,
+    24,
+    12,
+    10,
+    10
+  ],
+  "promptsAndOpenings": "exact match"
+}

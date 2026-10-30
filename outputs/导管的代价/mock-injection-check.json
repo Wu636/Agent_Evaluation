@@ -1,0 +1,9 @@
+{
+  "verified": true,
+  "errors": [],
+  "nodes": 12,
+  "flows": 13,
+  "scores": 6,
+  "studentRuntimeTest": "未执行；需目标平台学生端验证",
+  "environment": "local fake platform only; no real platform request"
+}

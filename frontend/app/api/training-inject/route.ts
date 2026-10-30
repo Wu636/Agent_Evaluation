@@ -14,6 +14,7 @@ import {
     deleteScriptStep,
     deleteScriptFlow,
     createScriptStep,
+    toPlatformVocabularies,
     createCustomDigitalHuman,
     listOwnerDigitalHumans,
     editScriptStep,
@@ -282,6 +283,7 @@ export async function POST(request: NextRequest) {
                     injectCoverImage = true,
                     injectBackgroundImage = true,
                     deferBaseConfigurationUntilCoverReady = false,
+                    injectDigitalHuman = true,
                     digitalHumanAvatarMode = "existing",
                     digitalHumanAvatarStylePrompt,
                     scriptMarkdown,
@@ -301,6 +303,7 @@ export async function POST(request: NextRequest) {
                     injectCoverImage?: boolean;
                     injectBackgroundImage?: boolean;
                     deferBaseConfigurationUntilCoverReady?: boolean;
+                    injectDigitalHuman?: boolean;
                     digitalHumanAvatarMode?: "existing" | "ai";
                     digitalHumanAvatarStylePrompt?: string;
                     scriptMarkdown?: string;
@@ -334,6 +337,17 @@ export async function POST(request: NextRequest) {
 
                 console.log("[inject-route] trainTaskId:", finalTrainTaskId, "length:", finalTrainTaskId.length);
                 console.log("[inject-route] Received llmSettings:", llmSettings ? { hasApiKey: !!llmSettings.apiKey, apiUrl: llmSettings.apiUrl, model: llmSettings.model } : "NONE");
+
+                if (trainTaskId.includes("/language-training/") && credentials.trainSubType !== "oral") {
+                    throw new Error("口语训练请使用「能力实训 → 口语训练」入口。");
+                }
+                if (credentials.trainSubType === "oral") {
+                    const current = await queryTrainingTaskConfiguration({ trainTaskId: finalTrainTaskId, courseId: finalCourseId }, credentials);
+                    const raw = current?.raw as Record<string, unknown> | undefined;
+                    if (!raw?.extConfig || raw.trainSubType !== "oral") {
+                        throw new Error("未能确认目标口语训练配置，已停止注入。请检查目标链接与登录凭证。");
+                    }
+                }
 
                 let stepsCreated = 0;
                 let flowsCreated = 0;
@@ -430,6 +444,25 @@ export async function POST(request: NextRequest) {
                     const resolvedGraphEdges = resolveScriptFlowPlan(flowConfig, steps);
                     if (flowConfig.flowType === "graph") {
                         send({ type: "progress", phase: "script", message: `已校验非线性流程：${steps.length} 个阶段、${resolvedGraphEdges.length} 条指定连线`, current: 0, total: steps.length });
+                    }
+
+                    // Match the reviewed source stages before append filtering can change their indexes.
+                    if (credentials.trainSubType === "oral" && body.injectKeyVocabularies === true) {
+                        const sourceSteps = parseTrainingScript(scriptMarkdown);
+                        if (sourceSteps.length !== steps.length || sourceSteps.some((source, index) => source.stepName !== steps[index].stepName)) {
+                            throw new Error("词汇阶段与解析结果不一致，请使用正则解析或修正阶段名称后重试，避免跨阶段写入。");
+                        }
+                        const selected = body.vocabularyStageIndexes;
+                        if (selected !== undefined && (!Array.isArray(selected) || selected.some((index: unknown) => !Number.isInteger(index) || Number(index) < 0 || Number(index) >= sourceSteps.length))) {
+                            throw new Error("重点词汇阶段选择无效，请重新勾选。");
+                        }
+                        steps = steps.map((step, index) => {
+                            const enabled = selected === undefined || selected.includes(index);
+                            const source = sourceSteps[index];
+                            if (enabled && source.keyVocabularyError) throw new Error(`阶段「${source.stepName}」重点词汇格式错误：${source.keyVocabularyError}`);
+                            return { ...step, vocabularyPayload: enabled ? toPlatformVocabularies(source.keyVocabularies || []) : [] };
+                        });
+                        send({ type: "progress", phase: "script", message: `已选择注入 ${steps.reduce((count, step) => count + step.vocabularyPayload.length, 0)} 条阶段重点词汇`, current: 0, total: steps.length });
                     }
 
                     // 3.1 课程封面图：先生成源图，再走上传接口，最终用于 trainTaskCover
@@ -564,7 +597,7 @@ export async function POST(request: NextRequest) {
 
                     // 提前检测背景图能力
                     const canSetBgImage = !!(injectBackgroundImage && finalCourseId && finalLibraryFolderId);
-                    const shouldGenerateDigitalHumanAvatar = digitalHumanAvatarMode === "ai";
+                    const shouldGenerateDigitalHumanAvatar = injectDigitalHuman && digitalHumanAvatarMode === "ai";
 
                     // 查询现有节点和连线
                     send({ type: "progress", phase: "script", message: "正在查询现有工作流...", current: 0, total: steps.length });
@@ -668,111 +701,114 @@ export async function POST(request: NextRequest) {
                                 : "训练剧本中未找到需要注入的阶段",
                         });
                     } else {
-                    send({
-                        type: "progress",
-                        phase: "script",
-                        message: "正在查询账号可配置音色...",
-                        current: 0,
-                        total: steps.length,
-                    });
-                    try {
-                        const ownerVoiceTrainings = await listOwnerVoiceTrainings(
-                            { voiceTemplateType: "ONLINE_DOUBAO" },
-                            credentials
-                        );
-                        availableVoiceCandidates = toVoiceCandidates(ownerVoiceTrainings, "voice-training");
+                    if (injectDigitalHuman) {
                         send({
                             type: "progress",
                             phase: "script",
-                            message: `已读取 ${ownerVoiceTrainings.length} 个可配置音色，其中 ${availableVoiceCandidates.length} 个可用于数字人创建`,
+                            message: "正在查询账号可配置音色...",
                             current: 0,
                             total: steps.length,
                         });
-                    } catch (voiceListErr) {
-                        console.warn("[inject-route] 查询可配置音色异常:", voiceListErr);
-                        send({
-                            type: "progress",
-                            phase: "script",
-                            message: "查询账号可配置音色失败，将回退已有数字人的音色参数",
-                            current: 0,
-                            total: steps.length,
-                        });
-                    }
-
-                    if (finalCourseId) {
-                        send({
-                            type: "progress",
-                            phase: "script",
-                            message: "正在查询课程已有数字人，优先复用同名配置...",
-                            current: 0,
-                            total: steps.length,
-                        });
-
                         try {
-                            const ownerDigitalHumans = await listOwnerDigitalHumans(
-                                {
-                                    courseId: finalCourseId,
-                                    libraryFolderId: finalLibraryFolderId,
-                                },
+                            const ownerVoiceTrainings = await listOwnerVoiceTrainings(
+                                { voiceTemplateType: "ONLINE_DOUBAO" },
                                 credentials
                             );
-
-                            for (const item of ownerDigitalHumans) {
-                                const baseConfig = toResolvedDigitalHumanConfig(item);
-                                if (!baseConfig) continue;
-                                const accountVoiceCandidate =
-                                    availableVoiceCandidates.find(
-                                        (candidate) =>
-                                            candidate.voiceNid === baseConfig.voiceNid
-                                    ) || null;
-                                const config: ResolvedDigitalHumanConfig = {
-                                    ...baseConfig,
-                                    voiceGender:
-                                        baseConfig.voiceGender === "unknown"
-                                            ? inferVoiceCandidateGender(accountVoiceCandidate)
-                                            : baseConfig.voiceGender,
-                                    voiceAgeGroup:
-                                        baseConfig.voiceAgeGroup === "unknown"
-                                            ? inferVoiceCandidateAgeGroup(accountVoiceCandidate)
-                                            : baseConfig.voiceAgeGroup,
-                                };
-                                const voiceCandidate = toVoiceCandidate(item, "digital-human");
-                                if (voiceCandidate) availableVoiceCandidates.push(voiceCandidate);
-
-                                const exactKey = buildDigitalHumanExactKey(
-                                    config.nameKey,
-                                    config.voiceNid,
-                                    config.avatarNid
-                                );
-                                reusableDigitalHumanConfigs.push(config);
-                                if (!existingDigitalHumanByExactKey.has(exactKey)) {
-                                    existingDigitalHumanByExactKey.set(exactKey, config);
-                                }
-                                if (!existingDigitalHumanByName.has(config.nameKey)) {
-                                    existingDigitalHumanByName.set(config.nameKey, config);
-                                }
-                            }
-
-                            if (ownerDigitalHumans.length > 0) {
-                                send({
-                                    type: "progress",
-                                    phase: "script",
-                                    message: `已读取 ${ownerDigitalHumans.length} 个已有数字人，其中 ${reusableDigitalHumanConfigs.length} 个可作为账号内安全参数源`,
-                                    current: 0,
-                                    total: steps.length,
-                                });
-                            }
-                        } catch (digitalHumanListErr) {
-                            console.warn("[inject-route] 查询已有数字人异常:", digitalHumanListErr);
+                            availableVoiceCandidates = toVoiceCandidates(ownerVoiceTrainings, "voice-training");
                             send({
                                 type: "progress",
                                 phase: "script",
-                                message: "查询已有数字人失败，将按需新建数字人",
+                                message: `已读取 ${ownerVoiceTrainings.length} 个可配置音色，其中 ${availableVoiceCandidates.length} 个可用于数字人创建`,
+                                current: 0,
+                                total: steps.length,
+                            });
+                        } catch (voiceListErr) {
+                            console.warn("[inject-route] 查询可配置音色异常:", voiceListErr);
+                            send({
+                                type: "progress",
+                                phase: "script",
+                                message: "查询账号可配置音色失败，将回退已有数字人的音色参数",
                                 current: 0,
                                 total: steps.length,
                             });
                         }
-                    }
+
+                        if (finalCourseId) {
+                            send({
+                                type: "progress",
+                                phase: "script",
+                                message: "正在查询课程已有数字人，优先复用同名配置...",
+                                current: 0,
+                                total: steps.length,
+                            });
+
+                            try {
+                                const ownerDigitalHumans = await listOwnerDigitalHumans(
+                                    {
+                                        courseId: finalCourseId,
+                                        libraryFolderId: finalLibraryFolderId,
+                                    },
+                                    credentials
+                                );
+
+                                for (const item of ownerDigitalHumans) {
+                                    const baseConfig = toResolvedDigitalHumanConfig(item);
+                                    if (!baseConfig) continue;
+                                    const accountVoiceCandidate =
+                                        availableVoiceCandidates.find(
+                                            (candidate) =>
+                                                candidate.voiceNid === baseConfig.voiceNid
+                                        ) || null;
+                                    const config: ResolvedDigitalHumanConfig = {
+                                        ...baseConfig,
+                                        voiceGender:
+                                            baseConfig.voiceGender === "unknown"
+                                                ? inferVoiceCandidateGender(accountVoiceCandidate)
+                                                : baseConfig.voiceGender,
+                                        voiceAgeGroup:
+                                            baseConfig.voiceAgeGroup === "unknown"
+                                                ? inferVoiceCandidateAgeGroup(accountVoiceCandidate)
+                                                : baseConfig.voiceAgeGroup,
+                                    };
+                                    const voiceCandidate = toVoiceCandidate(item, "digital-human");
+                                    if (voiceCandidate) availableVoiceCandidates.push(voiceCandidate);
+
+                                    const exactKey = buildDigitalHumanExactKey(
+                                        config.nameKey,
+                                        config.voiceNid,
+                                        config.avatarNid
+                                    );
+                                    reusableDigitalHumanConfigs.push(config);
+                                    if (!existingDigitalHumanByExactKey.has(exactKey)) {
+                                        existingDigitalHumanByExactKey.set(exactKey, config);
+                                    }
+                                    if (!existingDigitalHumanByName.has(config.nameKey)) {
+                                        existingDigitalHumanByName.set(config.nameKey, config);
+                                    }
+                                }
+
+                                if (ownerDigitalHumans.length > 0) {
+                                    send({
+                                        type: "progress",
+                                        phase: "script",
+                                        message: `已读取 ${ownerDigitalHumans.length} 个已有数字人，其中 ${reusableDigitalHumanConfigs.length} 个可作为账号内安全参数源`,
+                                        current: 0,
+                                        total: steps.length,
+                                    });
+                                }
+                            } catch (digitalHumanListErr) {
+                                console.warn("[inject-route] 查询已有数字人异常:", digitalHumanListErr);
+                                send({
+                                    type: "progress",
+                                    phase: "script",
+                                    message: "查询已有数字人失败，将按需新建数字人",
+                                    current: 0,
+                                    total: steps.length,
+                                });
+                            }
+                        }
+
+                    } // 数字人资源查询仅在开启数字人时执行
 
                     send({
                         type: "start",
@@ -834,198 +870,288 @@ export async function POST(request: NextRequest) {
 
                         const position = plannedLayout.positions[i];
                         const trainerName = step.trainerName || "训练引导员";
-                        const requestedAgentId = cleanDigitalHumanValue(step.agentId);
-                        const requestedAvatarNid = cleanDigitalHumanValue(step.avatarNid);
-                        const digitalHumanNameKey = normalizeDigitalHumanNameForReuse(trainerName);
-                        const requestedVoiceCandidate = availableVoiceCandidates.find(
-                            (candidate) => candidate.voiceNid === requestedAgentId
-                        ) || null;
-                        const sameNameDigitalHuman = reusableDigitalHumanConfigs.find(
-                            (item) => item.nameKey === digitalHumanNameKey
-                        ) || null;
-                        const configuredGender = normalizeDigitalHumanGender(step.trainerGender);
-                        const inferredRoleGender = inferDigitalHumanGender(
-                            trainerName,
-                            step.description,
-                            step.llmPrompt,
-                            step.prologue,
-                        );
-                        const requestedVoiceGender = inferVoiceCandidateGender(requestedVoiceCandidate);
-                        const preferredGender: DigitalHumanGender =
-                            configuredGender !== "unknown"
-                                ? configuredGender
-                                : inferredRoleGender !== "unknown"
-                                    ? inferredRoleGender
-                                    : requestedVoiceGender !== "unknown"
-                                        ? requestedVoiceGender
-                                        : sameNameDigitalHuman?.voiceGender !== "unknown"
-                                            ? sameNameDigitalHuman?.voiceGender || "male"
-                                            : "male";
-                        const configuredAgeGroup = normalizeDigitalHumanAgeGroup(
-                            step.trainerAgeGroup
-                        );
-                        const inferredRoleAgeGroup = inferDigitalHumanRoleAgeGroup(
-                            trainerName,
-                            [step.description, step.llmPrompt, step.prologue]
-                                .filter(Boolean)
-                                .join(" "),
-                        );
-                        const requestedVoiceAgeGroup =
-                            inferVoiceCandidateAgeGroup(requestedVoiceCandidate);
-                        const preferredAgeGroup: DigitalHumanAgeGroup =
-                            configuredAgeGroup !== "unknown"
-                                ? configuredAgeGroup
-                                : inferredRoleAgeGroup !== "unknown"
-                                    ? inferredRoleAgeGroup
-                                    : requestedVoiceAgeGroup !== "unknown"
-                                        ? requestedVoiceAgeGroup
-                                        : sameNameDigitalHuman?.voiceAgeGroup !== "unknown"
-                                            ? sameNameDigitalHuman?.voiceAgeGroup || "adult"
-                                            : "adult";
-                        const digitalHumanCacheKey =
-                            `${digitalHumanNameKey}::${preferredGender}::${preferredAgeGroup}`;
-                        const requestedExactKey = buildDigitalHumanExactKey(
-                            digitalHumanNameKey,
-                            requestedAgentId,
-                            requestedAvatarNid
-                        );
-                        const requestedExactDigitalHuman =
-                            requestedAgentId && requestedAvatarNid
-                                ? existingDigitalHumanByExactKey.get(requestedExactKey) || null
-                                : null;
-                        const exactExistingDigitalHuman =
-                            requestedExactDigitalHuman &&
-                            isDigitalHumanGenderCompatible(
-                                preferredGender,
-                                requestedExactDigitalHuman.voiceGender
-                            ) &&
-                            isDigitalHumanAgeGroupCompatible(
-                                preferredAgeGroup,
-                                requestedExactDigitalHuman.voiceAgeGroup
-                            )
-                                ? requestedExactDigitalHuman
-                                : findReusableDigitalHumanByName(
-                                    reusableDigitalHumanConfigs,
-                                    digitalHumanNameKey,
-                                    preferredGender,
-                                    preferredAgeGroup
-                                );
-                        const exactMatchedDigitalHumans = reusableDigitalHumanConfigs.filter(
-                            (item) =>
-                                item.voiceGender === preferredGender &&
-                                item.voiceAgeGroup === preferredAgeGroup
-                        );
-                        const compatibleDigitalHumans = reusableDigitalHumanConfigs.filter(
-                            (item) =>
+                        let agentId = "";
+                        let avatarNid = "";
+                        let agentVoiceId: string | undefined;
+                        let customDigitalHuman = "";
+                        if (injectDigitalHuman) {
+                            const requestedAgentId = cleanDigitalHumanValue(step.agentId);
+                            const requestedAvatarNid = cleanDigitalHumanValue(step.avatarNid);
+                            const digitalHumanNameKey = normalizeDigitalHumanNameForReuse(trainerName);
+                            const requestedVoiceCandidate = availableVoiceCandidates.find(
+                                (candidate) => candidate.voiceNid === requestedAgentId
+                            ) || null;
+                            const sameNameDigitalHuman = reusableDigitalHumanConfigs.find(
+                                (item) => item.nameKey === digitalHumanNameKey
+                            ) || null;
+                            const configuredGender = normalizeDigitalHumanGender(step.trainerGender);
+                            const inferredRoleGender = inferDigitalHumanGender(
+                                trainerName,
+                                step.description,
+                                step.llmPrompt,
+                                step.prologue,
+                            );
+                            const requestedVoiceGender = inferVoiceCandidateGender(requestedVoiceCandidate);
+                            const preferredGender: DigitalHumanGender =
+                                configuredGender !== "unknown"
+                                    ? configuredGender
+                                    : inferredRoleGender !== "unknown"
+                                        ? inferredRoleGender
+                                        : requestedVoiceGender !== "unknown"
+                                            ? requestedVoiceGender
+                                            : sameNameDigitalHuman?.voiceGender !== "unknown"
+                                                ? sameNameDigitalHuman?.voiceGender || "male"
+                                                : "male";
+                            const configuredAgeGroup = normalizeDigitalHumanAgeGroup(
+                                step.trainerAgeGroup
+                            );
+                            const inferredRoleAgeGroup = inferDigitalHumanRoleAgeGroup(
+                                trainerName,
+                                [step.description, step.llmPrompt, step.prologue]
+                                    .filter(Boolean)
+                                    .join(" "),
+                            );
+                            const requestedVoiceAgeGroup =
+                                inferVoiceCandidateAgeGroup(requestedVoiceCandidate);
+                            const preferredAgeGroup: DigitalHumanAgeGroup =
+                                configuredAgeGroup !== "unknown"
+                                    ? configuredAgeGroup
+                                    : inferredRoleAgeGroup !== "unknown"
+                                        ? inferredRoleAgeGroup
+                                        : requestedVoiceAgeGroup !== "unknown"
+                                            ? requestedVoiceAgeGroup
+                                            : sameNameDigitalHuman?.voiceAgeGroup !== "unknown"
+                                                ? sameNameDigitalHuman?.voiceAgeGroup || "adult"
+                                                : "adult";
+                            const digitalHumanCacheKey =
+                                `${digitalHumanNameKey}::${preferredGender}::${preferredAgeGroup}`;
+                            const requestedExactKey = buildDigitalHumanExactKey(
+                                digitalHumanNameKey,
+                                requestedAgentId,
+                                requestedAvatarNid
+                            );
+                            const requestedExactDigitalHuman =
+                                requestedAgentId && requestedAvatarNid
+                                    ? existingDigitalHumanByExactKey.get(requestedExactKey) || null
+                                    : null;
+                            const exactExistingDigitalHuman =
+                                requestedExactDigitalHuman &&
                                 isDigitalHumanGenderCompatible(
                                     preferredGender,
-                                    item.voiceGender
+                                    requestedExactDigitalHuman.voiceGender
                                 ) &&
                                 isDigitalHumanAgeGroupCompatible(
                                     preferredAgeGroup,
-                                    item.voiceAgeGroup
+                                    requestedExactDigitalHuman.voiceAgeGroup
                                 )
-                        );
-                        const fallbackDigitalHuman =
-                            exactExistingDigitalHuman ||
-                            exactMatchedDigitalHumans[0] ||
-                            compatibleDigitalHumans[0] ||
-                            null;
-                        let digitalHumanConfig =
-                            customDigitalHumanCache.get(digitalHumanCacheKey) ||
-                            (shouldGenerateDigitalHumanAvatar ? null : exactExistingDigitalHuman) ||
-                            null;
-                        let agentId =
-                            fallbackDigitalHuman?.voiceNid ||
-                            (isDigitalHumanGenderCompatible(
-                                preferredGender,
-                                requestedVoiceGender
-                            ) &&
-                            isDigitalHumanAgeGroupCompatible(
-                                preferredAgeGroup,
-                                requestedVoiceAgeGroup
-                            )
-                                ? requestedAgentId
-                                : "") ||
-                            (preferredGender === "male" &&
-                            preferredAgeGroup === "adult"
-                                ? "Tg3LpKo28D"
-                                : "");
-                        let avatarNid =
-                            fallbackDigitalHuman?.avatarNid ||
-                            requestedAvatarNid ||
-                            (preferredGender === "male" &&
-                            preferredAgeGroup === "adult"
-                                ? "hnuOVqMu8b"
-                                : "");
-                        let agentVoiceId = fallbackDigitalHuman?.agentVoiceId;
-                        let resolvedVoiceName = fallbackDigitalHuman?.voiceName;
-                        const selectedAccountVoice =
-                            !digitalHumanConfig
-                                ? selectBestVoiceCandidate(
-                                    availableVoiceCandidates,
-                                    {
-                                        preferredName: requestedAgentId,
-                                        preferredVoiceNid: requestedAgentId,
+                                    ? requestedExactDigitalHuman
+                                    : findReusableDigitalHumanByName(
+                                        reusableDigitalHumanConfigs,
+                                        digitalHumanNameKey,
                                         preferredGender,
+                                        preferredAgeGroup
+                                    );
+                            const exactMatchedDigitalHumans = reusableDigitalHumanConfigs.filter(
+                                (item) =>
+                                    item.voiceGender === preferredGender &&
+                                    item.voiceAgeGroup === preferredAgeGroup
+                            );
+                            const compatibleDigitalHumans = reusableDigitalHumanConfigs.filter(
+                                (item) =>
+                                    isDigitalHumanGenderCompatible(
+                                        preferredGender,
+                                        item.voiceGender
+                                    ) &&
+                                    isDigitalHumanAgeGroupCompatible(
                                         preferredAgeGroup,
-                                        roleName: trainerName,
-                                        roleDescription: step.description,
-                                        avatarDescription: step.llmPrompt,
-                                        fallbackToFirst: availableVoiceCandidates.length > 0 && !fallbackDigitalHuman,
-                                    }
+                                        item.voiceAgeGroup
+                                    )
+                            );
+                            const fallbackDigitalHuman =
+                                exactExistingDigitalHuman ||
+                                exactMatchedDigitalHumans[0] ||
+                                compatibleDigitalHumans[0] ||
+                                null;
+                            let digitalHumanConfig =
+                                customDigitalHumanCache.get(digitalHumanCacheKey) ||
+                                (shouldGenerateDigitalHumanAvatar ? null : exactExistingDigitalHuman) ||
+                                null;
+                            agentId =
+                                fallbackDigitalHuman?.voiceNid ||
+                                (isDigitalHumanGenderCompatible(
+                                    preferredGender,
+                                    requestedVoiceGender
+                                ) &&
+                                isDigitalHumanAgeGroupCompatible(
+                                    preferredAgeGroup,
+                                    requestedVoiceAgeGroup
                                 )
-                                : null;
-                        if (selectedAccountVoice && (!exactExistingDigitalHuman || shouldGenerateDigitalHumanAvatar)) {
-                            agentId = selectedAccountVoice.voiceNid || agentId;
-                            agentVoiceId = selectedAccountVoice.voiceType || agentVoiceId;
-                            resolvedVoiceName = selectedAccountVoice.voiceName || resolvedVoiceName;
-                        }
+                                    ? requestedAgentId
+                                    : "") ||
+                                (preferredGender === "male" &&
+                                preferredAgeGroup === "adult"
+                                    ? "Tg3LpKo28D"
+                                    : "");
+                            avatarNid =
+                                fallbackDigitalHuman?.avatarNid ||
+                                requestedAvatarNid ||
+                                (preferredGender === "male" &&
+                                preferredAgeGroup === "adult"
+                                    ? "hnuOVqMu8b"
+                                    : "");
+                            agentVoiceId = fallbackDigitalHuman?.agentVoiceId;
+                            let resolvedVoiceName = fallbackDigitalHuman?.voiceName;
+                            const selectedAccountVoice =
+                                !digitalHumanConfig
+                                    ? selectBestVoiceCandidate(
+                                        availableVoiceCandidates,
+                                        {
+                                            preferredName: requestedAgentId,
+                                            preferredVoiceNid: requestedAgentId,
+                                            preferredGender,
+                                            preferredAgeGroup,
+                                            roleName: trainerName,
+                                            roleDescription: step.description,
+                                            avatarDescription: step.llmPrompt,
+                                            fallbackToFirst: availableVoiceCandidates.length > 0 && !fallbackDigitalHuman,
+                                        }
+                                    )
+                                    : null;
+                            if (selectedAccountVoice && (!exactExistingDigitalHuman || shouldGenerateDigitalHumanAvatar)) {
+                                agentId = selectedAccountVoice.voiceNid || agentId;
+                                agentVoiceId = selectedAccountVoice.voiceType || agentVoiceId;
+                                resolvedVoiceName = selectedAccountVoice.voiceName || resolvedVoiceName;
+                            }
 
-                        if (!digitalHumanConfig && shouldGenerateDigitalHumanAvatar) {
-                            let generatedAvatar = generatedAvatarCache.get(digitalHumanCacheKey) || null;
-                            if (!generatedAvatar) {
+                            if (!digitalHumanConfig && shouldGenerateDigitalHumanAvatar) {
+                                let generatedAvatar = generatedAvatarCache.get(digitalHumanCacheKey) || null;
+                                if (!generatedAvatar) {
+                                    send({
+                                        type: "progress",
+                                        phase: "script",
+                                        message: `正在为数字人「${trainerName}」生成并上传 AI 头像...`,
+                                        current: i + 1,
+                                        total: steps.length,
+                                    });
+                                    try {
+                                        const trainName = taskConfig?.trainTaskName || "训练任务";
+                                        const trainDesc = taskConfig?.description || "";
+                                        const result = await generateAndSyncDigitalHumanAvatar(
+                                            {
+                                                trainName,
+                                                trainDescription: trainDesc,
+                                                trainerName,
+                                                stageName: step.stepName,
+                                                stageDescription: step.description || "",
+                                                courseId: finalCourseId,
+                                                libraryFolderId: finalLibraryFolderId,
+                                                baseAvatarNid: avatarNid,
+                                                avatarGender: preferredGender,
+                                                avatarAgeGroup: preferredAgeGroup,
+                                                avatarStylePrompt: String(digitalHumanAvatarStylePrompt || "").trim() || undefined,
+                                                arkApiKey: llmSettings?.apiKey,
+                                                llmApiUrl: llmSettings?.apiUrl,
+                                                imageModel: imageModel || undefined,
+                                                imageProviderPriority,
+                                                userNid: credentials.userNid,
+                                            },
+                                            credentials
+                                        );
+                                        if (result?.avatarNid) {
+                                            generatedAvatar = {
+                                                avatarNid: result.avatarNid,
+                                                avatarUrl: result.avatarUrl,
+                                            };
+                                            generatedAvatarCache.set(digitalHumanCacheKey, generatedAvatar);
+                                            send({
+                                                type: "progress",
+                                                phase: "script",
+                                                message: `AI 头像已同步：${trainerName}`,
+                                                current: i + 1,
+                                                total: steps.length,
+                                            });
+                                        } else {
+                                            send({
+                                                type: "progress",
+                                                phase: "script",
+                                                message: `AI 头像生成或同步失败，将改用账号已有数字人参数：${trainerName}`,
+                                                current: i + 1,
+                                                total: steps.length,
+                                            });
+                                        }
+                                    } catch (avatarErr) {
+                                        console.warn("[inject-route] AI 数字人头像生成/同步异常:", avatarErr);
+                                        send({
+                                            type: "progress",
+                                            phase: "script",
+                                            message: `AI 头像生成异常，将改用账号已有数字人参数：${trainerName}`,
+                                            current: i + 1,
+                                            total: steps.length,
+                                        });
+                                    }
+                                }
+
+                                if (generatedAvatar?.avatarNid) {
+                                    avatarNid = generatedAvatar.avatarNid;
+                                } else if (exactExistingDigitalHuman) {
+                                    digitalHumanConfig = exactExistingDigitalHuman;
+                                }
+                            }
+
+                            if (!digitalHumanConfig) {
                                 send({
                                     type: "progress",
                                     phase: "script",
-                                    message: `正在为数字人「${trainerName}」生成并上传 AI 头像...`,
+                                    message: shouldGenerateDigitalHumanAvatar
+                                        ? `正在配置数字人：${trainerName}（使用 AI 头像和账号内可用音色）`
+                                        : fallbackDigitalHuman
+                                        ? `正在配置数字人：${trainerName}（使用账号内「${describeDigitalHuman(fallbackDigitalHuman)}」的可用形象/音色参数）`
+                                        : `正在配置数字人：${trainerName}`,
                                     current: i + 1,
                                     total: steps.length,
                                 });
                                 try {
-                                    const trainName = taskConfig?.trainTaskName || "训练任务";
-                                    const trainDesc = taskConfig?.description || "";
-                                    const result = await generateAndSyncDigitalHumanAvatar(
+                                    const customDigitalHuman = await createCustomDigitalHuman(
                                         {
-                                            trainName,
-                                            trainDescription: trainDesc,
-                                            trainerName,
-                                            stageName: step.stepName,
-                                            stageDescription: step.description || "",
-                                            courseId: finalCourseId,
-                                            libraryFolderId: finalLibraryFolderId,
-                                            baseAvatarNid: avatarNid,
-                                            avatarGender: preferredGender,
-                                            avatarAgeGroup: preferredAgeGroup,
-                                            avatarStylePrompt: String(digitalHumanAvatarStylePrompt || "").trim() || undefined,
-                                            arkApiKey: llmSettings?.apiKey,
-                                            llmApiUrl: llmSettings?.apiUrl,
-                                            imageModel: imageModel || undefined,
-                                            imageProviderPriority,
-                                            userNid: credentials.userNid,
+                                            digitalHumanName: trainerName,
+                                            voiceNid: agentId,
+                                            avatarNid,
                                         },
                                         credentials
-                                    );
-                                    if (result?.avatarNid) {
-                                        generatedAvatar = {
-                                            avatarNid: result.avatarNid,
-                                            avatarUrl: result.avatarUrl,
+                                    ) || "";
+                                    if (customDigitalHuman) {
+                                        digitalHumanConfig = {
+                                            customNid: customDigitalHuman,
+                                            digitalHumanName: trainerName,
+                                            nameKey: digitalHumanNameKey,
+                                            avatarNid,
+                                            voiceNid: agentId,
+                                            agentVoiceId,
+                                            voiceName: resolvedVoiceName,
+                                            voiceGender: (() => {
+                                                const selectedGender =
+                                                    inferVoiceCandidateGender(selectedAccountVoice);
+                                                return selectedGender === "unknown"
+                                                    ? preferredGender
+                                                    : selectedGender;
+                                            })(),
+                                            voiceAgeGroup: (() => {
+                                                const selectedAgeGroup =
+                                                    inferVoiceCandidateAgeGroup(selectedAccountVoice);
+                                                return selectedAgeGroup === "unknown"
+                                                    ? preferredAgeGroup
+                                                    : selectedAgeGroup;
+                                            })(),
+                                            source: "created",
                                         };
-                                        generatedAvatarCache.set(digitalHumanCacheKey, generatedAvatar);
+                                        customDigitalHumanCache.set(digitalHumanCacheKey, digitalHumanConfig);
+                                        if (digitalHumanNameKey && !existingDigitalHumanByName.has(digitalHumanNameKey)) {
+                                            existingDigitalHumanByName.set(digitalHumanNameKey, digitalHumanConfig);
+                                        }
                                         send({
                                             type: "progress",
                                             phase: "script",
-                                            message: `AI 头像已同步：${trainerName}`,
+                                            message: `数字人配置成功：${describeDigitalHuman(digitalHumanConfig)}`,
                                             current: i + 1,
                                             total: steps.length,
                                         });
@@ -1033,125 +1159,42 @@ export async function POST(request: NextRequest) {
                                         send({
                                             type: "progress",
                                             phase: "script",
-                                            message: `AI 头像生成或同步失败，将改用账号已有数字人参数：${trainerName}`,
+                                            message: `数字人配置失败，将继续创建节点：${trainerName}`,
                                             current: i + 1,
                                             total: steps.length,
                                         });
                                     }
-                                } catch (avatarErr) {
-                                    console.warn("[inject-route] AI 数字人头像生成/同步异常:", avatarErr);
+                                } catch (digitalHumanErr) {
+                                    console.warn("[inject-route] 数字人配置异常:", digitalHumanErr);
                                     send({
                                         type: "progress",
                                         phase: "script",
-                                        message: `AI 头像生成异常，将改用账号已有数字人参数：${trainerName}`,
+                                        message: `数字人配置异常，将继续创建节点：${trainerName}`,
                                         current: i + 1,
                                         total: steps.length,
                                     });
                                 }
-                            }
-
-                            if (generatedAvatar?.avatarNid) {
-                                avatarNid = generatedAvatar.avatarNid;
-                            } else if (exactExistingDigitalHuman) {
-                                digitalHumanConfig = exactExistingDigitalHuman;
-                            }
-                        }
-
-                        if (!digitalHumanConfig) {
-                            send({
-                                type: "progress",
-                                phase: "script",
-                                message: shouldGenerateDigitalHumanAvatar
-                                    ? `正在配置数字人：${trainerName}（使用 AI 头像和账号内可用音色）`
-                                    : fallbackDigitalHuman
-                                    ? `正在配置数字人：${trainerName}（使用账号内「${describeDigitalHuman(fallbackDigitalHuman)}」的可用形象/音色参数）`
-                                    : `正在配置数字人：${trainerName}`,
-                                current: i + 1,
-                                total: steps.length,
-                            });
-                            try {
-                                const customDigitalHuman = await createCustomDigitalHuman(
-                                    {
-                                        digitalHumanName: trainerName,
-                                        voiceNid: agentId,
-                                        avatarNid,
-                                    },
-                                    credentials
-                                ) || "";
-                                if (customDigitalHuman) {
-                                    digitalHumanConfig = {
-                                        customNid: customDigitalHuman,
-                                        digitalHumanName: trainerName,
-                                        nameKey: digitalHumanNameKey,
-                                        avatarNid,
-                                        voiceNid: agentId,
-                                        agentVoiceId,
-                                        voiceName: resolvedVoiceName,
-                                        voiceGender: (() => {
-                                            const selectedGender =
-                                                inferVoiceCandidateGender(selectedAccountVoice);
-                                            return selectedGender === "unknown"
-                                                ? preferredGender
-                                                : selectedGender;
-                                        })(),
-                                        voiceAgeGroup: (() => {
-                                            const selectedAgeGroup =
-                                                inferVoiceCandidateAgeGroup(selectedAccountVoice);
-                                            return selectedAgeGroup === "unknown"
-                                                ? preferredAgeGroup
-                                                : selectedAgeGroup;
-                                        })(),
-                                        source: "created",
-                                    };
-                                    customDigitalHumanCache.set(digitalHumanCacheKey, digitalHumanConfig);
-                                    if (digitalHumanNameKey && !existingDigitalHumanByName.has(digitalHumanNameKey)) {
-                                        existingDigitalHumanByName.set(digitalHumanNameKey, digitalHumanConfig);
-                                    }
-                                    send({
-                                        type: "progress",
-                                        phase: "script",
-                                        message: `数字人配置成功：${describeDigitalHuman(digitalHumanConfig)}`,
-                                        current: i + 1,
-                                        total: steps.length,
-                                    });
-                                } else {
-                                    send({
-                                        type: "progress",
-                                        phase: "script",
-                                        message: `数字人配置失败，将继续创建节点：${trainerName}`,
-                                        current: i + 1,
-                                        total: steps.length,
-                                    });
-                                }
-                            } catch (digitalHumanErr) {
-                                console.warn("[inject-route] 数字人配置异常:", digitalHumanErr);
+                            } else {
+                                agentId = digitalHumanConfig.voiceNid || agentId;
+                                avatarNid = digitalHumanConfig.avatarNid || avatarNid;
+                                agentVoiceId = digitalHumanConfig.agentVoiceId || agentVoiceId;
+                                customDigitalHumanCache.set(digitalHumanCacheKey, digitalHumanConfig);
                                 send({
                                     type: "progress",
                                     phase: "script",
-                                    message: `数字人配置异常，将继续创建节点：${trainerName}`,
+                                    message: `复用已有数字人：${describeDigitalHuman(digitalHumanConfig)}`,
                                     current: i + 1,
                                     total: steps.length,
                                 });
                             }
-                        } else {
-                            agentId = digitalHumanConfig.voiceNid || agentId;
-                            avatarNid = digitalHumanConfig.avatarNid || avatarNid;
-                            agentVoiceId = digitalHumanConfig.agentVoiceId || agentVoiceId;
-                            customDigitalHumanCache.set(digitalHumanCacheKey, digitalHumanConfig);
-                            send({
-                                type: "progress",
-                                phase: "script",
-                                message: `复用已有数字人：${describeDigitalHuman(digitalHumanConfig)}`,
-                                current: i + 1,
-                                total: steps.length,
-                            });
-                        }
 
-                        const customDigitalHuman = digitalHumanConfig?.customNid || "";
+                            customDigitalHuman = digitalHumanConfig?.customNid || "";
+                        }
 
                         const newStepId = await createScriptStep(
                             finalTrainTaskId,
                             {
+                                stepExtProperty: credentials.trainSubType === "oral" ? { keyVocabularies: step.vocabularyPayload || [] } : undefined,
                                 stepName: step.stepName,
                                 description: step.description,
                                 prologue: step.prologue,
@@ -1163,6 +1206,7 @@ export async function POST(request: NextRequest) {
                                 agentVoiceId,
                                 avatarNid,
                                 scriptStepCover: step.scriptStepCover,
+                                injectDigitalHuman,
                                 customDigitalHuman: customDigitalHuman || null,
                                 // 不在创建时设置 backgroundTheme，改为创建后用 editScriptStep
                             },
@@ -1191,6 +1235,7 @@ export async function POST(request: NextRequest) {
                                     finalTrainTaskId,
                                     newStepId,
                                     {
+                                        stepExtProperty: credentials.trainSubType === "oral" ? { keyVocabularies: step.vocabularyPayload || [] } : undefined,
                                         stepName: step.stepName,
                                         description: step.description,
                                         prologue: step.prologue,
@@ -1206,6 +1251,7 @@ export async function POST(request: NextRequest) {
                                             fileUrl: bgImage.fileUrl,
                                         } : (step.scriptStepCover || {}),
                                         backgroundTheme: bgImage?.fileId || null,
+                                        injectDigitalHuman,
                                         customDigitalHuman: customDigitalHuman || null,
                                     },
                                     finalCourseId,
@@ -1433,7 +1479,7 @@ export async function POST(request: NextRequest) {
 
                 // ─── 评分标准注入 ──────────────────────────────────────
 
-                if (rubricMarkdown) {
+                if (rubricMarkdown && credentials.trainSubType !== "oral") {
                     let items: any[] = [];
 
                     // 1. LLM 提取（仅非 regex 模式时尝试）

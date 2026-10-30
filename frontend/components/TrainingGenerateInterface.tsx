@@ -1,5 +1,6 @@
 "use client";
 
+
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
     Upload,
@@ -11,6 +12,7 @@ import {
     Copy,
     RefreshCw,
     Wand2,
+    Mic,
     AlertCircle,
     Type,
     CheckCircle2,
@@ -67,13 +69,8 @@ type GeneratePhase = "idle" | "generating" | "completed" | "error";
 type ResultTab = "script" | "rubric";
 type PlanRegenerateSource = "current_edited" | "previous_plan" | "teacher_doc_only";
 
-const RESULT_CACHE_KEY = "training-generate-result";
-const MODULE_PLAN_CACHE_KEY = "training-generate-module-plan";
-const PLANNING_SUGGESTION_CACHE_KEY = "training-generate-planning-suggestion";
-const PLANNING_FLOW_PREFERENCE_CACHE_KEY = "training-generate-planning-flow-preference";
 const MODULE_PLAN_CACHE_VERSION = 1;
 const MODULE_PLAN_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const OPTIMIZATION_SNAPSHOT_KEY = "training-generate-optimization-snapshots";
 const OPTIMIZATION_SNAPSHOT_LIMIT = 8;
 const TEACHER_DOC_CACHE_DB = "training-generate-teacher-doc";
 const TEACHER_DOC_CACHE_STORE = "teacher-doc-state";
@@ -253,7 +250,7 @@ function normalizeStageHeadingAtStage(content: string, stageNumber: number, fall
     return { changed: false, markdown: content };
 }
 
-function loadOptimizationSnapshots(): OptimizationSnapshot[] {
+function loadOptimizationSnapshots(OPTIMIZATION_SNAPSHOT_KEY: string): OptimizationSnapshot[] {
     if (typeof window === "undefined") return [];
 
     try {
@@ -277,13 +274,13 @@ function normalizeCachedModulePlan(plan: TrainingScriptPlan | null | undefined):
     };
 }
 
-function openTeacherDocCacheDb(): Promise<IDBDatabase | null> {
+function openTeacherDocCacheDb(databaseName = TEACHER_DOC_CACHE_DB): Promise<IDBDatabase | null> {
     if (typeof window === "undefined" || typeof indexedDB === "undefined") {
         return Promise.resolve(null);
     }
 
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open(TEACHER_DOC_CACHE_DB, 1);
+        const request = indexedDB.open(databaseName, 1);
 
         request.onerror = () => reject(request.error || new Error("无法打开教师文档缓存"));
         request.onupgradeneeded = () => {
@@ -296,8 +293,8 @@ function openTeacherDocCacheDb(): Promise<IDBDatabase | null> {
     });
 }
 
-function loadCachedTeacherDocState(): Promise<CachedTeacherDocState | null> {
-    return openTeacherDocCacheDb().then((db) => {
+function readTeacherDocCache(databaseName: string): Promise<CachedTeacherDocState | null> {
+    return openTeacherDocCacheDb(databaseName).then((db) => {
         if (!db) return null;
 
         return new Promise((resolve, reject) => {
@@ -320,7 +317,7 @@ function loadCachedTeacherDocState(): Promise<CachedTeacherDocState | null> {
 
                 if (!result.updatedAt || Date.now() - result.updatedAt > TEACHER_DOC_CACHE_TTL_MS) {
                     db.close();
-                    void clearCachedTeacherDocState();
+                    void clearTeacherDocCache(databaseName);
                     resolve(null);
                     return;
                 }
@@ -332,8 +329,8 @@ function loadCachedTeacherDocState(): Promise<CachedTeacherDocState | null> {
     });
 }
 
-function saveCachedTeacherDocState(state: CachedTeacherDocState): Promise<void> {
-    return openTeacherDocCacheDb().then((db) => {
+function writeTeacherDocCache(state: CachedTeacherDocState, databaseName: string): Promise<void> {
+    return openTeacherDocCacheDb(databaseName).then((db) => {
         if (!db) return;
 
         return new Promise<void>((resolve, reject) => {
@@ -357,8 +354,8 @@ function saveCachedTeacherDocState(state: CachedTeacherDocState): Promise<void> 
     });
 }
 
-function clearCachedTeacherDocState(): Promise<void> {
-    return openTeacherDocCacheDb().then((db) => {
+function clearTeacherDocCache(databaseName: string): Promise<void> {
+    return openTeacherDocCacheDb(databaseName).then((db) => {
         if (!db) return;
 
         return new Promise<void>((resolve, reject) => {
@@ -382,7 +379,7 @@ function clearCachedTeacherDocState(): Promise<void> {
     });
 }
 
-function loadCachedModulePlanState(): CachedModulePlanState {
+function loadCachedModulePlanState(MODULE_PLAN_CACHE_KEY: string): CachedModulePlanState {
     if (typeof window === "undefined") return EMPTY_MODULE_PLAN_CACHE;
 
     try {
@@ -601,7 +598,23 @@ function reorderModules(modules: ScriptModulePlan[], draggedId: string, targetId
     return nextModules;
 }
 
-export function TrainingGenerateInterface() {
+export function TrainingGenerateInterface({ trainingType = "ability" }: { trainingType?: "ability" | "oral" }) {
+    // Cached drafts are browser-only. Keep the first render identical to the
+    // server, then show the restored workspace after hydration.
+    const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
+    useEffect(() => { setWorkspaceHydrated(true); }, []);
+    const isOral = trainingType === "oral";
+    const cacheKey = (key: string) => isOral ? `oral-${key}` : key;
+    const RESULT_CACHE_KEY = cacheKey("training-generate-result");
+    const MODULE_PLAN_CACHE_KEY = cacheKey("training-generate-module-plan");
+    const PLANNING_SUGGESTION_CACHE_KEY = cacheKey("training-generate-planning-suggestion");
+    const PLANNING_FLOW_PREFERENCE_CACHE_KEY = cacheKey("training-generate-planning-flow-preference");
+    const OPTIMIZATION_SNAPSHOT_KEY = cacheKey("training-generate-optimization-snapshots");
+    const PROMPT_SETTINGS_KEY = cacheKey("training-prompt-settings");
+    const databaseName = cacheKey("training-generate-teacher-doc");
+    const loadCachedTeacherDocState = () => readTeacherDocCache(databaseName);
+    const saveCachedTeacherDocState = (state: CachedTeacherDocState) => writeTeacherDocCache(state, databaseName);
+
     // --- 输入状态 ---
     const [inputMode, setInputMode] = useState<"file" | "text">("file");
     const [file, setFile] = useState<File | null>(null);
@@ -613,11 +626,12 @@ export function TrainingGenerateInterface() {
 
     // --- 生成选项 ---
     const [generateScript, setGenerateScript] = useState(true);
-    const [generateRubric, setGenerateRubric] = useState(true);
+    const [generateRubricState, setGenerateRubric] = useState(true);
+    const generateRubric = !isOral && generateRubricState;
     const [scriptMode, setScriptMode] = useState<ScriptMode>(() => {
         if (typeof window === "undefined") return "general";
         try {
-            const saved = localStorage.getItem("training-prompt-settings");
+            const saved = localStorage.getItem(PROMPT_SETTINGS_KEY);
             if (!saved) return "general";
             const parsed = JSON.parse(saved);
             return parsed._v === TEMPLATE_VERSION ? (parsed.scriptMode || "auto") : "auto";
@@ -643,9 +657,9 @@ export function TrainingGenerateInterface() {
         } catch { return { script: "", rubric: "", name: "" }; }
     };
     const cached = loadCached();
-    const [initialModulePlanCache] = useState<CachedModulePlanState>(() => loadCachedModulePlanState());
+    const [initialModulePlanCache] = useState<CachedModulePlanState>(() => loadCachedModulePlanState(MODULE_PLAN_CACHE_KEY));
     const [scriptContent, setScriptContent] = useState(cached.script);
-    const [rubricContent, setRubricContent] = useState(cached.rubric);
+    const [rubricContent, setRubricContent] = useState(isOral ? "" : cached.rubric);
     const [activeTab, setActiveTab] = useState<ResultTab>("script");
     const [taskName, setTaskName] = useState(cached.name);
     const [errorMessage, setErrorMessage] = useState("");
@@ -656,7 +670,7 @@ export function TrainingGenerateInterface() {
     const [isScriptSourceEditing, setIsScriptSourceEditing] = useState(false);
     const [scriptEditDraft, setScriptEditDraft] = useState("");
     const [scriptEditFocusOffset, setScriptEditFocusOffset] = useState<number | null>(null);
-    const [optimizationSnapshots, setOptimizationSnapshots] = useState<OptimizationSnapshot[]>(() => loadOptimizationSnapshots());
+    const [optimizationSnapshots, setOptimizationSnapshots] = useState<OptimizationSnapshot[]>(() => loadOptimizationSnapshots(OPTIMIZATION_SNAPSHOT_KEY));
     const [lastOptimizationResult, setLastOptimizationResult] = useState<OptimizationLoopResult | null>(null);
 
     // 生成完成后自动持久化
@@ -776,7 +790,6 @@ export function TrainingGenerateInterface() {
     const scriptEditTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
     // --- Prompt 模板（数据库 + localStorage fallback） ---
-    const PROMPT_SETTINGS_KEY = "training-prompt-settings";
     const [scriptTemplate, setScriptTemplate] = useState<string>(() => {
         if (typeof window === "undefined") return DEFAULT_SCRIPT_TEMPLATE;
         try {
@@ -901,7 +914,7 @@ export function TrainingGenerateInterface() {
             const hasText = textContent.trim().length > 0;
             if (!file && !hasText) {
                 try {
-                    await clearCachedTeacherDocState();
+                    await clearTeacherDocCache(databaseName);
                 } catch {
                     // ignore cache clear failures
                 }
@@ -1014,6 +1027,7 @@ export function TrainingGenerateInterface() {
 
     // 选择模板时填充 textarea
     const handleSelectTemplate = (templateId: string, tab: "script" | "rubric") => {
+        if (isOral && tab === "rubric") return;
         if (tab === "script") {
             setSelectedScriptTemplateId(templateId);
         } else {
@@ -1113,6 +1127,7 @@ export function TrainingGenerateInterface() {
         setPlanErrorMessage("");
         try {
             const result = await createTrainingScriptPlan({
+                trainingType,
                 teacherDocContent: doc.content || "",
                 file: doc.file,
                 teacherDocName: doc.name,
@@ -1141,7 +1156,7 @@ export function TrainingGenerateInterface() {
         } finally {
             setPlanning(false);
         }
-    }, [generateScript, getDocContent, planningFlowPreference, planningSuggestion, syncDominantMode]);
+    }, [trainingType, generateScript, getDocContent, planningFlowPreference, planningSuggestion, syncDominantMode]);
 
     const openPlanRegenerateModal = useCallback(() => {
         setPlanRegenerateFeedback(planningSuggestion);
@@ -1355,6 +1370,7 @@ export function TrainingGenerateInterface() {
 
         try {
             await streamTrainingGenerate({
+                trainingType,
                 teacherDocContent: doc.content || "",
                 file: doc.file,
                 teacherDocName: doc.name,
@@ -1439,6 +1455,7 @@ export function TrainingGenerateInterface() {
     }, [
         activeDefaultScriptTemplate,
         canGenerate,
+        trainingType,
         getDocContent,
         generateScript,
         generateRubric,
@@ -1490,6 +1507,7 @@ export function TrainingGenerateInterface() {
         try {
             await streamTrainingGenerate({
                 requestMode: "continue_script",
+                trainingType,
                 teacherDocContent: doc.content || "",
                 file: doc.file,
                 teacherDocName: doc.name,
@@ -1576,6 +1594,7 @@ export function TrainingGenerateInterface() {
         scriptMode,
         scriptTemplate,
         taskName,
+        trainingType,
     ]);
 
     // --- 重新生成逻辑 ---
@@ -1633,6 +1652,7 @@ export function TrainingGenerateInterface() {
         try {
             // 始终使用文本模式发送（不再重新上传文件）
             await streamTrainingGenerate({
+                trainingType,
                 teacherDocContent: regenDocContent,
                 teacherDocName: taskName || "重新生成",
                 generateScript: shouldRegenScript,
@@ -1998,6 +2018,7 @@ export function TrainingGenerateInterface() {
         try {
             const currentStageMarkdown = scriptStructure.stages[targetStageIndex]?.markdown || "";
             const result = await regenerateTrainingScriptModule({
+                trainingType,
                 teacherDocContent: doc.content || "",
                 file: doc.file,
                 teacherDocName: doc.name,
@@ -2018,7 +2039,7 @@ export function TrainingGenerateInterface() {
         } finally {
             setModuleRegenerating(false);
         }
-    }, [getDocContent, modulePlan, moduleRegenFeedback, moduleRegenTargetId, moduleRegenUsePrevious, scriptStructure.stages]);
+    }, [trainingType, getDocContent, modulePlan, moduleRegenFeedback, moduleRegenTargetId, moduleRegenUsePrevious, scriptStructure.stages]);
 
     const openModuleRegenerateModal = useCallback((moduleId: string) => {
         setModuleRegenTargetId(moduleId);
@@ -2053,7 +2074,7 @@ export function TrainingGenerateInterface() {
 
         setOptimizationSnapshots((prev) => [snapshot, ...prev].slice(0, OPTIMIZATION_SNAPSHOT_LIMIT));
         setScriptContent(result.optimized_script_markdown);
-        if (result.optimized_rubric_markdown) {
+        if (!isOral && result.optimized_rubric_markdown) {
             setRubricContent(result.optimized_rubric_markdown);
         }
         setModulePlan(result.module_plan_used);
@@ -2065,14 +2086,14 @@ export function TrainingGenerateInterface() {
         setErrorMessage("");
         setLastOptimizationResult(result);
         setStatusMessage(`闭环优化完成：已自动应用 ${result.applied_actions.length} 条修订动作`);
-    }, [lastSystemPlan, modulePlan, rubricContent, scriptContent, taskName]);
+    }, [isOral, lastSystemPlan, modulePlan, rubricContent, scriptContent, taskName]);
 
     const handleRestoreOptimizationSnapshot = useCallback((snapshotId: string) => {
         const snapshot = optimizationSnapshots.find((item) => item.id === snapshotId);
         if (!snapshot) return;
 
         setScriptContent(snapshot.scriptContent);
-        setRubricContent(snapshot.rubricContent);
+        setRubricContent(isOral ? "" : snapshot.rubricContent);
         setModulePlan(snapshot.modulePlan);
         setLastSystemPlan(snapshot.modulePlan);
         setTaskName(snapshot.taskName);
@@ -2082,7 +2103,11 @@ export function TrainingGenerateInterface() {
         setScriptEditDraft(snapshot.scriptContent);
         setLastOptimizationResult(null);
         setStatusMessage(`已回退到 ${new Date(snapshot.createdAt).toLocaleString()} 的优化前版本`);
-    }, [optimizationSnapshots]);
+    }, [isOral, optimizationSnapshots]);
+
+    if (!workspaceHydrated) {
+        return <div className="max-w-6xl mx-auto px-4 py-8 text-sm text-slate-500" role="status">正在恢复训练配置…</div>;
+    }
 
     return (
         <div className="max-w-6xl mx-auto px-4 py-8">
@@ -2090,12 +2115,12 @@ export function TrainingGenerateInterface() {
             <div className="mb-8">
                 <div className="flex items-center gap-3 mb-2">
                     <div className="p-2 bg-gradient-to-br from-violet-100 to-indigo-100 rounded-xl">
-                        <Wand2 className="w-6 h-6 text-indigo-600" />
+                        {isOral ? <Mic className="w-6 h-6 text-indigo-600" /> : <Wand2 className="w-6 h-6 text-indigo-600" />}
                     </div>
-                    <h1 className="text-2xl font-bold text-slate-800">训练配置生成</h1>
+                    <h1 className="text-2xl font-bold text-slate-800">{isOral ? "口语训练配置生成" : "训练配置生成"}</h1>
                 </div>
                 <p className="text-slate-500 ml-[52px]">
-                    上传教师文档，自动生成能力训练剧本配置和评分标准
+                    {isOral ? "上传教师文档，生成口语训练剧本配置并注入平台；评分沿用平台默认配置" : "上传教师文档，自动生成能力训练剧本配置和评分标准"}
                 </p>
             </div>
 
@@ -2239,7 +2264,7 @@ export function TrainingGenerateInterface() {
                             </label>
 
                             <label
-                                className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all flex-1 ${generateRubric
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all flex-1 ${isOral ? "opacity-50 cursor-not-allowed bg-slate-100" : "cursor-pointer"} ${generateRubric
                                     ? "border-amber-300 bg-amber-50"
                                     : "border-slate-200 hover:border-slate-300"
                                     }`}
@@ -2247,6 +2272,7 @@ export function TrainingGenerateInterface() {
                                 <input
                                     type="checkbox"
                                     checked={generateRubric}
+                                    disabled={isOral}
                                     onChange={(e) => setGenerateRubric(e.target.checked)}
                                     className="sr-only"
                                 />
@@ -2259,7 +2285,7 @@ export function TrainingGenerateInterface() {
                                         <ClipboardList className="w-4 h-4 text-amber-500" />
                                         <span className="text-sm font-medium text-slate-700">评分标准</span>
                                     </div>
-                                    <p className="text-xs text-slate-400 mt-0.5">层级化得分点、评判标准</p>
+                                    <p className="text-xs text-slate-400 mt-0.5">{isOral ? "暂不支持，沿用平台默认评分配置" : "层级化得分点、评判标准"}</p>
                                 </div>
                             </label>
                         </div>
@@ -2809,8 +2835,9 @@ export function TrainingGenerateInterface() {
                                     </button>
                                     <button
                                         type="button"
+                                        disabled={isOral}
                                         onClick={() => setActivePromptTab("rubric")}
-                                        className={`flex-1 py-2.5 text-sm font-medium transition-colors ${activePromptTab === "rubric"
+                                        className={`flex-1 py-2.5 text-sm font-medium transition-colors ${isOral ? "opacity-40 cursor-not-allowed" : ""} ${activePromptTab === "rubric"
                                             ? "text-amber-600 border-b-2 border-amber-500 bg-amber-50/50"
                                             : "text-slate-500 hover:text-slate-700"
                                             }`}
@@ -3062,10 +3089,11 @@ export function TrainingGenerateInterface() {
                                     )}
                                 </button>
                             )}
-                            {generateRubric && (
+                            {(generateRubric || isOral) && (
                                 <button
+                                    disabled={isOral}
                                     onClick={() => setActiveTab("rubric")}
-                                    className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap ${activeTab === "rubric"
+                                    className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed ${activeTab === "rubric"
                                         ? "bg-white text-amber-700 shadow-sm ring-1 ring-slate-200/50"
                                         : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
                                         }`}
@@ -3320,7 +3348,7 @@ export function TrainingGenerateInterface() {
                                                     剧本
                                                 </span>
                                             )}
-                                            {generateRubric && (
+                                            {(generateRubric || isOral) && (
                                                 <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${currentGeneratingPhase === "rubric"
                                                     ? "bg-amber-100 text-amber-600"
                                                     : rubricContent
@@ -3436,11 +3464,12 @@ export function TrainingGenerateInterface() {
                                                 <span className={regenScript ? "text-violet-600 font-medium" : "text-slate-400"}>训练剧本</span>
                                             </label>
                                         )}
-                                        {generateRubric && (
-                                            <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                                        {(generateRubric || isOral) && (
+                                            <label className={`flex items-center gap-1.5 text-xs ${isOral ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
                                                 <input
                                                     type="checkbox"
-                                                    checked={regenRubric}
+                                                    checked={!isOral && regenRubric}
+                                                    disabled={isOral}
                                                     onChange={(e) => setRegenRubric(e.target.checked)}
                                                     className="w-3.5 h-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                                                 />
@@ -3664,21 +3693,23 @@ export function TrainingGenerateInterface() {
             <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
             <TrainingOptimizationModal
+                trainingType={trainingType}
                 isOpen={showOptimizationModal}
                 onClose={() => setShowOptimizationModal(false)}
                 getDocContent={getDocContent}
                 scriptMarkdown={scriptContent}
-                rubricMarkdown={rubricContent}
+                rubricMarkdown={isOral ? undefined : rubricContent}
                 modulePlan={modulePlan}
                 onOptimizationApplied={handleOptimizationApplied}
             />
 
             {/* 一键注入配置弹窗 */}
             <InjectConfigModal
+                trainingType={trainingType}
                 isOpen={showInjectModal}
                 onClose={() => setShowInjectModal(false)}
                 scriptMarkdown={scriptContent}
-                rubricMarkdown={rubricContent}
+                rubricMarkdown={isOral ? undefined : rubricContent}
             />
         </div>
     );

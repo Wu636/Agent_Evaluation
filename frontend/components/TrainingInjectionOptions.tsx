@@ -3,6 +3,7 @@
 export type TrainingInjectionMode = "replace" | "append";
 
 export function TrainingInjectionOptions({
+  rubricDisabled = false,
   injectScript,
   injectRubric,
   injectMode,
@@ -15,6 +16,7 @@ export function TrainingInjectionOptions({
   onInjectRubricChange,
   onInjectModeChange,
 }: {
+  rubricDisabled?: boolean;
   injectScript: boolean;
   injectRubric: boolean;
   injectMode: TrainingInjectionMode;
@@ -54,19 +56,19 @@ export function TrainingInjectionOptions({
           )}
         </label>
         <label
-          className={`flex items-center gap-2 rounded-lg border p-2 transition-colors ${!hasRubric || disabled ? "cursor-not-allowed bg-slate-50 opacity-50" : "cursor-pointer hover:bg-slate-50"}`}
+          className={`flex items-center gap-2 rounded-lg border p-2 transition-colors ${!hasRubric || disabled || rubricDisabled ? "cursor-not-allowed bg-slate-50 opacity-50" : "cursor-pointer hover:bg-slate-50"}`}
         >
           <input
             type="checkbox"
-            checked={injectRubric}
+            checked={!rubricDisabled && injectRubric}
             onChange={(event) => onInjectRubricChange(event.target.checked)}
-            disabled={!hasRubric || disabled}
+            disabled={!hasRubric || disabled || rubricDisabled}
             className="rounded text-indigo-600 focus:ring-indigo-500"
           />
           <span className="text-sm font-medium text-slate-700">
             任务评分标准
           </span>
-          {!hasRubric && (
+          {rubricDisabled ? <span className="ml-auto text-xs text-slate-400">平台默认</span> : !hasRubric && (
             <span className="ml-auto text-xs text-slate-400">未生成</span>
           )}
         </label>

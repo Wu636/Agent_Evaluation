@@ -1,3 +1,4 @@
+import { parseTrainingType, withOralTrainingContext, type TrainingType } from "@/lib/oral-training/config";
 import { NextRequest, NextResponse } from "next/server";
 import WordExtractor from "word-extractor";
 import { MODEL_NAME_MAPPING } from "@/lib/config";
@@ -11,6 +12,7 @@ export const maxDuration = 180;
 
 export async function POST(request: NextRequest) {
     try {
+        let trainingType: TrainingType | undefined;
         let teacherDocContent = "";
         let teacherDocName = "文档";
         let apiKey = "";
@@ -26,6 +28,7 @@ export async function POST(request: NextRequest) {
 
         if (contentType.includes("multipart/form-data")) {
             const formData = await request.formData();
+            trainingType = parseTrainingType(formData.get("trainingType"));
             const file = formData.get("file") as File | null;
             teacherDocName = formData.get("teacherDocName") as string || "文档";
             apiKey = formData.get("apiKey") as string || "";
@@ -56,6 +59,7 @@ export async function POST(request: NextRequest) {
             }
         } else {
             const payload = await request.json();
+            trainingType = parseTrainingType(payload.trainingType);
             ({
                 teacherDocContent = "",
                 teacherDocName = "文档",
@@ -73,6 +77,8 @@ export async function POST(request: NextRequest) {
         if (!teacherDocContent.trim()) {
             return NextResponse.json({ error: "文档内容为空，请检查文件格式" }, { status: 400 });
         }
+        teacherDocContent = withOralTrainingContext(teacherDocContent, trainingType);
+
         if (!modulePlan) {
             return NextResponse.json({ error: "缺少模块规划，无法执行单模块重生成" }, { status: 400 });
         }

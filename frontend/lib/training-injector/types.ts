@@ -1,9 +1,12 @@
+import type { StageVocabulary } from "../oral-training/vocabulary";
 /**
  * 训练配置注入器 - 类型定义
  */
 
 /** polymas 平台凭证 */
 export interface PolymasCredentials {
+    /** 注入目标类型；所有节点和配置写入保持一致。 */
+    trainSubType?: "ability" | "oral";
     authorization: string;
     cookie: string;
     userNid?: string;
@@ -17,6 +20,8 @@ export interface PolymasCredentials {
 
 /** 解析后的训练阶段（从 Markdown 剧本配置提取） */
 export interface ParsedStep {
+    keyVocabularies?: StageVocabulary[];
+    keyVocabularyError?: string;
     stepName: string;
     trainerName: string;
     trainerGender: string;   // 数字人性别（男性 / 女性）
@@ -60,12 +65,15 @@ export interface ParsedScoreItem {
 
 /** 注入请求 */
 export interface InjectRequest {
+    injectKeyVocabularies?: boolean;
+    vocabularyStageIndexes?: number[];
     trainTaskId: string;
     credentials: PolymasCredentials;
     scriptMarkdown?: string;     // 训练剧本 Markdown 内容
     rubricMarkdown?: string;     // 评分标准 Markdown 内容
     coverStylePrompt?: string;   // 课程封面图风格提示
     backgroundStylePrompt?: string; // 阶段背景图风格提示
+    injectDigitalHuman?: boolean; // 是否注入数字人，默认开启
     digitalHumanAvatarMode?: 'existing' | 'ai'; // 数字人头像来源
     digitalHumanAvatarStylePrompt?: string; // AI 数字人头像风格提示
     injectMode: 'replace' | 'append';  // 全新创建 / 追加
@@ -92,6 +100,7 @@ export interface InjectSummary {
 export interface PolymasScriptStep {
     stepId: string;
     stepDetailDTO: {
+        stepExtProperty?: Record<string, unknown>;
         nodeType: string;     // 'SCRIPT_NODE' | 'SCRIPT_START' | 'SCRIPT_END'
         stepName: string;
         description?: string;

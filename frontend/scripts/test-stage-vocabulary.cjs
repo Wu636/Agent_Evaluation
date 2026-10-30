@@ -1,0 +1,36 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const ts = require('typescript');
+function load(file) {
+    const mod = { exports: {} };
+    const src = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+    new Function('require', 'module', 'exports', src)(id => id.startsWith('.') ? load(path.resolve(path.dirname(file), id) + (id.endsWith('.ts') ? '' : '.ts')) : require(id), mod, mod.exports);
+    return mod.exports;
+}
+const parser = load(path.resolve('lib/training-injector/parser.ts'));
+const terms = [{ term: 'reservation', meaning: '预订', source: '第一阶段练习 reservation' }];
+const fixture = (content) => `# 训练配置\n### 阶段1: 预订\n**虚拟训练官名字**: Alice\n**阶段描述**: 预订\n**重点词汇**:\n\`\`\`json\n${content}\n\`\`\`\n**开场白**:\n> Hello\n**提示词**:\n\`\`\`\nTalk\n\`\`\`\n### 阶段2: 告别\n**重点词汇**:\n\`\`\`json\n[]\n\`\`\`\n**开场白**:\n> Bye\n**提示词**:\n\`\`\`\nGoodbye\n\`\`\``;
+const steps = parser.parseTrainingScript(fixture(JSON.stringify(terms)));
+assert.equal(steps.length, 2);
+assert.deepEqual(steps[0].keyVocabularies, terms);
+assert.deepEqual(steps[1].keyVocabularies, []);
+assert.equal(steps[0].prologue, 'Hello');
+assert.equal(steps[0].llmPrompt, 'Talk');
+const serialized = steps.map((s, i) => parser.serializeTrainingStage(s, i + 1)).join('\n\n');
+assert.deepEqual(parser.parseTrainingScript(serialized).map(s => s.keyVocabularies), [terms, []]);
+assert.ok(parser.parseTrainingScript(fixture('[invalid'))[0].keyVocabularyError);
+assert.equal(parser.parseTrainingScript('### 阶段1: 旧配置\n**提示词**:\n```\nTalk\n```')[0].keyVocabularies, undefined);
+const vocabulary = load(path.resolve('lib/oral-training/vocabulary.ts'));
+const platformTerms = [{ id: '1792921076898', vocabulary: 'beauty', explanation: '美丽', exampleSentence: 'Beauty！' }];
+const parsedPlatform = parser.parseTrainingScript(fixture(JSON.stringify(platformTerms)))[0].keyVocabularies;
+assert.equal(parsedPlatform[0].term, 'beauty');
+assert.equal(parsedPlatform[0].meaning, '美丽');
+assert.equal(parsedPlatform[0].exampleSentence, 'Beauty！');
+const mapped = vocabulary.toPlatformVocabularies(parsedPlatform);
+assert.deepEqual(Object.keys(mapped[0]).sort(), ['id', 'vocabulary', 'explanation', 'exampleSentence'].sort());
+assert.equal(mapped[0].vocabulary, 'beauty');
+assert.equal(mapped[0].exampleSentence, 'Beauty！');
+assert.match(mapped[0].id, /^\d+$/);
+assert.notEqual(mapped[0].id, vocabulary.toPlatformVocabularies(parsedPlatform)[0].id);
+console.log('PASS: stage vocabulary extraction, empty stages, serialization round trip, malformed JSON diagnostic and legacy scripts.');

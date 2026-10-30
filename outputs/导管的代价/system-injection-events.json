@@ -1,0 +1,399 @@
+[
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在解析训练剧本配置...",
+    "current": 0,
+    "total": 1
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正则提取任务名称：实训一谜案 01《导管的代价》",
+    "current": 0,
+    "total": 1
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "基础配置解析结果：实训一谜案 01《导管的代价》 / 描述已提取",
+    "current": 0,
+    "total": 1
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "已校验非线性流程：12 个阶段、12 条指定连线",
+    "current": 0,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "已跳过课程封面图注入",
+    "current": 0,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在更新任务基础配置（名称、描述、入口音色）...",
+    "current": 0,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "基础配置缺少当前封面图，已跳过名称/描述写入，避免触发平台配置接口错误",
+    "current": 0,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在查询现有工作流...",
+    "current": 0,
+    "total": 12
+  },
+  {
+    "type": "start",
+    "phase": "script",
+    "message": "开始注入训练剧本，共 12 个新增阶段...",
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在创建节点 1/12：阶段一｜案例摘要与角色锁定",
+    "current": 1,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在写入场景配置...",
+    "current": 1,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "场景配置设置成功",
+    "current": 1,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在创建节点 2/12：阶段二｜案例引入与第一轮线索",
+    "current": 2,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在写入场景配置...",
+    "current": 2,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "场景配置设置成功",
+    "current": 2,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在创建节点 3/12：阶段二｜原理性小结",
+    "current": 3,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在写入场景配置...",
+    "current": 3,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "场景配置设置成功",
+    "current": 3,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在创建节点 4/12：阶段三｜病因推演与第二轮线索",
+    "current": 4,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在写入场景配置...",
+    "current": 4,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "场景配置设置成功",
+    "current": 4,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在创建节点 5/12：阶段三｜原理性小结",
+    "current": 5,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在写入场景配置...",
+    "current": 5,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "场景配置设置成功",
+    "current": 5,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在创建节点 6/12：阶段四｜实验鉴证与第三轮线索",
+    "current": 6,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在写入场景配置...",
+    "current": 6,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "场景配置设置成功",
+    "current": 6,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在创建节点 7/12：阶段四｜原理性小结",
+    "current": 7,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在写入场景配置...",
+    "current": 7,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "场景配置设置成功",
+    "current": 7,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在创建节点 8/12：阶段五｜治疗决策",
+    "current": 8,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在写入场景配置...",
+    "current": 8,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "场景配置设置成功",
+    "current": 8,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在创建节点 9/12：阶段五｜小结与作答结束确认",
+    "current": 9,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在写入场景配置...",
+    "current": 9,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "场景配置设置成功",
+    "current": 9,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在创建节点 10/12：收尾一｜四角色拓展问题全景",
+    "current": 10,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在写入场景配置...",
+    "current": 10,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "场景配置设置成功",
+    "current": 10,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在创建节点 11/12：收尾二｜通用易错点自查",
+    "current": 11,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在写入场景配置...",
+    "current": 11,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "场景配置设置成功",
+    "current": 11,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在创建节点 12/12：收尾三｜实训复盘与六维画像",
+    "current": 12,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在写入场景配置...",
+    "current": 12,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "场景配置设置成功",
+    "current": 12,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在按非线性跳转关系创建节点连线...",
+    "current": 12,
+    "total": 12
+  },
+  {
+    "type": "progress",
+    "phase": "script",
+    "message": "正在将开始和结束卡片放到流程两侧...",
+    "current": 12,
+    "total": 12
+  },
+  {
+    "type": "phase_complete",
+    "phase": "script",
+    "message": "训练剧本注入完成：12 个节点，13 条连线"
+  },
+  {
+    "type": "start",
+    "phase": "rubric",
+    "message": "开始注入评分标准，共 6 个评分项...",
+    "total": 6
+  },
+  {
+    "type": "progress",
+    "phase": "rubric",
+    "message": "正在创建评分项 1/6：病例分析与鉴别诊断能力（22分）",
+    "current": 1,
+    "total": 6
+  },
+  {
+    "type": "progress",
+    "phase": "rubric",
+    "message": "正在创建评分项 2/6：实验室证据解读与检验思维（22分）",
+    "current": 2,
+    "total": 6
+  },
+  {
+    "type": "progress",
+    "phase": "rubric",
+    "message": "正在创建评分项 3/6：病原耐药认知与综合处置决策（24分）",
+    "current": 3,
+    "total": 6
+  },
+  {
+    "type": "progress",
+    "phase": "rubric",
+    "message": "正在创建评分项 4/6：角色视角拓展思考（12分）",
+    "current": 4,
+    "total": 6
+  },
+  {
+    "type": "progress",
+    "phase": "rubric",
+    "message": "正在创建评分项 5/6：质询应答与推理迭代能力（10分）",
+    "current": 5,
+    "total": 6
+  },
+  {
+    "type": "progress",
+    "phase": "rubric",
+    "message": "正在创建评分项 6/6：主动探究与提问质量（10分）",
+    "current": 6,
+    "total": 6
+  },
+  {
+    "type": "phase_complete",
+    "phase": "rubric",
+    "message": "评分标准注入完成：6 个评分项"
+  },
+  {
+    "type": "complete",
+    "message": "所有内容注入成功！请前往智慧树平台刷新对应任务页面查看结果。",
+    "summary": {
+      "stepsCreated": 12,
+      "flowsCreated": 13,
+      "scoreItemsCreated": 6,
+      "stepsDeleted": 0,
+      "flowsDeleted": 0
+    }
+  }
+]

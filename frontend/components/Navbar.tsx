@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Sparkles, History, Settings, FileText, ClipboardCheck, Wand2, BookOpen, ChevronDown, GitMerge, RefreshCw, UploadCloud, Network } from 'lucide-react';
+import { Sparkles, History, Settings, FileText, ClipboardCheck, Wand2, BookOpen, ChevronDown, GitMerge, RefreshCw, UploadCloud, Network, Mic } from 'lucide-react';
 import Link from 'next/link';
 import { UserMenu } from './UserMenu';
 import { SettingsModal } from './SettingsModal';
@@ -32,10 +32,11 @@ export function Navbar() {
                         </button>
                         <NavLink href="/homework-review" icon={<ClipboardCheck className="w-4 h-4" />}>作业批阅</NavLink>
                         <NavDropdown
-                            label="能力训练"
+                            label="能力实训"
                             icon={<Wand2 className="w-4 h-4" />}
                             items={[
                                 { href: '/training-generate', label: '基础版', icon: <Wand2 className="w-4 h-4" /> },
+                                { href: '/oral-training', label: '口语训练', icon: <Mic className="w-4 h-4" /> },
                                 { href: '/training-generate-pro', label: 'Pro 版', icon: <Sparkles className="w-4 h-4" /> },
                                 { href: '/training-convert-pro', label: '基础转 Pro', icon: <RefreshCw className="w-4 h-4" /> },
                                 { href: '/training-refine', label: '训练优化', icon: <Network className="w-4 h-4" /> },

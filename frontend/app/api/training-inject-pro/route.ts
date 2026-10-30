@@ -66,6 +66,7 @@ interface InjectProRequestBody {
   targetUrl?: string;
   authorization?: string;
   cookie?: string;
+  authMode?: "auto" | "cookie";
   credentials?: {
     authorization?: string;
     cookie?: string;
@@ -316,12 +317,14 @@ function normalizeDerivedAuthorizationValue(value: string): string | undefined {
 function buildAuthorization(
   cookie: string,
   authorization?: string,
+  deriveFromCookie = true,
 ): string | undefined {
   // 显式 Authorization 与基础版保持一致：用户填什么，就原样转发什么。
   const explicitAuthorization = readExplicitAuthorization(
     authorization || extractHeaderValue(cookie, ["authorization"]),
   );
   if (explicitAuthorization) return explicitAuthorization;
+  if (!deriveFromCookie) return undefined;
 
   const token = extractCookieValue(cookie, [
     "ai-poly",
@@ -354,9 +357,10 @@ class ProPlatformApi {
     private readonly cookie: string,
     private readonly trainTaskId: string,
     authorization?: string,
+    deriveAuth = true,
   ) {
     this.cookie = sanitizeCookieInput(cookie);
-    this.authorization = buildAuthorization(this.cookie, authorization);
+    this.authorization = buildAuthorization(this.cookie, authorization, deriveAuth);
   }
 
   private async request<T = unknown>(
@@ -688,17 +692,10 @@ function findReusableDigitalHumanByName(
 }
 
 function normalizeModelId(value: string): string {
-  if (!value) return "doubao-seed-2-0-pro";
-  if (/^[a-z0-9-]+$/i.test(value) && value.includes("-")) return value;
-  const modelMap: Record<string, string> = {
-    "Doubao-Seed-2.0-pro": "doubao-seed-2-0-pro",
-    "Doubao-1.5-pro": "doubao-1-5-pro-32k-250115",
-    "Doubao-1.5-thinking-pro": "doubao-1-5-thinking-pro-250415",
-    "DeepSeek-V3": "deepseek-v3-250324",
-    "DeepSeek-R1": "deepseek-r1-250528",
-    "Qwen3-235B": "qwen3-235b-a22b",
-  };
-  return modelMap[value] || value.toLowerCase().replace(/[\s.]+/g, "-");
+  // 平台存储与展示均使用原始模型名（如 "Doubao-Seed-2.0-pro"），
+  // 不做小写/横线转换，保证注入值与配置预览一致。
+  const trimmed = String(value || "").trim();
+  return trimmed || "Doubao-Seed-2.0-pro";
 }
 
 function pickAvatarNid(
@@ -1657,6 +1654,8 @@ export async function POST(request: NextRequest) {
     body.authorization ||
     extractHeaderValue(rawCookie, ["authorization"]);
   const userNid = body.credentials?.userNid || "";
+  const authMode = body.authMode === "cookie" ? "cookie" : "auto";
+  const deriveAuth = authMode !== "cookie";
   const mode: InjectMode = body.mode || "fresh";
   const options = buildOptions(body);
 
@@ -1682,7 +1681,7 @@ export async function POST(request: NextRequest) {
     action === "list-digital-humans" ||
     action === "delete-digital-humans"
   ) {
-    const api = new ProPlatformApi(cookie, target.trainTaskId, authorization);
+    const api = new ProPlatformApi(cookie, target.trainTaskId, authorization, deriveAuth);
     try {
       if (action === "list-skills") {
         const skills = await listManagedSkills(api);
@@ -1774,7 +1773,12 @@ export async function POST(request: NextRequest) {
         }
 
         const trainTaskId = target.trainTaskId;
-        const api = new ProPlatformApi(cookie, trainTaskId, authorization);
+        const api = new ProPlatformApi(
+          cookie,
+          trainTaskId,
+          authorization,
+          deriveAuth,
+        );
         const taskDetail = await api.getTaskDetail().catch(() => null);
 
         let skillTypes: PlatformSkillType[] = [];

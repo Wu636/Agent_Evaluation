@@ -31,7 +31,6 @@ export async function POST(request: NextRequest) {
             targetType,
             updateFullConfiguration = false,
             stepId,
-            stepSnapshot,
             trainTaskName,
             trainDescription,
             stageDescription,
@@ -88,8 +87,8 @@ export async function POST(request: NextRequest) {
             const parsed = parsePolymasUrl(trainTaskId);
             if (parsed?.trainTaskId) {
                 finalTrainTaskId = parsed.trainTaskId;
-                finalCourseId = finalCourseId || parsed.courseId;
-                finalLibraryFolderId = finalLibraryFolderId || parsed.libraryFolderId;
+                finalCourseId = parsed.courseId || finalCourseId;
+                finalLibraryFolderId = parsed.libraryFolderId || finalLibraryFolderId;
                 // 学校定制化平台：从完整 URL 提取 origin
                 if (parsed.apiOrigin && !credentials.apiOrigin) {
                     credentials.apiOrigin = parsed.apiOrigin;
@@ -202,60 +201,38 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            let stepDetail = {
-                stepName: stepSnapshot?.stepName || "",
-                description: stepSnapshot?.description || "",
-                prologue: stepSnapshot?.prologue || "",
-                modelId: stepSnapshot?.modelId || "",
-                llmPrompt: stepSnapshot?.llmPrompt || "",
-                trainerName: stepSnapshot?.trainerName || "",
-                interactiveRounds: Number(stepSnapshot?.interactiveRounds) || 0,
-                agentId: stepSnapshot?.agentId || "",
-                agentVoiceId: stepSnapshot?.agentVoiceId || "",
-                avatarNid: stepSnapshot?.avatarNid || "",
-                customDigitalHuman: stepSnapshot?.customDigitalHuman || "",
-                knowledgeBaseId: stepSnapshot?.knowledgeBaseId || "",
-                knowledgeBaseSwitch: stepSnapshot?.knowledgeBaseSwitch,
-                searchEngineSwitch: stepSnapshot?.searchEngineSwitch,
-            };
-            let position = {
-                x: Number(stepSnapshot?.position?.x) || 100,
-                y: Number(stepSnapshot?.position?.y) || 300,
-            };
-
-            if (!stepSnapshot) {
-                const steps = await queryScriptSteps(finalTrainTaskId, credentials);
-                const targetStep = steps.find((s) => s.stepId === stepId && s.stepDetailDTO?.nodeType === "SCRIPT_NODE");
-                if (!targetStep) {
-                    return NextResponse.json(
-                        { success: false, error: "未找到指定阶段节点" },
-                        { status: 404 }
-                    );
-                }
-
-                const raw = targetStep.stepDetailDTO || { nodeType: "SCRIPT_NODE", stepName: "未命名阶段" };
-                stepDetail = {
-                    stepName: raw.stepName || "",
-                    description: raw.description || "",
-                    prologue: raw.prologue || "",
-                    modelId: raw.modelId || "",
-                    llmPrompt: raw.llmPrompt || "",
-                    trainerName: raw.trainerName || "",
-                    interactiveRounds: Number(raw.interactiveRounds) || 0,
-                    agentId: raw.agentId || "",
-                    agentVoiceId: raw.agentVoiceId || "",
-                    avatarNid: raw.avatarNid || "",
-                    customDigitalHuman: raw.customDigitalHuman || "",
-                    knowledgeBaseId: raw.knowledgeBaseId || "",
-                    knowledgeBaseSwitch: raw.knowledgeBaseSwitch,
-                    searchEngineSwitch: raw.searchEngineSwitch,
-                };
-                position = {
-                    x: Number(targetStep.positionDTO?.x) || 100,
-                    y: Number(targetStep.positionDTO?.y) || 300,
-                };
+            // Resolve membership and current configuration; client snapshots may belong to a previous task.
+            const steps = await queryScriptSteps(finalTrainTaskId, credentials);
+            const targetStep = steps.find((s) => s.stepId === stepId && s.stepDetailDTO?.nodeType === "SCRIPT_NODE");
+            if (!targetStep) {
+                return NextResponse.json(
+                    { success: false, error: "指定阶段不属于当前任务或已被替换，请重新加载阶段列表" },
+                    { status: 409 }
+                );
             }
 
+            const raw = targetStep.stepDetailDTO || { nodeType: "SCRIPT_NODE", stepName: "未命名阶段" };
+            const stepDetail = {
+                stepExtProperty: raw.stepExtProperty,
+                stepName: raw.stepName || "",
+                description: raw.description || "",
+                prologue: raw.prologue || "",
+                modelId: raw.modelId || "",
+                llmPrompt: raw.llmPrompt || "",
+                trainerName: raw.trainerName || "",
+                interactiveRounds: Number(raw.interactiveRounds) || 0,
+                agentId: raw.agentId || "",
+                agentVoiceId: raw.agentVoiceId || "",
+                avatarNid: raw.avatarNid || "",
+                customDigitalHuman: raw.customDigitalHuman || "",
+                knowledgeBaseId: raw.knowledgeBaseId || "",
+                knowledgeBaseSwitch: raw.knowledgeBaseSwitch,
+                searchEngineSwitch: raw.searchEngineSwitch,
+            };
+            const position = {
+                x: Number(targetStep.positionDTO?.x) || 100,
+                y: Number(targetStep.positionDTO?.y) || 300,
+            };
             const stageName = stepDetail.stepName || "未命名阶段";
             const description = String(stepDetail.description || "").trim() || String(stageDescription || "").trim();
 
@@ -285,6 +262,7 @@ export async function POST(request: NextRequest) {
                 finalTrainTaskId,
                 stepId,
                 {
+                    stepExtProperty: stepDetail.stepExtProperty as Record<string, unknown> | undefined,
                     stepName: stepDetail.stepName || "",
                     description: stepDetail.description || "",
                     prologue: stepDetail.prologue || "",
@@ -295,6 +273,7 @@ export async function POST(request: NextRequest) {
                     agentId: stepDetail.agentId || "Tg3LpKo28D",
                     agentVoiceId: stepDetail.agentVoiceId || undefined,
                     avatarNid: stepDetail.avatarNid || "hnuOVqMu8b",
+                    injectDigitalHuman: Boolean(stepDetail.avatarNid || stepDetail.customDigitalHuman),
                     scriptStepCover: {
                         fileId: bgImage.fileId,
                         fileUrl: bgImage.fileUrl,
@@ -435,6 +414,7 @@ export async function POST(request: NextRequest) {
                                     finalTrainTaskId,
                                     step.stepId,
                                     {
+                                        stepExtProperty: stepDetail.stepExtProperty as Record<string, unknown> | undefined,
                                         stepName: stepDetail.stepName || "",
                                         description: stepDetail.description || "",
                                         prologue: stepDetail.prologue || "",
@@ -445,6 +425,7 @@ export async function POST(request: NextRequest) {
                                         agentId: stepDetail.agentId || "Tg3LpKo28D",
                                         agentVoiceId: stepDetail.agentVoiceId || undefined,
                                         avatarNid: stepDetail.avatarNid || "hnuOVqMu8b",
+                                        injectDigitalHuman: Boolean(stepDetail.avatarNid || stepDetail.customDigitalHuman),
                                         scriptStepCover: {
                                             fileId: bgImage.fileId,
                                             fileUrl: bgImage.fileUrl,

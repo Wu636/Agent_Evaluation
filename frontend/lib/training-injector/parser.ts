@@ -1,3 +1,4 @@
+import { parseStageVocabularies } from "../oral-training/vocabulary.ts";
 /**
  * 训练配置注入器 - Markdown 解析器
  *
@@ -47,6 +48,7 @@ const SCRIPT_FIELD_LABELS = [
     "声音",
     "形象",
     "阶段描述",
+    "重点词汇",
     "背景图",
     "互动轮次",
     "flowCondition",
@@ -225,7 +227,7 @@ function isStageBoundaryComment(line: string): boolean {
     return /^<!--\s*STAGE_(?:START|END)\s*:?\s*[0-9一二三四五六七八九十]*\s*-->\s*$/i.test(line);
 }
 
-function parseStageBoundaryComment(line: string): {
+export function parseStageBoundaryComment(line: string): {
     type: "start" | "end";
     stageNumber: number | null;
 } | null {
@@ -343,9 +345,9 @@ export function normalizeTrainingScriptSource(markdown: string): string {
     const unwrappedScriptLikeFences = hasStructuredScript
         ? raw
         : raw.replace(
-            /```(?:markdown|md)?\s*\n([\s\S]*?)\n```/gi,
-            (fullMatch, innerContent: string) => {
-                if (!looksLikeTrainingScriptContent(innerContent)) {
+            /```([a-z0-9_-]*)[ \t]*\n([\s\S]*?)\n```/gi,
+            (fullMatch, language: string, innerContent: string) => {
+                if (!/^(?:markdown|md)?$/i.test(language) || !looksLikeTrainingScriptContent(innerContent)) {
                     return fullMatch;
                 }
                 return `\n${innerContent.trim()}\n`;
@@ -476,6 +478,8 @@ export function collectTrainingScriptStageRanges(lines: string[]): Array<{ start
     const sections: number[] = [];
     let inCodeBlock = false;
 
+    // Accept marked and unmarked stages together. A heading immediately inside a
+    // marked stage describes that stage; it must not create a second range.
     lines.forEach((line, index) => {
         const trimmed = line.trim();
         if (trimmed.startsWith("```")) {
@@ -521,9 +525,13 @@ export function collectTrainingScriptStageRanges(lines: string[]): Array<{ start
 function parseStageBlock(stageMarkdown: string): ParsedStep {
     const lines = normalizeScriptMarkdownForParsing(stageMarkdown).split("\n");
     const currentStep: Partial<ParsedStep> = {};
+    const readVocabularyField = (value: string) => {
+        try { currentStep.keyVocabularies = parseStageVocabularies(value); }
+        catch (error) { currentStep.keyVocabularyError = error instanceof Error ? error.message : "重点词汇格式错误"; }
+    };
     let inCodeBlock = false;
     let currentCodeBlock: string[] = [];
-    let codeBlockType: "prologue" | "llmPrompt" | "transitionPrompt" | null = null;
+    let codeBlockType: "prologue" | "llmPrompt" | "transitionPrompt" | "keyVocabularies" | null = null;
 
     for (const line of lines) {
         const stripped = line.trim();
@@ -537,7 +545,9 @@ function parseStageBlock(stageMarkdown: string): ParsedStep {
         if (stripped.startsWith("```")) {
             if (inCodeBlock) {
                 const content = currentCodeBlock.join("\n").trim();
-                if (content && codeBlockType === "prologue") {
+                if (codeBlockType === "keyVocabularies") {
+                    readVocabularyField(content || "[]");
+                } else if (content && codeBlockType === "prologue") {
                     currentStep.prologue = content;
                 } else if (content && codeBlockType === "llmPrompt") {
                     currentStep.llmPrompt = content;
@@ -559,6 +569,16 @@ function parseStageBlock(stageMarkdown: string): ParsedStep {
             continue;
         }
 
+        const vocabularyValue = getFieldLineValue(stripped, "重点词汇");
+        if (vocabularyValue !== null || isStandaloneScriptFieldHeading(stripped, "重点词汇")) {
+            if (vocabularyValue?.trim()) {
+                readVocabularyField(vocabularyValue.trim());
+                codeBlockType = null;
+            } else {
+                codeBlockType = "keyVocabularies";
+            }
+            continue;
+        }
         const trainerName = getFieldLineValue(stripped, "虚拟训练官名字");
         if (trainerName !== null) {
             currentStep.trainerName = normalizeValue(trainerName);
@@ -1035,6 +1055,7 @@ export function serializeTrainingStage(step: ParsedStep, stageNumber: number): s
         formatInlineScriptField("互动轮次", normalizedRounds),
         formatInlineScriptField("flowCondition", step.flowCondition),
         formatFencedScriptField("transitionPrompt", step.transitionPrompt),
+        ...(step.keyVocabularies !== undefined ? [formatFencedScriptField("重点词汇", JSON.stringify(step.keyVocabularies, null, 2))] : []),
         "",
         formatBlockquoteScriptField("开场白", step.prologue),
         "",
@@ -1243,6 +1264,8 @@ function splitField(line: string): string {
 /** 将 Partial<ParsedStep> 转换为完整的 ParsedStep */
 function makeStep(partial: Partial<ParsedStep>): ParsedStep {
     return {
+        ...(partial.keyVocabularyError ? { keyVocabularyError: partial.keyVocabularyError } : {}),
+        ...(partial.keyVocabularies !== undefined ? { keyVocabularies: partial.keyVocabularies } : {}),
         stepName: partial.stepName || "",
         trainerName: partial.trainerName || "",
         trainerGender: partial.trainerGender || "",

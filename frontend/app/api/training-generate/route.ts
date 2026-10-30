@@ -1,3 +1,4 @@
+import { parseTrainingType, withOralTrainingContext, type TrainingType } from "@/lib/oral-training/config";
 /**
  * POST /api/training-generate
  * 训练配置和评分标准 - 流式生成 API
@@ -105,6 +106,7 @@ export async function POST(request: NextRequest) {
             }, 10_000);
 
             try {
+                let trainingType: TrainingType | undefined;
                 let teacherDocContent: string;
                 let teacherDocName: string;
                 let generateScript: boolean;
@@ -126,6 +128,7 @@ export async function POST(request: NextRequest) {
                 if (contentType.includes("multipart/form-data")) {
                     // 文件上传模式：服务端解析文件内容
                     const formData = await request.formData();
+                    trainingType = parseTrainingType(formData.get("trainingType"));
                     const file = formData.get("file") as File | null;
                     teacherDocName = formData.get("teacherDocName") as string || "文档";
                     const mode = formData.get("requestMode");
@@ -171,8 +174,14 @@ export async function POST(request: NextRequest) {
                 } else {
                     // JSON 模式（文本粘贴）
                     const payload = await request.json();
+                    trainingType = parseTrainingType(payload.trainingType);
                     ({ teacherDocContent, teacherDocName, generateScript, generateRubric, apiKey, apiUrl, model, scriptPromptTemplate, rubricPromptTemplate, scriptMode = "general", modulePlan, userSuggestions, priorScript, priorRubric } = payload);
                     requestMode = payload.requestMode === "continue_script" || payload.requestMode === "resume_script" ? payload.requestMode : "generate";
+                }
+
+                if (trainingType === "oral") {
+                    generateRubric = false;
+                    if (!generateScript) throw new Error("口语训练暂不支持生成评分标准，请选择训练剧本配置；评分沿用平台默认配置。");
                 }
 
                 if (!teacherDocContent || !teacherDocContent.trim()) {
@@ -180,6 +189,8 @@ export async function POST(request: NextRequest) {
                     close();
                     return;
                 }
+
+                teacherDocContent = withOralTrainingContext(teacherDocContent, trainingType);
 
                 if (modulePlan) {
                     const validation = validateTrainingScriptPlan(modulePlan);

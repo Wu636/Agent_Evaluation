@@ -1,0 +1,11 @@
+{
+  "environment": "local mock of existing system HTTP interfaces",
+  "authorization401NoWrites": true,
+  "readOnlyPreflight": true,
+  "usesExistingInjectionRoute": true,
+  "skipSwitchPatchedViaSystemProxy": true,
+  "readbackVerified": true,
+  "nodes": 12,
+  "flows": 13,
+  "scores": 6
+}

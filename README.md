@@ -76,6 +76,8 @@ npm run dev
 
 详细使用说明请参考 [用户使用手册](./USER_MANUAL.md)
 
+能力实训菜单包含基础版、口语训练和 Pro 版。口语训练支持阶段重点词汇生成与选择注入，评分沿用目标平台的默认配置；Pro 版支持生成、编辑和恢复预设对话。详细变更及验证见 [口语训练合并记录](./docs/ORAL_TRAINING_MERGE.md)。
+
 ## 🛠 技术栈
 
 - **前端框架**: Next.js 15 (App Router) + React 19 + TypeScript

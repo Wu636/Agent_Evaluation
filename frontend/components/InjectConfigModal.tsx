@@ -1,5 +1,6 @@
 "use client";
 
+
 import React, { useState, useEffect, useRef } from "react";
 import { X, Shield, Key, FilePlus, Loader2, CheckCircle2, AlertCircle, Play, Cpu, Upload, ChevronDown, ChevronRight, FileText, RefreshCw, Plus, ArrowUp, ArrowDown, Trash2 } from "lucide-react";
 import { getModels, ModelInfo } from "@/lib/api";
@@ -16,6 +17,7 @@ import { ParsedTaskConfig, parseRubricMarkdown, parseTaskConfig, parseTrainingSc
 import { TrainingInjectionOptions } from "@/components/TrainingInjectionOptions";
 
 interface InjectConfigModalProps {
+    trainingType?: "ability" | "oral";
     isOpen: boolean;
     onClose: () => void;
     scriptMarkdown?: string;
@@ -146,10 +148,13 @@ function createEmptyParsedStep(stageNumber: number): ParsedStep {
 export function InjectConfigModal({
     isOpen,
     onClose,
+    trainingType = "ability",
     scriptMarkdown,
     rubricMarkdown,
 }: InjectConfigModalProps) {
     // --- 表单状态 ---
+    const [injectKeyVocabularies, setInjectKeyVocabularies] = useState(false);
+    const [excludedVocabularyStages, setExcludedVocabularyStages] = useState<number[]>([]);
     const [authorization, setAuthorization] = useState("");
     const [cookie, setCookie] = useState("");
     const [userNid, setUserNid] = useState("");
@@ -160,7 +165,8 @@ export function InjectConfigModal({
     const [apiOrigin, setApiOrigin] = useState("");
     const [injectMode, setInjectMode] = useState<"replace" | "append">("replace");
     const [injectScript, setInjectScript] = useState(!!scriptMarkdown);
-    const [injectRubric, setInjectRubric] = useState(!!rubricMarkdown);
+    const [injectRubricState, setInjectRubric] = useState(!!rubricMarkdown);
+    const injectRubric = trainingType !== "oral" && injectRubricState;
 
     // --- 注入过程状态 ---
     const [injecting, setInjecting] = useState(false);
@@ -173,6 +179,7 @@ export function InjectConfigModal({
     const [availableImageModels, setAvailableImageModels] = useState<ModelInfo[]>(IMAGE_MODEL_OPTIONS);
     const [coverStylePrompt, setCoverStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染， 电影级光影 高清细节，16:9宽屏构图，尽量不要出现西方面孔");
     const [backgroundStylePrompt, setBackgroundStylePrompt] = useState("图中禁止有任何文字和英文单词！写实风格，专业级渲染，电影级光影，16:9宽屏构图，单一完整场景，适合作为教学阶段背景，尽量不要出现西方面孔");
+    const [injectDigitalHuman, setInjectDigitalHuman] = useState(true);
     const [digitalHumanAvatarMode, setDigitalHumanAvatarMode] = useState<"existing" | "ai">("existing");
     const [digitalHumanAvatarStylePrompt, setDigitalHumanAvatarStylePrompt] = useState("必须是清晰可见的人类导师头像，有完整头部、脸部、颈部和肩部；专业教学数字人头像，单人正面半身，亲切可信，干净背景；不要空教室、会议室、室内场景图、文字、logo、水印、多人合影");
     const [imageProviderMode, setImageProviderMode] = useState<"cloudapi" | "openai">("cloudapi");
@@ -200,7 +207,6 @@ export function InjectConfigModal({
     const [customCombinedText, setCustomCombinedText] = useState("");
     const [customScriptText, setCustomScriptText] = useState("");
     const [customRubricText, setCustomRubricText] = useState("");
-    const generatedDocsRef = useRef({ scriptMarkdown, rubricMarkdown });
     const [parsedJsonExpanded, setParsedJsonExpanded] = useState(false);
     const [structuredEditorExpanded, setStructuredEditorExpanded] = useState(false);
     const [expandedStructuredStages, setExpandedStructuredStages] = useState<Record<number, boolean>>({});
@@ -213,6 +219,28 @@ export function InjectConfigModal({
     const combinedFileRef = useRef<HTMLInputElement>(null);
     const scriptFileRef = useRef<HTMLInputElement>(null);
     const rubricFileRef = useRef<HTMLInputElement>(null);
+    const generatedScriptMirrorRef = useRef(scriptMarkdown || "");
+
+    const generatedRubricMirrorRef = useRef(rubricMarkdown || "");
+    const [sourceSyncMessage, setSourceSyncMessage] = useState("");
+
+    // Overrides belong to the source revision on which they were created.
+    // Saving a new source invalidates even manually edited/uploaded old copies.
+    useEffect(() => {
+        const scriptChanged = generatedScriptMirrorRef.current !== (scriptMarkdown || "");
+        const rubricChanged = generatedRubricMirrorRef.current !== (rubricMarkdown || "");
+        if (!scriptChanged && !rubricChanged) return;
+
+        if (scriptChanged) setCustomScriptText("");
+        if (rubricChanged) setCustomRubricText("");
+        setCustomCombinedText("");
+        setSummary(null);
+        setCustomDocMode("combined");
+        setCustomDocExpanded(false);
+        setSourceSyncMessage("主页面配置已更新，旧的对应修正版和合并文档已清除；当前审阅与注入使用最新配置。需要时可重新编辑或上传。");
+        generatedScriptMirrorRef.current = scriptMarkdown || "";
+        generatedRubricMirrorRef.current = rubricMarkdown || "";
+    }, [scriptMarkdown, rubricMarkdown]);
 
     // 计算最终生效的 markdown 文本（自定义文档覆盖生成的文档）
     const hasCustomDoc = (
@@ -228,13 +256,14 @@ export function InjectConfigModal({
         ? (customCombinedText.trim() ? customCombinedText : scriptMarkdown)
         : (customScriptText.trim() ? customScriptText : scriptMarkdown);
 
-    const effectiveRubricMd = customDocMode === "combined"
+    const effectiveRubricMd = trainingType === "oral" ? undefined : customDocMode === "combined"
         ? (customCombinedText.trim() ? customCombinedText : rubricMarkdown)
         : (customRubricText.trim() ? customRubricText : rubricMarkdown);
     const scriptSourceLabel = customDocMode === "combined"
         ? (customCombinedText.trim() ? "自定义合并文档" : "当前生成的剧本")
         : (customScriptText.trim() ? "自定义剧本文档" : "当前生成的剧本");
     const reviewTaskConfig = effectiveScriptMd ? parseTaskConfig(effectiveScriptMd) : null;
+    useEffect(() => { setExcludedVocabularyStages([]); }, [effectiveScriptMd]);
     const reviewParsedSteps = effectiveScriptMd ? parseTrainingScript(effectiveScriptMd) : [];
     const reviewScriptFlow = effectiveScriptMd ? parseTrainingScriptFlowConfig(effectiveScriptMd) : null;
     const reviewScriptDiagnostics = effectiveScriptMd ? diagnoseTrainingScript(effectiveScriptMd) : null;
@@ -282,23 +311,21 @@ export function InjectConfigModal({
             });
     };
 
+    // A task change or reinjection invalidates cached stage IDs and snapshots.
+    useEffect(() => {
+        setRegenStages([]);
+        setRegenStepId("");
+        setPrologueStepId("");
+        setPrologueText("");
+        setRegenMessage("");
+        setPrologueMessage("");
+    }, [taskId, courseId, libraryFolderId, injecting]);
+
     // 回填可用的数据开关
     useEffect(() => {
         setInjectScript(!!scriptMarkdown);
         setInjectRubric(!!rubricMarkdown);
     }, [scriptMarkdown, rubricMarkdown, isOpen]);
-
-    // 新生成结果到来时，旧草稿不得继续覆盖用户正在查看的新剧本。
-    useEffect(() => {
-        const previous = generatedDocsRef.current;
-        if (previous.scriptMarkdown === scriptMarkdown && previous.rubricMarkdown === rubricMarkdown) return;
-        generatedDocsRef.current = { scriptMarkdown, rubricMarkdown };
-        setCustomCombinedText("");
-        setCustomScriptText("");
-        setCustomRubricText("");
-        setCustomDocMode("combined");
-        setCustomDocExpanded(false);
-    }, [scriptMarkdown, rubricMarkdown]);
 
     // 没有本系统生成结果时，直接展开上传区，并默认按剧本/评分标准分开导入。
     useEffect(() => {
@@ -412,6 +439,7 @@ export function InjectConfigModal({
         setCustomDocMode("separate");
         if (scriptMarkdown) {
             setCustomScriptText(scriptMarkdown);
+            generatedScriptMirrorRef.current = scriptMarkdown;
         }
         if (rubricMarkdown) {
             setCustomRubricText(rubricMarkdown);
@@ -515,6 +543,7 @@ export function InjectConfigModal({
     };
 
     const buildPolymasCredentials = (): PolymasCredentials => ({
+        trainSubType: trainingType,
         authorization: authorization.trim(),
         cookie: cookie.trim(),
         userNid: userNid.trim() || undefined,
@@ -659,8 +688,8 @@ export function InjectConfigModal({
             const parsed = parsePolymasUrl(finalTaskId);
             if (parsed) {
                 finalTaskId = parsed.trainTaskId;
-                finalCourseId = finalCourseId || parsed.courseId;
-                finalLibraryFolderId = finalLibraryFolderId || parsed.libraryFolderId;
+                finalCourseId = parsed.courseId || finalCourseId;
+                finalLibraryFolderId = parsed.libraryFolderId || finalLibraryFolderId;
                 setTaskId(parsed.trainTaskId);
                 setCourseId(parsed.courseId);
                 setLibraryFolderId(parsed.libraryFolderId || "");
@@ -734,7 +763,7 @@ export function InjectConfigModal({
             const loadedStages = await fetchStageOptions(finalTaskId);
             setRegenStages(loadedStages);
             if (loadedStages.length > 0) {
-                setRegenStepId((prev) => prev || loadedStages[0].stepId);
+                setRegenStepId((prev) => loadedStages.some((stage) => stage.stepId === prev) ? prev : loadedStages[0].stepId);
                 if (target === "prologue") {
                     const nextStepId = loadedStages.some((stage) => stage.stepId === prologueStepId)
                         ? prologueStepId
@@ -984,32 +1013,10 @@ export function InjectConfigModal({
                     throw new Error("重生全部图片需要 courseId 与 libraryFolderId（请粘贴完整任务链接）");
                 }
 
-                let stageList = regenStages;
-                if (stageList.length === 0) {
-                    const stageResponse = await fetch("/api/training-inject/stages", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            trainTaskId: finalTaskId,
-                            credentials: buildPolymasCredentials(),
-                        }),
-                    });
-                    const stageText = await stageResponse.text();
-                    let stageData: any = {};
-                    try {
-                        stageData = stageText ? JSON.parse(stageText) : {};
-                    } catch {
-                        stageData = { success: false, error: stageText || "加载阶段列表失败" };
-                    }
-                    if (!stageResponse.ok || !stageData.success) {
-                        throw new Error(stageData.error || "加载阶段列表失败");
-                    }
-                    stageList = Array.isArray(stageData.stages) ? stageData.stages : [];
-                    setRegenStages(stageList);
-                    if (stageList.length > 0) {
-                        setRegenStepId((prev) => prev || stageList[0].stepId);
-                    }
-                }
+                // Reinjection recreates stage IDs even for the same task.
+                const stageList = await fetchStageOptions(finalTaskId);
+                setRegenStages(stageList);
+                setRegenStepId(stageList[0]?.stepId || "");
 
                 const parsedSteps = effectiveScriptMd ? parseTrainingScript(effectiveScriptMd) : [];
                 const total = stageList.length + 1;
@@ -1109,6 +1116,18 @@ export function InjectConfigModal({
     };
 
     const handleInject = async () => {
+        if (trainingType === "oral" && injectKeyVocabularies && reviewParsedSteps.some(step => step.keyVocabularyError)) {
+            setError("阶段重点词汇格式有误，请先修正配置中的 JSON 数组。");
+            return;
+        }
+        if (trainingType === "ability" && taskId.includes("/language-training/")) {
+            setError("这是口语训练链接，请从「能力实训 → 口语训练」进入注入，避免覆盖训练类型。");
+            return;
+        }
+        if (trainingType === "oral" && taskId.includes("/ability-training/")) {
+            setError("请填写口语训练编辑页链接，不能使用能力训练链接。");
+            return;
+        }
         if (!handleSaveCredentials()) return;
         const { finalTaskId, finalCourseId, finalLibraryFolderId } = resolveTaskIds();
 
@@ -1150,7 +1169,7 @@ export function InjectConfigModal({
 
         const shouldGenerateCoverForThisRun = injectCoverImage && injectMode !== "append";
         const shouldGenerateBackgroundForThisRun = injectBackgroundImage;
-        const shouldGenerateAvatarForThisRun = injectScript && digitalHumanAvatarMode === "ai";
+        const shouldGenerateAvatarForThisRun = injectScript && injectDigitalHuman && digitalHumanAvatarMode === "ai";
         const needsImageProviderPrecheck = injectScript && (shouldGenerateCoverForThisRun || shouldGenerateBackgroundForThisRun);
         const imageExecutionPlan = await prepareImageExecutionPlan(needsImageProviderPrecheck);
         const effectiveProviderMode = imageExecutionPlan.effectiveProviderMode;
@@ -1261,11 +1280,14 @@ export function InjectConfigModal({
                     injectCoverImage: shouldInjectCoverInMain,
                     injectBackgroundImage: shouldInjectBgInMain,
                     deferBaseConfigurationUntilCoverReady: shouldRunPostImageBatch && shouldGenerateCoverForThisRun,
+                    injectDigitalHuman,
                     digitalHumanAvatarMode,
                     digitalHumanAvatarStylePrompt: digitalHumanAvatarStylePrompt.trim() || undefined,
                     scriptMarkdown: injectScript ? effectiveScriptMd : undefined,
                     rubricMarkdown: injectRubric ? effectiveRubricMd : undefined,
                     injectMode,
+                    injectKeyVocabularies: trainingType === "oral" && injectKeyVocabularies,
+                    vocabularyStageIndexes: reviewParsedSteps.map((step, index) => step.keyVocabularies?.length && !excludedVocabularyStages.includes(index) ? index : -1).filter(index => index >= 0),
                 }),
             });
 
@@ -1546,7 +1568,7 @@ export function InjectConfigModal({
                             <Play className="w-5 h-5 fill-white" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold">一键注入到智慧树平台</h2>
+                            <h2 className="text-xl font-bold">{trainingType === "oral" ? "口语训练配置注入" : "一键注入到智慧树平台"}</h2>
                             <p className="text-indigo-100 text-xs mt-0.5">
                                 {hasGeneratedDocuments
                                     ? "将当前配置自动创建为工作流节点"
@@ -1578,7 +1600,7 @@ export function InjectConfigModal({
                                     <div>
                                         <h3 className="text-sm font-semibold text-indigo-900">直接上传训练剧本配置</h3>
                                         <p className="mt-1 text-xs text-indigo-700">
-                                            支持 Markdown 或纯文本配置。上传后会自动开启“训练剧本”注入，评分标准可以稍后按需补充。
+                                            {trainingType === "oral" ? "支持 Markdown 或纯文本剧本配置。评分沿用平台默认配置。" : "支持 Markdown 或纯文本配置。上传后会自动开启“训练剧本”注入，评分标准可以稍后按需补充。"}
                                         </p>
                                     </div>
                                     <input
@@ -1739,6 +1761,7 @@ export function InjectConfigModal({
                                 </div>
 
                                 <TrainingInjectionOptions
+                                    rubricDisabled={trainingType === "oral"}
                                     injectScript={injectScript}
                                     injectRubric={injectRubric}
                                     injectMode={injectMode}
@@ -1758,6 +1781,28 @@ export function InjectConfigModal({
                                             ? `非线性分支 ${reviewScriptFlow.edges.length} 条连线`
                                             : "线性流程"}。
                                     </p>
+                                )}
+
+                                {trainingType === "oral" && injectScript && (
+                                    <section className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-3">
+                                        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                            <input type="checkbox" checked={injectKeyVocabularies} onChange={e => setInjectKeyVocabularies(e.target.checked)} />注入各阶段重点词汇
+                                        </label>
+                                        <p className="text-xs text-slate-500">从教师文档按阶段提取；未指定词汇的阶段不会补充词汇。可逐阶段选择。该选项与全局“重点词汇”展示开关分别控制。</p>
+                                        {reviewParsedSteps.map((step, index) => (
+                                            <div key={index} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                                                <label className="flex items-center gap-2 font-medium text-slate-700"><input type="checkbox" disabled={!injectKeyVocabularies || !step.keyVocabularies?.length} checked={injectKeyVocabularies && !!step.keyVocabularies?.length && !excludedVocabularyStages.includes(index)} onChange={e => setExcludedVocabularyStages(previous => e.target.checked ? previous.filter(item => item !== index) : [...previous, index])} />阶段 {index + 1}：{step.stepName}（{step.keyVocabularies?.length || 0} 条）</label>
+                                                {step.keyVocabularyError && <p className="text-xs text-red-600 mt-2">{step.keyVocabularyError}</p>}
+                                                {step.keyVocabularies?.length ? <>
+                                                    <div className="mt-3 overflow-x-auto"><table className="w-full text-left text-xs text-slate-600">
+                                                        <thead className="bg-slate-100"><tr><th className="p-2 font-medium">词汇/词组</th><th className="p-2 font-medium">释义</th><th className="p-2 font-medium">例句</th></tr></thead>
+                                                        <tbody>{step.keyVocabularies.map((item, i) => <tr key={i} className="border-b border-slate-100 align-top"><td className="p-2 font-medium text-slate-800">{item.term}</td><td className="p-2">{item.meaning || "—"}</td><td className="p-2">{item.exampleSentence || "—"}</td></tr>)}</tbody>
+                                                    </table></div>
+                                                    <details className="mt-2 text-xs text-slate-400"><summary className="cursor-pointer">查看教师文档依据</summary>{step.keyVocabularies.map((item, i) => <p key={i} className="mt-1">{item.term}：{item.source || "未标注，请核对教师文档"}</p>)}</details>
+                                                </> : <p className="mt-2 text-xs text-slate-400">未识别到本阶段重点词汇</p>}
+                                            </div>
+                                        ))}
+                                    </section>
                                 )}
 
                                 <div className="pt-3 border-t border-slate-100 space-y-2">
@@ -1842,6 +1887,17 @@ export function InjectConfigModal({
 
                                 {injectScript && (
                                     <div className="pt-3 border-t border-slate-100 space-y-3">
+                                        <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-800">
+                                            <input
+                                                type="checkbox"
+                                                checked={injectDigitalHuman}
+                                                onChange={(e) => setInjectDigitalHuman(e.target.checked)}
+                                                className="text-indigo-600 focus:ring-indigo-500"
+                                            />
+                                            注入数字人
+                                        </label>
+                                        <p className="text-xs text-slate-500">关闭后，新增训练节点不绑定数字人，也不生成数字人头像。</p>
+                                        {injectDigitalHuman && (<>
                                         <label className="text-xs font-medium text-slate-700 block">数字人头像来源</label>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                             <label className={`p-2 border rounded-lg cursor-pointer transition-colors ${digitalHumanAvatarMode === 'existing' ? 'border-indigo-500 bg-indigo-50/50' : 'hover:bg-slate-50 border-slate-200'}`}>
@@ -1881,6 +1937,7 @@ export function InjectConfigModal({
                                                 <p className="text-xs text-slate-400">头像固定使用 OpenAI 兼容接口生成；音色仍优先取账号已有数字人的可用音色参数。</p>
                                             </div>
                                         )}
+                                        </>)}
                                     </div>
                                 )}
 
@@ -2136,6 +2193,9 @@ export function InjectConfigModal({
                                         )}
                                     </button>
 
+                                    {sourceSyncMessage && (
+                                        <p role="status" className="mt-2 text-xs text-indigo-600">{sourceSyncMessage}</p>
+                                    )}
                                     {customDocExpanded && (
                                         <div className="mt-3 space-y-4 pl-6">
                                             <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-4">
@@ -2148,7 +2208,7 @@ export function InjectConfigModal({
                                                         </div>
                                                         <p className="text-xs text-slate-500">
                                                             {hasGeneratedDocuments
-                                                                ? "先看解析摘要和阶段 JSON；如果哪里不对，直接在下面粘贴或修改 Markdown，执行注入时会优先使用这里的修正版。"
+                                                                ? "先看解析摘要和阶段 JSON；如果哪里不对，直接在下面粘贴或修改 Markdown，执行注入时会优先使用这里的修正版；主页面保存新配置后，旧修正版会自动清除。"
                                                                 : "无需先在本系统生成。上传或粘贴自己的训练剧本 Markdown，系统解析确认后即可直接注入；评分标准可选。"}
                                                         </p>
                                                     </div>
@@ -2657,7 +2717,7 @@ export function InjectConfigModal({
                                                     </div>
 
                                                     {/* 评分标准文档 */}
-                                                    <div className="space-y-2">
+                                                    <fieldset disabled={trainingType === "oral"} className={`space-y-2 ${trainingType === "oral" ? "opacity-50" : ""}`}>
                                                         <label className="text-xs font-medium text-slate-700 block">
                                                             修正版评分标准文档
                                                         </label>
@@ -2688,7 +2748,7 @@ export function InjectConfigModal({
                                                             rows={6}
                                                             className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono resize-y"
                                                         />
-                                                    </div>
+                                                    </fieldset>
                                                 </div>
                                             )}
 

@@ -1,3 +1,4 @@
+import { parseTrainingType, withOralTrainingContext, type TrainingType } from "@/lib/oral-training/config";
 import { NextRequest } from "next/server";
 import WordExtractor from "word-extractor";
 
@@ -42,6 +43,7 @@ export async function POST(request: NextRequest) {
             };
 
             try {
+                let trainingType: TrainingType | undefined;
                 let teacherDocContent = "";
                 let teacherDocName = "教师文档";
                 let dialogueRecordContent = "";
@@ -67,6 +69,7 @@ export async function POST(request: NextRequest) {
                 const contentType = request.headers.get("content-type") || "";
                 if (contentType.includes("multipart/form-data")) {
                     const formData = await request.formData();
+                    trainingType = parseTrainingType(formData.get("trainingType"));
 
                     const teacherDocFile = formData.get("teacherDocFile") as File | null;
                     teacherDocName = String(formData.get("teacherDocName") || teacherDocFile?.name || "教师文档");
@@ -97,6 +100,7 @@ export async function POST(request: NextRequest) {
                         : undefined;
                 } else {
                     const body = await request.json();
+                    trainingType = parseTrainingType(body.trainingType);
                     teacherDocContent = String(body.teacherDocContent || "");
                     teacherDocName = String(body.teacherDocName || "教师文档");
                     dialogueRecordContent = String(body.dialogueRecordContent || "");
@@ -119,6 +123,9 @@ export async function POST(request: NextRequest) {
                     controller.close();
                     return;
                 }
+                if (trainingType === "oral") rubricMarkdown = "";
+                teacherDocContent = withOralTrainingContext(teacherDocContent, trainingType);
+
                 if (!dialogueRecordContent.trim()) {
                     send({ type: "error", stage: "prepare", message: "请提供对话记录" });
                     controller.close();

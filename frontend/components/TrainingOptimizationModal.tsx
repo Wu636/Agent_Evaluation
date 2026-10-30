@@ -1,5 +1,7 @@
 "use client";
 
+import type { TrainingType } from "@/lib/oral-training/config";
+
 import React, { useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, Sparkles, Upload, X } from "lucide-react";
 
@@ -25,6 +27,7 @@ interface OptimizationLogItem {
 }
 
 interface TrainingOptimizationModalProps {
+    trainingType?: TrainingType;
     isOpen: boolean;
     onClose: () => void;
     getDocContent: () => Promise<TeacherDocPayload | null>;
@@ -35,6 +38,7 @@ interface TrainingOptimizationModalProps {
 }
 
 export function TrainingOptimizationModal({
+    trainingType,
     isOpen,
     onClose,
     getDocContent,
@@ -136,6 +140,7 @@ export function TrainingOptimizationModal({
         try {
             const selectedTemplate = templates.find((item: EvaluationTemplate) => item.id === selectedTemplateId);
             const loopResult = await runTrainingOptimizationLoop({
+                trainingType,
                 teacherDocFile: teacherDoc.file,
                 teacherDocContent: teacherDoc.content,
                 teacherDocName: teacherDoc.name,

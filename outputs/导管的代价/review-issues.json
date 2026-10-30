@@ -1,0 +1,45 @@
+[
+  {
+    "id": "MED01",
+    "status": "open",
+    "quote": "部分菌株可伴随A2063G位点突变加重耐药表型",
+    "issue": "本案未提供基因实测；A2063G常见于肺炎支原体23S rRNA大环内酯耐药研究，直接写入MRSA耐药小结易混淆。",
+    "suggestion": "建议教师核准后删除A2063G句，保留mecA/PBP2a一般机制，并将病例表型推断与基因检测结果区分。原文小结暂逐字保留在审核稿。",
+    "sources": [
+      "https://www.cdc.gov/mrsa/php/laboratories/",
+      "https://wwwnc.cdc.gov/eid/article/21/8/15-0273_article/"
+    ]
+  },
+  {
+    "id": "MED02",
+    "status": "open",
+    "quote": "DTP（导管血与外周血报阳时间差）＞2小时",
+    "issue": "指南常用导管血至少提前2小时（≥2h），并要求同时/可比采集、同一病原体等前提；本文仅说24小时内采集，未说明同时等量。",
+    "suggestion": "建议将阈值核准为≥2小时并补充可比采集前提；3小时这一病例线索不变。原文留档，评分接受科学表述。",
+    "sources": [
+      "https://www.idsociety.org/practice-guideline/new-fever-in-critically-ill-patients/",
+      "https://doi.org/10.1086/599376"
+    ]
+  },
+  {
+    "id": "MED03",
+    "status": "open",
+    "quote": "单瓶血培养报阳存在极高的皮肤定植菌、操作污染概率",
+    "issue": "需区分“单瓶初步报阳且菌种未知”与“已鉴定金黄色葡萄球菌单瓶阳性”；单瓶本身不足以直接判为污染，临床意义取决于病原体与整体证据。",
+    "suggestion": "建议教师核准小结措辞，强调尚不能据初步形态完成菌种和导管来源判断，但对金葡菌阳性须认真评估；保留原反向质疑题。",
+    "sources": [
+      "https://doi.org/10.1086/599376",
+      "https://www.ncbi.nlm.nih.gov/books/NBK589895/"
+    ]
+  },
+  {
+    "id": "MED04",
+    "status": "open",
+    "quote": "70%以上患者无导管出口红肿、渗液等局部体征",
+    "issue": "原文未注明百分比来源；药敏谱一致也不直接等同于菌株分子同源证明，徒手操作是风险线索而非已经证实的唯一感染来源。",
+    "suggestion": "建议教师为百分比补原始研究或删去绝对比例；采用“局部体征敏感性有限”“药敏一致支持关联”“暴露史提示风险”等证据强度表述，并审阅生物膜“药物无法穿透”等绝对措辞。",
+    "sources": [
+      "https://doi.org/10.1086/599376"
+    ]
+  }
+]

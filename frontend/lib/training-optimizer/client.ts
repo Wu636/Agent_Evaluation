@@ -1,3 +1,4 @@
+import type { TrainingType } from "@/lib/oral-training/config";
 import { TrainingScriptPlan } from "@/lib/training-generator/types";
 import { TemplateDimensionsConfig } from "@/lib/templates";
 import { loadLLMSettingsFromStorage } from "@/lib/llm/settings";
@@ -5,6 +6,7 @@ import { loadLLMSettingsFromStorage } from "@/lib/llm/settings";
 import { OptimizationLoopResult, OptimizationProgressEvent } from "./types";
 
 export interface TrainingOptimizationParams {
+    trainingType?: TrainingType;
     teacherDocFile?: File;
     teacherDocContent?: string;
     teacherDocName: string;
@@ -28,6 +30,7 @@ export async function runTrainingOptimizationLoop(params: TrainingOptimizationPa
 
     if (params.teacherDocFile || params.dialogueFile) {
         const formData = new FormData();
+        if (params.trainingType) formData.append("trainingType", params.trainingType);
         if (params.teacherDocFile) {
             formData.append("teacherDocFile", params.teacherDocFile);
         } else {
@@ -64,6 +67,7 @@ export async function runTrainingOptimizationLoop(params: TrainingOptimizationPa
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+                trainingType: params.trainingType,
                 teacherDocContent: params.teacherDocContent || "",
                 teacherDocName: params.teacherDocName,
                 dialogueRecordContent: params.dialogueRecordContent || "",

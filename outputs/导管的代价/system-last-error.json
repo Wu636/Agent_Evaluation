@@ -1,0 +1,5 @@
+{
+  "mode": "apply",
+  "error": "回采校验发现差异，详见 system-verification.json",
+  "writeAttempted": true
+}

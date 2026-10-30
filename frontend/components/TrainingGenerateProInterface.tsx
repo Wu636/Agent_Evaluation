@@ -22,6 +22,7 @@ import {
   Save,
   Globe,
   Lock,
+  MessageSquareText,
 } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ProTrainingSSEEvent } from "@/lib/training-generator-pro/types";
@@ -39,6 +40,9 @@ import {
   PRO_SCRIPT_TEMPLATE,
   PRO_TEMPLATE_VERSION,
 } from "@/lib/training-generator-pro/prompts";
+import { loadLLMSettingsFromStorage } from "@/lib/llm/settings";
+import { getConfigFingerprint, renderPresetDialogue, type PresetDialogueRecord } from "@/lib/training-generator-pro/dialogue";
+import { parseProMarkdown } from "@/lib/training-injector-pro/parser";
 
 type GeneratePhase = "idle" | "generating" | "completed" | "error";
 
@@ -59,6 +63,8 @@ interface ProGeneratorDraft {
   editContent: string;
   isEditing: boolean;
   updatedAt: number;
+  dialogueRecord?: PresetDialogueRecord | null;
+  dialogueText?: string;
 }
 
 interface PersistedProInput {
@@ -165,6 +171,10 @@ function loadProGeneratorDraft(): ProGeneratorDraft | null {
         typeof parsed.editContent === "string" ? parsed.editContent : "",
       isEditing: parsed.isEditing === true,
       updatedAt: typeof parsed.updatedAt === "number" ? parsed.updatedAt : 0,
+      dialogueRecord: parsed.dialogueRecord && Array.isArray(parsed.dialogueRecord.stages)
+        ? parsed.dialogueRecord
+        : null,
+      dialogueText: typeof parsed.dialogueText === "string" ? parsed.dialogueText : undefined,
     };
   } catch {
     return null;
@@ -180,6 +190,16 @@ export function TrainingGenerateProInterface() {
   const [userGenerationAdvice, setUserGenerationAdvice] = useState("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [generatedContent, setGeneratedContent] = useState("");
+  const [dialogueRecord, setDialogueRecord] = useState<PresetDialogueRecord | null>(null);
+  const [dialogueText, setDialogueText] = useState("");
+  const [dialogueEditing, setDialogueEditing] = useState(false);
+  const [dialogueLoading, setDialogueLoading] = useState(false);
+  const [dialogueError, setDialogueError] = useState("");
+  const [dialogueTab, setDialogueTab] = useState(false);
+  const [dialoguePerformance, setDialoguePerformance] = useState("competent");
+  const [dialogueRounds, setDialogueRounds] = useState("");
+  const [dialogueExtra, setDialogueExtra] = useState("");
+  const [dialogueStageIndexes, setDialogueStageIndexes] = useState<number[]>([]);
   const [taskName, setTaskName] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
@@ -348,6 +368,10 @@ export function TrainingGenerateProInterface() {
           ),
         );
         if (draft.generatedContent) setPhase("completed");
+        if (draft.dialogueRecord) {
+          setDialogueRecord(draft.dialogueRecord);
+          setDialogueText(draft.dialogueText ?? renderPresetDialogue(draft.dialogueRecord));
+        }
       }
       setDraftHydrated(true);
     })();
@@ -371,6 +395,8 @@ export function TrainingGenerateProInterface() {
         editContent,
         isEditing,
         updatedAt: Date.now(),
+        dialogueRecord,
+        dialogueText,
       };
       try {
         window.localStorage.setItem(
@@ -397,6 +423,8 @@ export function TrainingGenerateProInterface() {
     taskName,
     editContent,
     isEditing,
+    dialogueRecord,
+    dialogueText,
   ]);
 
   // ─── 文件处理 ──────────────────────────────────────────────────────
@@ -566,10 +594,102 @@ export function TrainingGenerateProInterface() {
     setStatusMessage("");
     setIsEditing(false);
     setEditContent("");
+    setDialogueRecord(null);
+    setDialogueText("");
+    setDialogueEditing(false);
+    setDialogueError("");
+    setDialogueTab(false);
   }, []);
 
   const canGenerate = !!(teacherDocContent.trim() || uploadedFile);
   const activeContent = isEditing ? editContent : generatedContent;
+  const currentConfigFingerprint = generatedContent ? getConfigFingerprint(isEditing ? editContent : generatedContent) : "";
+  const dialogueIsStale = Boolean(dialogueRecord && dialogueRecord.configFingerprint !== currentConfigFingerprint);
+  const parsedStageCount = (() => {
+    try { return parseProMarkdown(isEditing ? editContent : generatedContent).stages.length; } catch { return 0; }
+  })();
+
+  const handleGenerateDialogue = useCallback(async () => {
+    const markdown = isEditing ? editContent : generatedContent;
+    const config = parseProMarkdown(markdown);
+    if (!config.stages.length || !config.members.length) {
+      setDialogueError("当前配置需要至少包含一个阶段和一个全局成员。");
+      return;
+    }
+    const settings = loadLLMSettingsFromStorage("trainingGenerate");
+    if (!settings.apiKey && !settings.apiUrl) {
+      setShowSettings(true);
+      return;
+    }
+    setDialogueLoading(true);
+    setDialogueError("");
+    setDialogueStageIndexes(config.stages.map((_, index) => index));
+    try {
+      const response = await fetch("/api/training-generate-pro/dialogue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          markdown,
+          performance: dialoguePerformance,
+          targetRounds: dialogueRounds ? Number(dialogueRounds) : null,
+          extraRequirements: dialogueExtra,
+          apiKey: settings.apiKey,
+          apiUrl: settings.apiUrl,
+          model: settings.modelProfiles.trainingGenerate || settings.model,
+        }),
+      });
+      if (!response.ok || !response.body) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || `预设对话生成失败（HTTP ${response.status}）`);
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let record: PresetDialogueRecord = { stages: [], configFingerprint: getConfigFingerprint(markdown), generatedAt: new Date().toISOString() };
+      let streamError = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const blocks = buffer.split("\n\n");
+        buffer = blocks.pop() || "";
+        for (const block of blocks) {
+          const dataLine = block.split("\n").find((line) => line.startsWith("data: "));
+          if (!dataLine) continue;
+          const event = JSON.parse(dataLine.slice(6));
+          if (event.type === "progress") setStatusMessage(event.message);
+          if (event.type === "stage_complete") {
+            record = { ...record, stages: [...record.stages, event.stage], configFingerprint: event.configFingerprint, generatedAt: event.generatedAt };
+            setDialogueRecord(record);
+            setDialogueText(renderPresetDialogue(record));
+            setDialogueTab(true);
+          }
+          if (event.type === "complete") record = { ...record, configFingerprint: event.configFingerprint, generatedAt: event.generatedAt };
+          if (event.type === "error") {
+            streamError = event.error;
+            record = { ...record, configFingerprint: event.configFingerprint, generatedAt: event.generatedAt };
+          }
+        }
+      }
+      if (record.stages.length) {
+        setDialogueRecord(record);
+        setDialogueText(renderPresetDialogue(record));
+        setDialogueEditing(false);
+        setDialogueTab(true);
+      }
+      if (streamError) setDialogueError(`${streamError}${record.stages.length ? `；已保留前 ${record.stages.length} 个阶段，可调整后重新生成` : ""}`);
+      setStatusMessage("");
+    } catch (error) {
+      setDialogueError(error instanceof Error ? error.message : "预设对话生成失败");
+      setStatusMessage("");
+    } finally {
+      setDialogueLoading(false);
+    }
+  }, [isEditing, editContent, generatedContent, dialoguePerformance, dialogueRounds, dialogueExtra]);
+
+  const handleDownloadDialogue = useCallback(() => {
+    downloadProMarkdown(dialogueText, `${taskName || "能力训练"}_预设对话.md`);
+  }, [dialogueText, taskName]);
 
   // ─── 渲染 ──────────────────────────────────────────────────────────
   return (
@@ -881,24 +1001,37 @@ export function TrainingGenerateProInterface() {
               <span>{errorMessage}</span>
             </div>
           )}
+          {phase === "completed" && generatedContent && (
+            <div className="border border-indigo-100 bg-indigo-50/60 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-indigo-900"><MessageSquareText className="w-4 h-4" />生成预设对话记录</div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs text-slate-600 space-y-1"><span>学员表现</span><select value={dialoguePerformance} onChange={(event) => setDialoguePerformance(event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"><option value="excellent">优秀</option><option value="competent">合格</option><option value="needs_improvement">待提升</option></select></label>
+                <label className="text-xs text-slate-600 space-y-1"><span>每阶段目标轮数（选填）</span><input type="number" min={2} max={12} value={dialogueRounds} onChange={(event) => setDialogueRounds(event.target.value)} placeholder="根据角色与阶段要求推断" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /><span className="block text-[11px] text-slate-400">留空时根据用户角色和阶段通关条件安排轮数</span></label>
+              </div>
+              <label className="block text-xs text-slate-600 space-y-1"><span>补充要求（选填）</span><textarea value={dialogueExtra} onChange={(event) => setDialogueExtra(event.target.value)} rows={2} placeholder="例如：重点展示安全检查和常见误操作纠正" className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label>
+              <button onClick={handleGenerateDialogue} disabled={dialogueLoading} className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{dialogueLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquareText className="w-4 h-4" />}{dialogueLoading ? "正在按阶段生成并校验…" : "生成全部阶段对话"}</button>
+              {dialogueError && <p className="text-xs text-red-600">{dialogueError}</p>}
+            </div>
+          )}
         </div>
 
         {/* ====== 右侧：结果展示区 ====== */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[500px]">
           {/* Tab 头 + 操作按钮 */}
-          <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-4">
+          <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
             <div className="flex gap-1.5 p-1 bg-slate-100/80 rounded-xl shrink-0">
-              <button className="px-3 py-2 text-sm font-medium rounded-lg bg-white text-violet-700 shadow-sm ring-1 ring-slate-200/50 flex items-center gap-1.5">
+              <button onClick={() => setDialogueTab(false)} className={`px-3 py-2 text-sm font-medium rounded-lg flex items-center gap-1.5 ${!dialogueTab ? "bg-white text-violet-700 shadow-sm ring-1 ring-slate-200/50" : "text-slate-500 hover:text-slate-800"}`}>
                 <BookOpen className="w-4 h-4 shrink-0" />
                 <span>Pro 配置</span>
                 {generatedContent && phase === "completed" && (
                   <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                 )}
               </button>
+              <button onClick={() => setDialogueTab(true)} disabled={!dialogueRecord} className={`px-3 py-2 text-sm font-medium rounded-lg flex items-center gap-1.5 disabled:opacity-40 ${dialogueTab ? "bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50" : "text-slate-500 hover:text-slate-800"}`}><MessageSquareText className="w-4 h-4" /><span>预设对话</span>{dialogueRecord && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}</button>
             </div>
 
             {/* 操作按钮 */}
-            <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+            <div className="flex max-w-full items-center gap-1.5 flex-wrap">
               <button
                 onClick={() => setShowInject(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 rounded-lg shadow-sm shadow-indigo-200 transition-all hover:-translate-y-0.5"
@@ -906,7 +1039,10 @@ export function TrainingGenerateProInterface() {
               >
                 🚀 一键注入
               </button>
-              {activeContent && phase === "completed" && (
+              {dialogueTab && dialogueRecord && (
+                <>{dialogueEditing ? <><button onClick={() => setDialogueEditing(false)} className="px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 rounded-lg">完成编辑</button></> : <><button onClick={() => setDialogueEditing(true)} className="px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 rounded-lg">编辑对话</button><button onClick={() => void navigator.clipboard.writeText(dialogueText)} className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 rounded-lg"><Copy className="w-3.5 h-3.5" />复制</button><button onClick={handleDownloadDialogue} className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 rounded-lg"><Download className="w-3.5 h-3.5" />下载</button></>}</>
+              )}
+              {!dialogueTab && activeContent && phase === "completed" && (
                 !isEditing ? (
                   <>
                     <button
@@ -969,7 +1105,12 @@ export function TrainingGenerateProInterface() {
 
           {/* 内容区域 */}
           <div className="flex-1 overflow-y-auto">
-            {isEditing ? (
+            {dialogueTab ? dialogueRecord ? (
+              <div className="px-5 py-4 space-y-4">
+                {dialogueIsStale && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">剧本配置已修改，这份对话依据旧配置生成。请重新生成以保持一致。</div>}
+                {dialogueEditing ? <textarea value={dialogueText} onChange={(event) => setDialogueText(event.target.value)} className="w-full min-h-[600px] rounded-xl border border-slate-200 p-4 font-mono text-sm leading-6" /> : <MarkdownRenderer content={dialogueText} />}
+              </div>
+            ) : <div className="flex h-64 items-center justify-center text-slate-400">请先生成预设对话记录</div> : isEditing ? (
               <textarea
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}

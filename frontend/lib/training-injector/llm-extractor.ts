@@ -1,3 +1,4 @@
+import { parseStageVocabularies } from "../oral-training/vocabulary";
 /**
  * 训练配置注入器 - LLM 智能提取器
  *
@@ -188,7 +189,7 @@ export async function extractScriptConfig(
     markdown: string,
     llmSettings: LLMSettings
 ): Promise<ExtractedScriptConfig> {
-    const prompt = SCRIPT_EXTRACTION_PROMPT + markdown;
+    const prompt = SCRIPT_EXTRACTION_PROMPT + "\n每个阶段额外提取 keyVocabularies 数组，格式为 [{term, meaning, exampleSentence, source}]（原文 vocabulary 对应 term，explanation 对应 meaning）；仅提取该阶段独立的重点词汇字段，没有则返回空数组，不得臆造。\n" + markdown;
     const jsonStr = await callLLM(prompt, llmSettings);
     const parsed = JSON.parse(jsonStr);
 
@@ -233,6 +234,7 @@ export async function extractScriptConfig(
 
     if (Array.isArray(parsed.steps)) {
         result.steps = parsed.steps.map((s: Record<string, unknown>) => ({
+            keyVocabularies: parseStageVocabularies(s.keyVocabularies || []),
             stepName: String(s.stepName || ""),
             trainerName: String(s.trainerName || ""),
             modelId: String(s.modelId || ""),

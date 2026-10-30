@@ -102,7 +102,7 @@ function modelResponse(parts, signal, delayMs = 0) {
     }), { headers: { 'content-type': 'text/event-stream' } });
 }
 
-async function runRoute(t, { incomplete = 8, hangOnce = false, omitTargetOnce = false, omitTargetAlways = false, legacyInitial = false, growingPartial = false, partialUntilSingle = false, resumeFromBreakpoint = false, generateRubric = false, failureMode } = {}) {
+async function runRoute(t, { incomplete = 8, hangOnce = false, omitTargetOnce = false, omitTargetAlways = false, legacyInitial = false, growingPartial = false, partialUntilSingle = false, resumeFromBreakpoint = false, generateRubric = false, failureMode, trainingType = 'ability' } = {}) {
     const calls = [];
     const initialScript = prefix() + Array.from({ length: incomplete - 1 }, (_, index) => stage(index + 1, { tag: '原有完整阶段' })).join('\n\n') + '\n\n' + stage(incomplete, { partial: true });
     let abortedRequests = 0;
@@ -151,7 +151,7 @@ async function runRoute(t, { incomplete = 8, hangOnce = false, omitTargetOnce = 
     const { POST } = routeLoad('app/api/training-generate/route.ts');
     const response = await POST(new Request('http://fixture.invalid/api/training-generate', {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
-            teacherDocContent: teacherDoc, teacherDocName: '四条角色分支', generateScript: true, generateRubric,
+            trainingType, teacherDocContent: teacherDoc, teacherDocName: '四条角色分支', generateScript: true, generateRubric,
             apiKey: 'fixture-key', apiUrl: 'https://model.invalid/v1', model: 'gpt-6.1-sol', modulePlan: planFixture(), userSuggestions: '用户建议：保持四条角色线路。',
             requestMode: resumeFromBreakpoint ? 'resume_script' : 'generate',
             priorScript: resumeFromBreakpoint ? initialScript : undefined,
@@ -169,7 +169,7 @@ async function runRoute(t, { incomplete = 8, hangOnce = false, omitTargetOnce = 
     return { calls, events, result, abortedRequests };
 }
 
-async function runManualContinuation(t) {
+async function runManualContinuation(t, trainingType = 'ability') {
     const calls = [];
     t.mock.method(console, 'log', () => {});
     t.mock.method(console, 'info', () => {});
@@ -196,6 +196,7 @@ async function runManualContinuation(t) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
             requestMode: 'continue_script',
+            trainingType,
             teacherDocContent: teacherDoc,
             teacherDocName: '四条角色分支',
             generateScript: true,
@@ -215,6 +216,24 @@ async function runManualContinuation(t) {
         .map((line) => JSON.parse(line.slice(6)));
     return { calls, events, result: events.find((event) => event.type === 'complete') };
 }
+
+test('口语训练自动恢复：保持口语要求和四条分支，忽略评分标准生成', { timeout: 10000 }, async (t) => {
+    const { calls, result } = await runRoute(t, { incomplete: 17, resumeFromBreakpoint: true, trainingType: 'oral', generateRubric: true });
+    assert.match(calls[0].messages[1].content, /口语训练生成要求/);
+    assert.equal(result.rubric, '');
+    const load = sourceLoader();
+    const parser = load('lib/training-injector/parser.ts');
+    assert.equal(parser.parseTrainingScript(result.script).length, 17);
+    assert.equal(parser.parseTrainingScriptFlowConfig(result.script).edges.length, planFixture().edges.length);
+});
+
+test('口语训练手动断点续写保留类型上下文与已有阶段', { timeout: 10000 }, async (t) => {
+    const { calls, result } = await runManualContinuation(t, 'oral');
+    assert.ok(result);
+    assert.match(calls[0].messages[1].content, /口语训练生成要求/);
+    assert.match(result.script, /手动续写前保留阶段1/);
+    assert.match(result.script, /手动补齐阶段17/);
+});
 
 test('17阶段四分支：从残缺阶段8按两阶段一轮补完，正文替换持续发送且保留原始上下文', { timeout: 10000 }, async (t) => {
     const { calls, events, result } = await runRoute(t);
@@ -353,8 +372,8 @@ function interruptedEventResponse(events) {
     }));
 }
 
-for (const fileMode of [false, true]) {
-    test(`前端断流重试携带最新阶段快照，恢复自动续写（${fileMode ? '文件' : '文本'}模式）`, async (t) => {
+for (const trainingType of ['ability', 'oral']) for (const fileMode of [false, true]) {
+    test(`前端断流重试携带最新阶段快照和训练类型，恢复自动续写（${trainingType} / ${fileMode ? '文件' : '文本'}模式）`, async (t) => {
         const calls = [];
         const snapshot = prefix() + stage(1) + '\n\n' + stage(2, { partial: true });
         t.mock.method(globalThis, 'fetch', async (_url, init) => {
@@ -368,6 +387,7 @@ for (const fileMode of [false, true]) {
         });
         const clientLoad = sourceLoader({ '@/lib/llm/settings': { loadLLMSettingsFromStorage: () => ({}) } });
         await clientLoad('lib/training-generator/client.ts').streamTrainingGenerate({
+            trainingType,
             teacherDocContent: teacherDoc, teacherDocName: '断流测试',
             file: fileMode ? new File([teacherDoc], '教师文档.md') : undefined,
             generateScript: true, generateRubric: true, scriptMode: 'auto', modulePlan: planFixture(),
@@ -376,6 +396,8 @@ for (const fileMode of [false, true]) {
         assert.equal(calls.length, 2);
         assert.equal(calls[0].requestMode, 'generate');
         assert.equal(calls[1].requestMode, 'resume_script');
+        assert.equal(calls[0].trainingType, trainingType);
+        assert.equal(calls[1].trainingType, trainingType);
         assert.equal(calls[1].priorScript, snapshot);
         assert.equal(calls[1].scriptMode, 'roleplay', '恢复时保留首次识别的剧本模式');
         assert.equal(String(calls[1].generateRubric), 'true', '保留后续评分标准生成');

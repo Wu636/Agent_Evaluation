@@ -1,0 +1,566 @@
+{
+  "schemaVersion": 1,
+  "taskName": "实训一谜案 01《导管的代价》",
+  "audience": "学习病原生物学、临床医学、医学检验及相关专业的学生",
+  "description": "本实训以 ICU 中心静脉导管相关血流感染临床场景为载体，学生选择任一角色，完成四阶段（阶段二至五）推理训练。重点训练医院感染临床识别、血培养送检策略、导管相关血流感染（CRBSI）判读、葡萄球菌鉴定、MRSA 耐药机制、院感防控；掌握病原学检查通用工具思维，学会在信息不全下构建鉴别清单与送检方案。",
+  "source": {
+    "file": "source.txt",
+    "sha256": "cf8d2e20e52fb39675a96022b4e8c7293339c19dc91c3b08e002d43da51be2e8"
+  },
+  "sharedPrompt": "# Role\n你是探案引导者：教学引导口吻，先肯定作答可取之处，再指出推理缺口；负责场景开启、任务下发、线索门控、启发提问、反向质疑、阶段小结、复盘点评。学生扮演岗位，你始终扮演探案引导者。\n\n# 全局状态与约束\n每次先回读已发生的完整对话，找出本次最早有效的角色确认，作为唯一锁定角色；本轮持续保持角色，不接受中途切换。四个可选岗位为主管接诊医师、检验医师、流行病学调查员、临床药师。若跨节点记录缺失，先请学生确认原选岗位，不另行随机分配。\n按本阶段先前回答累积评价，区分 public_pass、role_answered、role_quality、challenge_answered、optional_choice、summary_delivered。它们是对实际对话的判定记录，不假定平台提供这些变量。实质作答指有与问题相关的理由或方案；“不知道”“跳过”“随便”不算回答。\n公共任务合格控制线索门控；角色专属题必须实质作答并计分，角色质量不足扣分，不改变公共任务合格阈值；主动探究自主选做，明确放弃就继续，对应不得分。每阶段只展示已选岗位的拓展题，全部四角色仅在训练收尾全景展示。\n提前请求后续结果时，提示当前缺项，不泄露后续节点内容；提前要求结束时告知未完成的教学环节。阶段小结由独立节点开场白展示；本节点达标后只输出指定跳转词，不把跳转词与对话混写。\n普通引导回复原则上80—200字，一次聚焦一处缺项。教师原文小结、角色问题全景、易错点和最终复盘不受此长度限制。每个案例事实以本阶段已公开材料为准；区分推测、实验室表型与已验证结论。\n评分仅依据实际学生回答；允许同义表述。提示后的答案质量可记录进推理迭代；每个得分点只记一次。完整记录选做是否放弃和反向质疑是否作答，为结束后六维评分保留证据。不得臆造学生回答、检验结果、个体药物剂量或成绩。\n",
+  "stageFiles": [
+    "stages/01-ROLE.json",
+    "stages/02-PHASE2.json",
+    "stages/03-SUMMARY2.json",
+    "stages/04-PHASE3.json",
+    "stages/05-SUMMARY3.json",
+    "stages/06-PHASE4.json",
+    "stages/07-SUMMARY4.json",
+    "stages/08-PHASE5.json",
+    "stages/09-CLOSE5.json",
+    "stages/10-PANORAMA.json",
+    "stages/11-SELFCHECK.json",
+    "stages/12-REVIEW.json"
+  ],
+  "edges": [
+    {
+      "to": "ROLE",
+      "condition": "",
+      "from": "START"
+    },
+    {
+      "from": "ROLE",
+      "to": "PHASE2",
+      "condition": "NEXT_TO_PHASE2",
+      "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。"
+    },
+    {
+      "from": "PHASE2",
+      "to": "SUMMARY2",
+      "condition": "NEXT_TO_SUMMARY2",
+      "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。"
+    },
+    {
+      "from": "SUMMARY2",
+      "to": "PHASE3",
+      "condition": "NEXT_TO_PHASE3",
+      "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。"
+    },
+    {
+      "from": "PHASE3",
+      "to": "SUMMARY3",
+      "condition": "NEXT_TO_SUMMARY3",
+      "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。"
+    },
+    {
+      "from": "SUMMARY3",
+      "to": "PHASE4",
+      "condition": "NEXT_TO_PHASE4",
+      "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。"
+    },
+    {
+      "from": "PHASE4",
+      "to": "SUMMARY4",
+      "condition": "NEXT_TO_SUMMARY4",
+      "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。"
+    },
+    {
+      "from": "SUMMARY4",
+      "to": "PHASE5",
+      "condition": "NEXT_TO_PHASE5",
+      "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。"
+    },
+    {
+      "from": "PHASE5",
+      "to": "CLOSE5",
+      "condition": "NEXT_TO_CLOSE5",
+      "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。"
+    },
+    {
+      "from": "CLOSE5",
+      "to": "PANORAMA",
+      "condition": "NEXT_TO_PANORAMA",
+      "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。"
+    },
+    {
+      "from": "PANORAMA",
+      "to": "SELFCHECK",
+      "condition": "NEXT_TO_SELFCHECK",
+      "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。"
+    },
+    {
+      "from": "SELFCHECK",
+      "to": "REVIEW",
+      "condition": "NEXT_TO_REVIEW",
+      "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。"
+    },
+    {
+      "from": "REVIEW",
+      "to": "END",
+      "condition": "TASK_COMPLETE",
+      "transitionPrompt": ""
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R01-role-lock",
+      "sourceFile": "source.txt",
+      "quote": "选定后本实训全程角色锁定，不可切换。",
+      "checks": [
+        {
+          "stage": "ROLE",
+          "field": "prologue",
+          "contains": "选定后本实训全程角色锁定，不可切换。"
+        }
+      ]
+    },
+    {
+      "id": "R-role-2-主管接诊医师",
+      "sourceFile": "source.txt",
+      "quote": "结合本患者 ICU 背景，若后续评估导管无法拔除，接诊视角需要重点监测哪些临床风险？",
+      "checks": [
+        {
+          "stage": "PHASE2",
+          "field": "prompt",
+          "contains": "结合本患者 ICU 背景，若后续评估导管无法拔除，接诊视角需要重点监测哪些临床风险？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "结合本患者 ICU 背景，若后续评估导管无法拔除，接诊视角需要重点监测哪些临床风险？"
+        }
+      ]
+    },
+    {
+      "id": "R-role-2-检验医师",
+      "sourceFile": "source.txt",
+      "quote": "怀疑 CRBSI，实验室接收血培养标本时，需要重点核查哪些信息？",
+      "checks": [
+        {
+          "stage": "PHASE2",
+          "field": "prompt",
+          "contains": "怀疑 CRBSI，实验室接收血培养标本时，需要重点核查哪些信息？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "怀疑 CRBSI，实验室接收血培养标本时，需要重点核查哪些信息？"
+        }
+      ]
+    },
+    {
+      "id": "R-role-2-流行病学调查员",
+      "sourceFile": "source.txt",
+      "quote": "ICU 内 MRSA 主要传播途径与传播媒介是什么？",
+      "checks": [
+        {
+          "stage": "PHASE2",
+          "field": "prompt",
+          "contains": "ICU 内 MRSA 主要传播途径与传播媒介是什么？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "ICU 内 MRSA 主要传播途径与传播媒介是什么？"
+        }
+      ]
+    },
+    {
+      "id": "R-role-2-临床药师",
+      "sourceFile": "source.txt",
+      "quote": "老年 ICU 患者，使用糖肽类抗菌药物，给药剂量上，需要重点关注哪些生理因素？",
+      "checks": [
+        {
+          "stage": "PHASE2",
+          "field": "prompt",
+          "contains": "老年 ICU 患者，使用糖肽类抗菌药物，给药剂量上，需要重点关注哪些生理因素？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "老年 ICU 患者，使用糖肽类抗菌药物，给药剂量上，需要重点关注哪些生理因素？"
+        }
+      ]
+    },
+    {
+      "id": "R-public-2",
+      "sourceFile": "source.txt",
+      "quote": "1. 发热最可能来自哪一系统？请列出鉴别清单并设计第一轮病原学送检方案。\n2. 出口处无红肿能否排除导管感染？说明核心依据。",
+      "checks": [
+        {
+          "stage": "PHASE2",
+          "field": "prologue",
+          "contains": "1. 发热最可能来自哪一系统？请列出鉴别清单并设计第一轮病原学送检方案。\n2. 出口处无红肿能否排除导管感染？说明核心依据。"
+        }
+      ]
+    },
+    {
+      "id": "R-role-3-主管接诊医师",
+      "sourceFile": "source.txt",
+      "quote": "若临床高度怀疑感染，但两套血培养均阴性，作为接诊医师还需要综合评估哪些临床证据？",
+      "checks": [
+        {
+          "stage": "PHASE3",
+          "field": "prompt",
+          "contains": "若临床高度怀疑感染，但两套血培养均阴性，作为接诊医师还需要综合评估哪些临床证据？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "若临床高度怀疑感染，但两套血培养均阴性，作为接诊医师还需要综合评估哪些临床证据？"
+        }
+      ]
+    },
+    {
+      "id": "R-role-3-检验医师",
+      "sourceFile": "source.txt",
+      "quote": "若两套血培养全部阴性，但临床高度怀疑 CRBSI，检验角度还可补充哪些检测手段？",
+      "checks": [
+        {
+          "stage": "PHASE3",
+          "field": "prompt",
+          "contains": "若两套血培养全部阴性，但临床高度怀疑 CRBSI，检验角度还可补充哪些检测手段？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "若两套血培养全部阴性，但临床高度怀疑 CRBSI，检验角度还可补充哪些检测手段？"
+        }
+      ]
+    },
+    {
+      "id": "R-role-3-流行病学调查员",
+      "sourceFile": "source.txt",
+      "quote": "同病房存在其他留置中心静脉导管患者，流调视角需要开展哪些初步排查？",
+      "checks": [
+        {
+          "stage": "PHASE3",
+          "field": "prompt",
+          "contains": "同病房存在其他留置中心静脉导管患者，流调视角需要开展哪些初步排查？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "同病房存在其他留置中心静脉导管患者，流调视角需要开展哪些初步排查？"
+        }
+      ]
+    },
+    {
+      "id": "R-role-3-临床药师",
+      "sourceFile": "source.txt",
+      "quote": "计划经验使用万古霉素，用药之前，药学层面需要和临床沟通哪些监护指标？",
+      "checks": [
+        {
+          "stage": "PHASE3",
+          "field": "prompt",
+          "contains": "计划经验使用万古霉素，用药之前，药学层面需要和临床沟通哪些监护指标？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "计划经验使用万古霉素，用药之前，药学层面需要和临床沟通哪些监护指标？"
+        }
+      ]
+    },
+    {
+      "id": "R-public-3",
+      "sourceFile": "source.txt",
+      "quote": "1. 结合上述实验室结果更新你的鉴别诊断清单，分析感染来源倾向性。\n2. 导管血先报阳 3 小时说明什么？阐述核心诊断原理。",
+      "checks": [
+        {
+          "stage": "PHASE3",
+          "field": "prologue",
+          "contains": "1. 结合上述实验室结果更新你的鉴别诊断清单，分析感染来源倾向性。\n2. 导管血先报阳 3 小时说明什么？阐述核心诊断原理。"
+        }
+      ]
+    },
+    {
+      "id": "R-role-4-主管接诊医师",
+      "sourceFile": "source.txt",
+      "quote": "老年 ICU 患者使用万古霉素，接诊视角下需要重点监测哪些脏器功能？",
+      "checks": [
+        {
+          "stage": "PHASE4",
+          "field": "prompt",
+          "contains": "老年 ICU 患者使用万古霉素，接诊视角下需要重点监测哪些脏器功能？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "老年 ICU 患者使用万古霉素，接诊视角下需要重点监测哪些脏器功能？"
+        }
+      ]
+    },
+    {
+      "id": "R-role-4-检验医师",
+      "sourceFile": "source.txt",
+      "quote": "本菌株苯唑西林耐药，检验医师在药敏报告上可以增加哪些面向临床的提示备注？",
+      "checks": [
+        {
+          "stage": "PHASE4",
+          "field": "prompt",
+          "contains": "本菌株苯唑西林耐药，检验医师在药敏报告上可以增加哪些面向临床的提示备注？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "本菌株苯唑西林耐药，检验医师在药敏报告上可以增加哪些面向临床的提示备注？"
+        }
+      ]
+    },
+    {
+      "id": "R-role-4-流行病学调查员",
+      "sourceFile": "source.txt",
+      "quote": "什么情形下建议开展菌株同源分子分型，用于院感溯源？",
+      "checks": [
+        {
+          "stage": "PHASE4",
+          "field": "prompt",
+          "contains": "什么情形下建议开展菌株同源分子分型，用于院感溯源？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "什么情形下建议开展菌株同源分子分型，用于院感溯源？"
+        }
+      ]
+    },
+    {
+      "id": "R-role-4-临床药师",
+      "sourceFile": "source.txt",
+      "quote": "对比万古霉素与利奈唑胺，两者主要的不良反应差异有哪些？",
+      "checks": [
+        {
+          "stage": "PHASE4",
+          "field": "prompt",
+          "contains": "对比万古霉素与利奈唑胺，两者主要的不良反应差异有哪些？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "对比万古霉素与利奈唑胺，两者主要的不良反应差异有哪些？"
+        }
+      ]
+    },
+    {
+      "id": "R-public-4",
+      "sourceFile": "source.txt",
+      "quote": "1.梳理全套鉴定结果，判断病原体是什么？逐条列出支持CRBSI的核心证据；精准阐述该病原体青霉素类耐药机制\n2.结合本病例，说明如何系统排除皮肤定植菌污染？",
+      "checks": [
+        {
+          "stage": "PHASE4",
+          "field": "prologue",
+          "contains": "1.梳理全套鉴定结果，判断病原体是什么？逐条列出支持CRBSI的核心证据；精准阐述该病原体青霉素类耐药机制\n2.结合本病例，说明如何系统排除皮肤定植菌污染？"
+        }
+      ]
+    },
+    {
+      "id": "R-role-5-主管接诊医师",
+      "sourceFile": "source.txt",
+      "quote": "患者病情好转转出 ICU，主管医师需要向普通病房交接哪些核心医疗要点？",
+      "checks": [
+        {
+          "stage": "PHASE5",
+          "field": "prompt",
+          "contains": "患者病情好转转出 ICU，主管医师需要向普通病房交接哪些核心医疗要点？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "患者病情好转转出 ICU，主管医师需要向普通病房交接哪些核心医疗要点？"
+        }
+      ]
+    },
+    {
+      "id": "R-role-5-检验医师",
+      "sourceFile": "source.txt",
+      "quote": "ICU 连续多例 MRSA 阳性，检验科可以为院感防控提供哪些检验层面支持？",
+      "checks": [
+        {
+          "stage": "PHASE5",
+          "field": "prompt",
+          "contains": "ICU 连续多例 MRSA 阳性，检验科可以为院感防控提供哪些检验层面支持？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "ICU 连续多例 MRSA 阳性，检验科可以为院感防控提供哪些检验层面支持？"
+        }
+      ]
+    },
+    {
+      "id": "R-role-5-流行病学调查员",
+      "sourceFile": "source.txt",
+      "quote": "本次个案处置完毕，针对科室，有哪些培训改进要点？",
+      "checks": [
+        {
+          "stage": "PHASE5",
+          "field": "prompt",
+          "contains": "本次个案处置完毕，针对科室，有哪些培训改进要点？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "本次个案处置完毕，针对科室，有哪些培训改进要点？"
+        }
+      ]
+    },
+    {
+      "id": "R-role-5-临床药师",
+      "sourceFile": "source.txt",
+      "quote": "若患者后续出现肾功能下降，抗 MRSA 药物可以给出哪些调整建议？",
+      "checks": [
+        {
+          "stage": "PHASE5",
+          "field": "prompt",
+          "contains": "若患者后续出现肾功能下降，抗 MRSA 药物可以给出哪些调整建议？"
+        },
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "若患者后续出现肾功能下降，抗 MRSA 药物可以给出哪些调整建议？"
+        }
+      ]
+    },
+    {
+      "id": "R-public-5",
+      "sourceFile": "source.txt",
+      "quote": "1. 经验性治疗方案需作哪些调整？如何落地全院同类事件的预防管控措施？",
+      "checks": [
+        {
+          "stage": "PHASE5",
+          "field": "prologue",
+          "contains": "1. 经验性治疗方案需作哪些调整？如何落地全院同类事件的预防管控措施？"
+        }
+      ]
+    },
+    {
+      "id": "R-summary-2",
+      "sourceFile": "source.txt",
+      "quote": "小结：ICU 留置中心静脉导管患者突发高热、炎症指标显著升高，无肺、泌尿系感染客观依据时，导管相关血流感染为首要高危鉴别方向；核心原理：CRBSI 感染病灶位于血管内导管腔及导管附着生物膜，仅表现为全身感染症状，70%以上患者无导管出口红肿、渗液等局部体征，因此局部无异常绝对不能排除CRBSI。怀疑CRBSI时，双套双部位（外周静脉+导管内）血培养是临床诊断金标准前置条件，可有效区分真性血流感染与标本污染，大幅提升诊断可靠性。接下来获取进一步实验室结果。",
+      "checks": [
+        {
+          "stage": "SUMMARY2",
+          "field": "prologue",
+          "contains": "小结：ICU 留置中心静脉导管患者突发高热、炎症指标显著升高，无肺、泌尿系感染客观依据时，导管相关血流感染为首要高危鉴别方向；核心原理：CRBSI 感染病灶位于血管内导管腔及导管附着生物膜，仅表现为全身感染症状，70%以上患者无导管出口红肿、渗液等局部体征，因此局部无异常绝对不能排除CRBSI。怀疑CRBSI时，双套双部位（外周静脉+导管内）血培养是临床诊断金标准前置条件，可有效区分真性血流感染与标本污染，大幅提升诊断可靠性。接下来获取进一步实验室结果。"
+        }
+      ]
+    },
+    {
+      "id": "R-summary-3",
+      "sourceFile": "source.txt",
+      "quote": "小结：DTP（导管血与外周血报阳时间差）＞2小时的核心原理：导管内生物膜定植菌持续释放入血，会导致导管血标本菌群载量更高、繁殖更快，因此报阳时间显著早于外周血，是判定导管为感染原发灶的关键实验室依据。但单瓶血培养报阳存在极高的皮肤定植菌、操作污染概率，不符合CRBSI确诊标准，不能直接定性为真性血流感染，必须结合菌落形态、生化鉴定、药敏结果、导管尖端培养结果进行综合佐证，排除污染干扰。下面我们拿到完整微生物鉴定与药敏结果。",
+      "checks": [
+        {
+          "stage": "SUMMARY3",
+          "field": "prologue",
+          "contains": "小结：DTP（导管血与外周血报阳时间差）＞2小时的核心原理：导管内生物膜定植菌持续释放入血，会导致导管血标本菌群载量更高、繁殖更快，因此报阳时间显著早于外周血，是判定导管为感染原发灶的关键实验室依据。但单瓶血培养报阳存在极高的皮肤定植菌、操作污染概率，不符合CRBSI确诊标准，不能直接定性为真性血流感染，必须结合菌落形态、生化鉴定、药敏结果、导管尖端培养结果进行综合佐证，排除污染干扰。下面我们拿到完整微生物鉴定与药敏结果。"
+        }
+      ]
+    },
+    {
+      "id": "R-summary-4",
+      "sourceFile": "source.txt",
+      "quote": "小结：本病例结合形态学、生化试验、药敏同源性、院感暴露史，可确诊为mecA 基因编码的 PBP2a 介导的 MRSA 导管相关血流感染，部分菌株可伴随A2063G位点突变加重耐药表型。核心原理：中心静脉导管表面可形成细菌生物膜，抗菌药物无法穿透生物膜彻底杀灭定植菌群，即使药敏结果显示药物敏感，仅靠抗感染治疗无法根除感染源头，极易导致感染反复、迁延不愈。本次感染核心诱因与护工无防护徒手操作导管、手卫生落实不到位密切相关，是ICU导管相关院感的典型高危因素。",
+      "checks": [
+        {
+          "stage": "SUMMARY4",
+          "field": "prologue",
+          "contains": "小结：本病例结合形态学、生化试验、药敏同源性、院感暴露史，可确诊为mecA 基因编码的 PBP2a 介导的 MRSA 导管相关血流感染，部分菌株可伴随A2063G位点突变加重耐药表型。核心原理：中心静脉导管表面可形成细菌生物膜，抗菌药物无法穿透生物膜彻底杀灭定植菌群，即使药敏结果显示药物敏感，仅靠抗感染治疗无法根除感染源头，极易导致感染反复、迁延不愈。本次感染核心诱因与护工无防护徒手操作导管、手卫生落实不到位密切相关，是ICU导管相关院感的典型高危因素。"
+        }
+      ]
+    },
+    {
+      "id": "R-challenge-3",
+      "sourceFile": "source.txt",
+      "quote": "血培养只报了一瓶阳性，能直接报告金黄色葡萄球菌血流感染吗？为什么？",
+      "checks": [
+        {
+          "stage": "PHASE3",
+          "field": "prompt",
+          "contains": "血培养只报了一瓶阳性，能直接报告金黄色葡萄球菌血流感染吗？为什么？"
+        }
+      ]
+    },
+    {
+      "id": "R-challenge-4",
+      "sourceFile": "source.txt",
+      "quote": "既然万古霉素敏感，为什么还要拔除导管？",
+      "checks": [
+        {
+          "stage": "PHASE4",
+          "field": "prompt",
+          "contains": "既然万古霉素敏感，为什么还要拔除导管？"
+        }
+      ]
+    },
+    {
+      "id": "R-selfcheck",
+      "sourceFile": "source.txt",
+      "quote": "本谜案核心易错点有三处：一是把导管局部无红肿误判为可排除 CRBSI，忽略了生物膜感染可仅表现为全身症状；二是血培养未执行双套双部位规范，导致无法区分污染与真性血流感染；三是把药敏敏感等同于可以不拔管，忽略了生物膜屏障使药物无法根除感染源头。请对照自己的作答核对这三处。",
+      "checks": [
+        {
+          "stage": "SELFCHECK",
+          "field": "prologue",
+          "contains": "本谜案核心易错点有三处：一是把导管局部无红肿误判为可排除 CRBSI，忽略了生物膜感染可仅表现为全身症状；二是血培养未执行双套双部位规范，导致无法区分污染与真性血流感染；三是把药敏敏感等同于可以不拔管，忽略了生物膜屏障使药物无法根除感染源头。请对照自己的作答核对这三处。"
+        }
+      ]
+    },
+    {
+      "id": "R-six-dimensions",
+      "sourceFile": "source.txt",
+      "quote": "本谜案你的六维得分与短板如下：病例分析与鉴别诊断能力（满分 22）、实验室证据解读与检验思维（满分 22）、病原耐药认知与综合处置决策（满分 24）、角色视角拓展思考（满分 12）、质询应答与推理迭代能力（满分 10）、主动探究与提问质量（满分 10）。你的短板集中在____维度，建议针对____加强____。",
+      "checks": [
+        {
+          "stage": "REVIEW",
+          "field": "prompt",
+          "contains": "本谜案你的六维得分与短板如下：病例分析与鉴别诊断能力（满分 22）、实验室证据解读与检验思维（满分 22）、病原耐药认知与综合处置决策（满分 24）、角色视角拓展思考（满分 12）、质询应答与推理迭代能力（满分 10）、主动探究与提问质量（满分 10）。你的短板集中在____维度，建议针对____加强____。"
+        }
+      ]
+    },
+    {
+      "id": "R-option10",
+      "sourceFile": "source.txt",
+      "quote": "未选做主动探究最高也只能得 90 分。",
+      "checks": [
+        {
+          "stage": "REVIEW",
+          "field": "prompt",
+          "contains": "总分上限90"
+        }
+      ]
+    },
+    {
+      "id": "R-user-closures",
+      "sourceFile": "用户补充要求.txt",
+      "quote": "注意别忘记文档中提到的每阶段结束后要输出对应的小结，严格参照文档中的小结内容。然后实训结束后还可以查看所有四个角色的拓展问题全景，最后还有一个，通用的易错点展示 请同学自己核对，然后再出一个对此实训的复盘。",
+      "checks": [
+        {
+          "stage": "PANORAMA",
+          "field": "prologue",
+          "contains": "【四角色拓展问题全景】"
+        },
+        {
+          "stage": "SELFCHECK",
+          "field": "prologue",
+          "contains": "【通用易错点自查】"
+        },
+        {
+          "stage": "REVIEW",
+          "field": "prologue",
+          "contains": "【实训复盘】"
+        }
+      ]
+    }
+  ],
+  "totalScore": 100,
+  "rubricFile": "rubric.json",
+  "reviewIssuesFile": "review-issues.json",
+  "notes": [
+    "教学原阶段共五阶段，其中专业训练为阶段二至五；平台拆为12张交互/输出卡片。",
+    "原文仅有阶段二、三、四的小结；阶段一用角色回显收束；阶段五小结为依据原任务新增的收束，不冒称原文。",
+    "教师主分值保留；合格证据清单与子项分值为配置设计建议。",
+    "平台自动跳转、跨节点历史、最长轮次需实测。",
+    "阶段二原文角色名称占位符改为静态锁定提示；首次对话按真实历史回显岗位名，不假设平台支持自定义变量。"
+  ]
+}

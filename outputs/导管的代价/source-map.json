@@ -1,0 +1,15 @@
+{
+  "source": {
+    "file": "source.txt",
+    "sha256": "cf8d2e20e52fb39675a96022b4e8c7293339c19dc91c3b08e002d43da51be2e8"
+  },
+  "characters": 5157,
+  "parts": [
+    {
+      "file": "source-parts/001.txt",
+      "startChar": 0,
+      "endChar": 5157,
+      "sha256": "cf8d2e20e52fb39675a96022b4e8c7293339c19dc91c3b08e002d43da51be2e8"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { parseTrainingType, withOralTrainingContext, type TrainingType } from "@/lib/oral-training/config";
 /**
  * POST /api/training-generate/plan
  * 训练剧本模块规划 API
@@ -20,6 +21,7 @@ function normalizeFlowPreference(value: unknown): TrainingFlowPlanningPreference
 
 export async function POST(request: NextRequest) {
     try {
+        let trainingType: TrainingType | undefined;
         let teacherDocContent = "";
         let teacherDocName = "文档";
         let apiKey = "";
@@ -35,6 +37,7 @@ export async function POST(request: NextRequest) {
 
         if (contentType.includes("multipart/form-data")) {
             const formData = await request.formData();
+            trainingType = parseTrainingType(formData.get("trainingType"));
             const file = formData.get("file") as File | null;
             teacherDocName = formData.get("teacherDocName") as string || "文档";
             planningFeedback = formData.get("planningFeedback") as string || "";
@@ -71,6 +74,7 @@ export async function POST(request: NextRequest) {
             }
         } else {
             const payload = await request.json();
+            trainingType = parseTrainingType(payload.trainingType);
             ({
                 teacherDocContent = "",
                 teacherDocName = "文档",
@@ -89,6 +93,8 @@ export async function POST(request: NextRequest) {
         if (!teacherDocContent.trim()) {
             return NextResponse.json({ error: "文档内容为空，请检查文件格式" }, { status: 400 });
         }
+
+        teacherDocContent = withOralTrainingContext(teacherDocContent, trainingType);
 
         const apiConfig: ApiConfig & { model: string } = {
             apiKey: apiKey || process.env.LLM_API_KEY || "",

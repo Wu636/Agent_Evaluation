@@ -1,0 +1,133 @@
+{
+  "valid": true,
+  "errors": [],
+  "warnings": [
+    "教师内容待核对 4 项；当前为审核稿",
+    "学生端跨节点历史、条件跳转和最大轮次行为待实际验证"
+  ],
+  "coverage": [
+    {
+      "id": "R01-role-lock",
+      "passed": true
+    },
+    {
+      "id": "R-role-2-主管接诊医师",
+      "passed": true
+    },
+    {
+      "id": "R-role-2-检验医师",
+      "passed": true
+    },
+    {
+      "id": "R-role-2-流行病学调查员",
+      "passed": true
+    },
+    {
+      "id": "R-role-2-临床药师",
+      "passed": true
+    },
+    {
+      "id": "R-public-2",
+      "passed": true
+    },
+    {
+      "id": "R-role-3-主管接诊医师",
+      "passed": true
+    },
+    {
+      "id": "R-role-3-检验医师",
+      "passed": true
+    },
+    {
+      "id": "R-role-3-流行病学调查员",
+      "passed": true
+    },
+    {
+      "id": "R-role-3-临床药师",
+      "passed": true
+    },
+    {
+      "id": "R-public-3",
+      "passed": true
+    },
+    {
+      "id": "R-role-4-主管接诊医师",
+      "passed": true
+    },
+    {
+      "id": "R-role-4-检验医师",
+      "passed": true
+    },
+    {
+      "id": "R-role-4-流行病学调查员",
+      "passed": true
+    },
+    {
+      "id": "R-role-4-临床药师",
+      "passed": true
+    },
+    {
+      "id": "R-public-4",
+      "passed": true
+    },
+    {
+      "id": "R-role-5-主管接诊医师",
+      "passed": true
+    },
+    {
+      "id": "R-role-5-检验医师",
+      "passed": true
+    },
+    {
+      "id": "R-role-5-流行病学调查员",
+      "passed": true
+    },
+    {
+      "id": "R-role-5-临床药师",
+      "passed": true
+    },
+    {
+      "id": "R-public-5",
+      "passed": true
+    },
+    {
+      "id": "R-summary-2",
+      "passed": true
+    },
+    {
+      "id": "R-summary-3",
+      "passed": true
+    },
+    {
+      "id": "R-summary-4",
+      "passed": true
+    },
+    {
+      "id": "R-challenge-3",
+      "passed": true
+    },
+    {
+      "id": "R-challenge-4",
+      "passed": true
+    },
+    {
+      "id": "R-selfcheck",
+      "passed": true
+    },
+    {
+      "id": "R-six-dimensions",
+      "passed": true
+    },
+    {
+      "id": "R-option10",
+      "passed": true
+    },
+    {
+      "id": "R-user-closures",
+      "passed": true
+    }
+  ],
+  "coverageCount": 30,
+  "stageCount": 12,
+  "semanticReview": "需 agent 逐情景复核；本报告只检查结构与文本覆盖"
+}

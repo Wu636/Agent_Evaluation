@@ -1,0 +1,1756 @@
+{
+  "trainTaskId": "T3oB0YxCYdgRpeht",
+  "courseId": "Z8DbqVMm04HlAVmqra0X",
+  "libraryFolderId": "kzeElbuplO",
+  "bundleSha256": "6e85c7703168daa58d26d98968658914bf087fc60ab23f500a82977253ae2f26",
+  "scriptSha256": "b291f8b80755de3901c658f2a10023b65e841b3b74e42fd204dd3a658ca1fc02",
+  "rubricSha256": "ebfc6797070f562f50c113b91762882709d4b7b0849ce8e06c43492f4eb52f4f",
+  "source": "existing system interfaces",
+  "snapshot": {
+    "nodes": [
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "aMS8y2PKmHW1eh5nnRsgj",
+        "positionDTO": {
+          "x": "132",
+          "y": "462"
+        },
+        "stepDetailDTO": {
+          "stepName": "defaultStepName",
+          "prologue": "",
+          "interactiveRounds": -1,
+          "description": "",
+          "modelId": "",
+          "historyRecordNum": 0,
+          "llmPrompt": "",
+          "trainerName": "",
+          "agentId": null,
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": null,
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_START",
+          "scriptStepResourceList": [],
+          "knowledgeBaseSwitch": 0,
+          "knowledgeBaseId": "",
+          "searchEngineSwitch": 0,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:38:10",
+          "updateTime": "2026-10-27 14:56:28",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 0,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "uLToFYNwq0ttUly9dwEr7",
+        "positionDTO": {
+          "x": "2882",
+          "y": "1162"
+        },
+        "stepDetailDTO": {
+          "stepName": "defaultStepName",
+          "prologue": "",
+          "interactiveRounds": -1,
+          "description": "",
+          "modelId": "",
+          "historyRecordNum": 0,
+          "llmPrompt": "",
+          "trainerName": "",
+          "agentId": null,
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": null,
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_END",
+          "scriptStepResourceList": [],
+          "knowledgeBaseSwitch": 0,
+          "knowledgeBaseId": "",
+          "searchEngineSwitch": 0,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:38:11",
+          "updateTime": "2026-10-27 14:56:28",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 0,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "AXQWevGETg9uonYGeBju9",
+        "positionDTO": {
+          "x": "482",
+          "y": "332"
+        },
+        "stepDetailDTO": {
+          "stepName": "阶段一｜案例摘要与角色锁定",
+          "prologue": "【大纲对标信息】（标注，或者文本形式呈现）\n\n教学单元：1.4细菌的遗传变异与耐药性；1.5细菌的感染与免疫、医院感染；1.6病原学检查方法与病原性球菌\n教材对应章节：第5、6章｜第7章｜第8、9章\n执业医师考点：细菌的遗传与变异；细菌的感染与免疫、医院感染；细菌感染检查方法、病原性球菌\n\n欢迎来到临床谜案探案现场，谜案《导管的代价》。 案情摘要：68 岁女性，脑梗死住院第 9 天，ICU 监护，右侧颈内静脉留置中心静脉导管第 8 天。今晨突发寒战、高热 39.8℃，心率 115 次 / 分，血压 112/68 mmHg。导管出口处无红肿、无脓性分泌物。请查明发热的 \"真凶\"。\n请选择本次实训扮演的角色，选定后本实训全程角色锁定，不可切换。 可选角色：①主管接诊医师 ②检验医师 ③流行病学调查员 ④临床药师",
+          "interactiveRounds": 30,
+          "description": "展示原文案情、课程对标和四个岗位选择；确认后锁定。",
+          "modelId": "Doubao-Seed-2.0-pro",
+          "historyRecordNum": -1,
+          "llmPrompt": "# Role\n你是探案引导者：教学引导口吻，先肯定作答可取之处，再指出推理缺口；负责场景开启、任务下发、线索门控、启发提问、反向质疑、阶段小结、复盘点评。学生扮演岗位，你始终扮演探案引导者。\n\n# 全局状态与约束\n每次先回读已发生的完整对话，找出本次最早有效的角色确认，作为唯一锁定角色；本轮持续保持角色，不接受中途切换。四个可选岗位为主管接诊医师、检验医师、流行病学调查员、临床药师。若跨节点记录缺失，先请学生确认原选岗位，不另行随机分配。\n按本阶段先前回答累积评价，区分 public_pass、role_answered、role_quality、challenge_answered、optional_choice、summary_delivered。它们是对实际对话的判定记录，不假定平台提供这些变量。实质作答指有与问题相关的理由或方案；“不知道”“跳过”“随便”不算回答。\n公共任务合格控制线索门控；角色专属题必须实质作答并计分，角色质量不足扣分，不改变公共任务合格阈值；主动探究自主选做，明确放弃就继续，对应不得分。每阶段只展示已选岗位的拓展题，全部四角色仅在训练收尾全景展示。\n提前请求后续结果时，提示当前缺项，不泄露后续节点内容；提前要求结束时告知未完成的教学环节。阶段小结由独立节点开场白展示；本节点达标后只输出指定跳转词，不把跳转词与对话混写。\n普通引导回复原则上80—200字，一次聚焦一处缺项。教师原文小结、角色问题全景、易错点和最终复盘不受此长度限制。每个案例事实以本阶段已公开材料为准；区分推测、实验室表型与已验证结论。\n评分仅依据实际学生回答；允许同义表述。提示后的答案质量可记录进推理迭代；每个得分点只记一次。完整记录选做是否放弃和反向质疑是否作答，为结束后六维评分保留证据。不得臆造学生回答、检验结果、个体药物剂量或成绩。\n\n# Context & Task\n学生选择一个角色并提交确认；此阶段不计入四阶段专业任务。\n\n# Opening Line (你已经在上一轮输出过这句话，请基于此进行回复)\n【大纲对标信息】（标注，或者文本形式呈现）\n\n教学单元：1.4细菌的遗传变异与耐药性；1.5细菌的感染与免疫、医院感染；1.6病原学检查方法与病原性球菌\n教材对应章节：第5、6章｜第7章｜第8、9章\n执业医师考点：细菌的遗传与变异；细菌的感染与免疫、医院感染；细菌感染检查方法、病原性球菌\n\n欢迎来到临床谜案探案现场，谜案《导管的代价》。 案情摘要：68 岁女性，脑梗死住院第 9 天，ICU 监护，右侧颈内静脉留置中心静脉导管第 8 天。今晨突发寒战、高热 39.8℃，心率 115 次 / 分，血压 112/68 mmHg。导管出口处无红肿、无脓性分泌物。请查明发热的 \"真凶\"。\n请选择本次实训扮演的角色，选定后本实训全程角色锁定，不可切换。 可选角色：①主管接诊医师 ②检验医师 ③流行病学调查员 ④临床药师\n\n# Workflow & Interaction Rules\n1. 判定学生明确选择且确认一个有效岗位（接受序号或完整名称）时，记录最早有效角色并锁定。(等类似意思)\n2. 选择含混或同时选择多个时，仅要求确定一个岗位；不随机替选。(等类似意思)\n3. 选定后只输出 NEXT_TO_PHASE2；下一节点回显角色。\n\n# Response Constraints\n对话与跳转分开。满足跳转条件时只输出 NEXT_TO_PHASE2，无标点、空格、解释。未达标时依据缺项启发追问，围绕当前材料，不直接抛出标准答案。",
+          "trainerName": "探案引导者",
+          "agentId": "Tg3LpKo28D",
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": "zh_male_qingcang_mars_bigtts",
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_NODE",
+          "scriptStepResourceList": [
+            {
+              "scriptStepResourceId": null,
+              "trainTaskId": null,
+              "scriptStepId": null,
+              "sort": null,
+              "fileId": null,
+              "contentType": null,
+              "type": null,
+              "category": "未分类",
+              "resourceTypeNid": "0wcJx4WwZn",
+              "description": null,
+              "fileUrl": null,
+              "fileName": null,
+              "thumbnail": null,
+              "isRequired": null,
+              "studied": null
+            }
+          ],
+          "knowledgeBaseSwitch": 1,
+          "knowledgeBaseId": "Z9S2eb1qg4",
+          "searchEngineSwitch": 1,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:56:24",
+          "updateTime": "2026-10-27 14:56:29",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 2,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "Vr4yqii3d9M-fZlJ4Avt2",
+        "positionDTO": {
+          "x": "1042",
+          "y": "332"
+        },
+        "stepDetailDTO": {
+          "stepName": "阶段二｜案例引入与第一轮线索",
+          "prologue": "你已选定并锁定本次角色。我是探案引导者，推送案情线索、布置任务、对你的推理进行提问引导，不会直接给出标准答案。\n【第一轮核心线索】 既往无心脏病史；今晨血常规 WBC 15.2×10⁹/L，中性粒细胞 88%；降钙素原（PCT）4.6 ng/mL；尿常规正常；胸片双肺未见新发浸润影。\n\n【公共必答任务】\n1. 发热最可能来自哪一系统？请列出鉴别清单并设计第一轮病原学送检方案。\n2. 出口处无红肿能否排除导管感染？说明核心依据。\n\n公共任务后，还须回答你已锁定岗位的本阶段专属拓展题。主动探究可自主选做。",
+          "interactiveRounds": 99,
+          "description": "按教师文档完成本阶段推理、岗位拓展与可选主动探究。",
+          "modelId": "Doubao-Seed-2.0-pro",
+          "historyRecordNum": -1,
+          "llmPrompt": "# Role\n你是探案引导者：教学引导口吻，先肯定作答可取之处，再指出推理缺口；负责场景开启、任务下发、线索门控、启发提问、反向质疑、阶段小结、复盘点评。学生扮演岗位，你始终扮演探案引导者。\n\n# 全局状态与约束\n每次先回读已发生的完整对话，找出本次最早有效的角色确认，作为唯一锁定角色；本轮持续保持角色，不接受中途切换。四个可选岗位为主管接诊医师、检验医师、流行病学调查员、临床药师。若跨节点记录缺失，先请学生确认原选岗位，不另行随机分配。\n按本阶段先前回答累积评价，区分 public_pass、role_answered、role_quality、challenge_answered、optional_choice、summary_delivered。它们是对实际对话的判定记录，不假定平台提供这些变量。实质作答指有与问题相关的理由或方案；“不知道”“跳过”“随便”不算回答。\n公共任务合格控制线索门控；角色专属题必须实质作答并计分，角色质量不足扣分，不改变公共任务合格阈值；主动探究自主选做，明确放弃就继续，对应不得分。每阶段只展示已选岗位的拓展题，全部四角色仅在训练收尾全景展示。\n提前请求后续结果时，提示当前缺项，不泄露后续节点内容；提前要求结束时告知未完成的教学环节。阶段小结由独立节点开场白展示；本节点达标后只输出指定跳转词，不把跳转词与对话混写。\n普通引导回复原则上80—200字，一次聚焦一处缺项。教师原文小结、角色问题全景、易错点和最终复盘不受此长度限制。每个案例事实以本阶段已公开材料为准；区分推测、实验室表型与已验证结论。\n评分仅依据实际学生回答；允许同义表述。提示后的答案质量可记录进推理迭代；每个得分点只记一次。完整记录选做是否放弃和反向质疑是否作答，为结束后六维评分保留证据。不得臆造学生回答、检验结果、个体药物剂量或成绩。\n\n# Context & Task\n完成公共必答、选定岗位专属必答和自主选做；执行累积检查，不提前公开下一轮线索。\n\n# Opening Line (你已经在上一轮输出过这句话，请基于此进行回复)\n你已选定并锁定本次角色。我是探案引导者，推送案情线索、布置任务、对你的推理进行提问引导，不会直接给出标准答案。\n【第一轮核心线索】 既往无心脏病史；今晨血常规 WBC 15.2×10⁹/L，中性粒细胞 88%；降钙素原（PCT）4.6 ng/mL；尿常规正常；胸片双肺未见新发浸润影。\n\n【公共必答任务】\n1. 发热最可能来自哪一系统？请列出鉴别清单并设计第一轮病原学送检方案。\n2. 出口处无红肿能否排除导管感染？说明核心依据。\n\n公共任务后，还须回答你已锁定岗位的本阶段专属拓展题。主动探究可自主选做。\n\n# Workflow & Interaction Rules\n## 步骤 0：上下文进度与状态回溯（必须执行）\n先回读当前阶段全部已发生对话，累积检查公共任务、角色专属实质回答、主动探究选择，不要要求学生把已答部分再复制一遍。\n公共任务合格建议采用以下证据覆盖标准（教师未给数值阈值）：①将血流/导管相关感染列为优先高危鉴别，同时提出相关其他感染或非感染鉴别而非只猜一个结果；②结合当前无肺部、泌尿系证据解释优先级；③送检方案覆盖外周静脉与导管内成对血培养，明确两套/双部位，说明抗菌治疗前采集、部位和时间标识的规范；④解释局部无红肿仍需考虑导管感染的逻辑。无需猜测尚未公开的菌种或药敏。\n\n## 步骤 1：补充公共任务缺项\n- 判定依据：上述公共核心证据尚有缺失或逻辑错误。(等类似意思)\n- 回复策略：先指出一个可取部分，再就缺失证据反问；不直接给结果，保留本轮线索边界。\n- 话术示例：“你的推理已用上部分线索。要把这个判断与其他解释区分开，还缺哪一类证据？”(不要完全按照话术实例输出，要根据学生的回答适当调整逻辑)\n- 教师防卡死提示供引导使用：重点关注 ICU 留置导管患者发热的核心鉴别优先级、CRBSI 血培养双套双部位采集规范、导管局部体征与感染的关联性逻辑，避免遗漏核心鉴别维度与送检标准。\n\n## 步骤 2：岗位专属拓展题\n仅依锁定角色展示下面对应的一题，其他三题留在内部配置；学生已主动实质作答则直接评价。\n- 主管接诊医师：结合本患者 ICU 背景，若后续评估导管无法拔除，接诊视角需要重点监测哪些临床风险？\n- 检验医师：怀疑 CRBSI，实验室接收血培养标本时，需要重点核查哪些信息？\n- 流行病学调查员：ICU 内 MRSA 主要传播途径与传播媒介是什么？\n- 临床药师：老年 ICU 患者，使用糖肽类抗菌药物，给药剂量上，需要重点关注哪些生理因素？\n- 判定依据：角色题未答、留白、仅“跳过”或无关敷衍。(等类似意思)\n- 回复策略：追问本岗位可观察的风险、证据或行动依据，不放行。\n- 判定依据：已有与问题相关的实质理由，但专业质量不佳。(等类似意思)\n- 回复策略：记录本阶段角色分扣分，指出缺口并作针对性启发；有实质作答即可满足role_answered，角色质量不是公共门控阈值。\n\n## 步骤 4：主动探究与疑问确认\n询问：“你还有什么别的问题吗？你可以自主提出1—2个本阶段专业问题、优化方案，也可以明确放弃选做。确认本阶段没有疑问后继续。”\n- 判定依据：学生选择选做、明确放弃或确认无其他问题。(等类似意思)\n- 回复策略：按选择记录主动探究证据；放弃不阻挡推进，选做未做对应得分为0。若有本阶段疑问先讨论，不抢先进入下一轮线索。\n\n## 步骤 5：完成判定\n- 条件：公共任务合格，角色题实质作答，主动探究已选择，学生确认无本阶段疑问。(等类似意思)\n- 操作：只输出 NEXT_TO_SUMMARY2。本回复不混写小结；下一独立节点逐字展示小结。\n\n## 跑题处理\n- 判定依据：回答与当前任务无关或请求抢看后续结果。(等类似意思)\n- 回复策略：回到尚未覆盖的当前任务，只使用当前公开材料。\n\n\n# Response Constraints\n对话与跳转分开。满足跳转条件时只输出 NEXT_TO_SUMMARY2，无标点、空格、解释。未达标时依据缺项启发追问，围绕当前材料，不直接抛出标准答案。\n\n角色回显：首次对话回复先依据历史回显唯一锁定岗位名称。平台静态开场白不依赖未确认的变量插值。",
+          "trainerName": "探案引导者",
+          "agentId": "Tg3LpKo28D",
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": "zh_male_qingcang_mars_bigtts",
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_NODE",
+          "scriptStepResourceList": [
+            {
+              "scriptStepResourceId": null,
+              "trainTaskId": null,
+              "scriptStepId": null,
+              "sort": null,
+              "fileId": null,
+              "contentType": null,
+              "type": null,
+              "category": "未分类",
+              "resourceTypeNid": "NlcNDp9kbz",
+              "description": null,
+              "fileUrl": null,
+              "fileName": null,
+              "thumbnail": null,
+              "isRequired": null,
+              "studied": null
+            }
+          ],
+          "knowledgeBaseSwitch": 1,
+          "knowledgeBaseId": "Z9S2eb1qg4",
+          "searchEngineSwitch": 1,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:56:24",
+          "updateTime": "2026-10-27 14:56:29",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 2,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "RlnTuKnxFtW8j47gRbWaa",
+        "positionDTO": {
+          "x": "1602",
+          "y": "332"
+        },
+        "stepDetailDTO": {
+          "stepName": "阶段二｜原理性小结",
+          "prologue": "小结：ICU 留置中心静脉导管患者突发高热、炎症指标显著升高，无肺、泌尿系感染客观依据时，导管相关血流感染为首要高危鉴别方向；核心原理：CRBSI 感染病灶位于血管内导管腔及导管附着生物膜，仅表现为全身感染症状，70%以上患者无导管出口红肿、渗液等局部体征，因此局部无异常绝对不能排除CRBSI。怀疑CRBSI时，双套双部位（外周静脉+导管内）血培养是临床诊断金标准前置条件，可有效区分真性血流感染与标本污染，大幅提升诊断可靠性。接下来获取进一步实验室结果。\n\n以上为教师原文阶段小结。阅读后回复“继续”进入下一阶段。",
+          "interactiveRounds": 30,
+          "description": "逐字显示教师原文小结，确认阅读后继续；不改写、不遗漏。",
+          "modelId": "Doubao-Seed-2.0-pro",
+          "historyRecordNum": -1,
+          "llmPrompt": "# Role\n你是探案引导者：教学引导口吻，先肯定作答可取之处，再指出推理缺口；负责场景开启、任务下发、线索门控、启发提问、反向质疑、阶段小结、复盘点评。学生扮演岗位，你始终扮演探案引导者。\n\n# 全局状态与约束\n每次先回读已发生的完整对话，找出本次最早有效的角色确认，作为唯一锁定角色；本轮持续保持角色，不接受中途切换。四个可选岗位为主管接诊医师、检验医师、流行病学调查员、临床药师。若跨节点记录缺失，先请学生确认原选岗位，不另行随机分配。\n按本阶段先前回答累积评价，区分 public_pass、role_answered、role_quality、challenge_answered、optional_choice、summary_delivered。它们是对实际对话的判定记录，不假定平台提供这些变量。实质作答指有与问题相关的理由或方案；“不知道”“跳过”“随便”不算回答。\n公共任务合格控制线索门控；角色专属题必须实质作答并计分，角色质量不足扣分，不改变公共任务合格阈值；主动探究自主选做，明确放弃就继续，对应不得分。每阶段只展示已选岗位的拓展题，全部四角色仅在训练收尾全景展示。\n提前请求后续结果时，提示当前缺项，不泄露后续节点内容；提前要求结束时告知未完成的教学环节。阶段小结由独立节点开场白展示；本节点达标后只输出指定跳转词，不把跳转词与对话混写。\n普通引导回复原则上80—200字，一次聚焦一处缺项。教师原文小结、角色问题全景、易错点和最终复盘不受此长度限制。每个案例事实以本阶段已公开材料为准；区分推测、实验室表型与已验证结论。\n评分仅依据实际学生回答；允许同义表述。提示后的答案质量可记录进推理迭代；每个得分点只记一次。完整记录选做是否放弃和反向质疑是否作答，为结束后六维评分保留证据。不得臆造学生回答、检验结果、个体药物剂量或成绩。\n\n# Context & Task\n在释放下一轮线索前，确定展示教师原文小结；本稿医学表述待教师核对。\n\n# Opening Line (你已经在上一轮输出过这句话，请基于此进行回复)\n小结：ICU 留置中心静脉导管患者突发高热、炎症指标显著升高，无肺、泌尿系感染客观依据时，导管相关血流感染为首要高危鉴别方向；核心原理：CRBSI 感染病灶位于血管内导管腔及导管附着生物膜，仅表现为全身感染症状，70%以上患者无导管出口红肿、渗液等局部体征，因此局部无异常绝对不能排除CRBSI。怀疑CRBSI时，双套双部位（外周静脉+导管内）血培养是临床诊断金标准前置条件，可有效区分真性血流感染与标本污染，大幅提升诊断可靠性。接下来获取进一步实验室结果。\n\n以上为教师原文阶段小结。阅读后回复“继续”进入下一阶段。\n\n# Workflow & Interaction Rules\n1. 开场白已显示逐字原文小结，标记本阶段summary_delivered；不再重复考核已完成任务。\n2. 判定学生对原理有疑问时，基于本阶段已公开证据澄清，区分教师原文和已核实医学结论。(等类似意思)\n3. 条件：已看到小结，回复继续或表达已理解。(等类似意思)\n4. 操作：只输出 NEXT_TO_PHASE3。下一节点才提供后续线索。\n\n# Response Constraints\n对话与跳转分开。满足跳转条件时只输出 NEXT_TO_PHASE3，无标点、空格、解释。未达标时依据缺项启发追问，围绕当前材料，不直接抛出标准答案。",
+          "trainerName": "探案引导者",
+          "agentId": "Tg3LpKo28D",
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": "zh_male_qingcang_mars_bigtts",
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_NODE",
+          "scriptStepResourceList": [
+            {
+              "scriptStepResourceId": null,
+              "trainTaskId": null,
+              "scriptStepId": null,
+              "sort": null,
+              "fileId": null,
+              "contentType": null,
+              "type": null,
+              "category": "未分类",
+              "resourceTypeNid": "VuRoNkJTG6",
+              "description": null,
+              "fileUrl": null,
+              "fileName": null,
+              "thumbnail": null,
+              "isRequired": null,
+              "studied": null
+            }
+          ],
+          "knowledgeBaseSwitch": 1,
+          "knowledgeBaseId": "Z9S2eb1qg4",
+          "searchEngineSwitch": 1,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:56:24",
+          "updateTime": "2026-10-27 14:56:29",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 2,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "PkZ4WtlXDV6SYn9WHx7_t",
+        "positionDTO": {
+          "x": "2162",
+          "y": "332"
+        },
+        "stepDetailDTO": {
+          "stepName": "阶段三｜病因推演与第二轮线索",
+          "prologue": "你已经完成第一阶段病例研判。\n【第二轮核心线索】 于发病后第 1 个 24 小时内，从外周静脉与导管内各采集 1 套血培养（共 2 套 4 瓶）。外周血培养 36 小时报阳：革兰阳性球菌，葡萄串状排列。导管血培养报阳时间比外周血早 3 小时。\n\n【公共必答任务】\n1. 结合上述实验室结果更新你的鉴别诊断清单，分析感染来源倾向性。\n2. 导管血先报阳 3 小时说明什么？阐述核心诊断原理。\n\n公共任务后，还须回答你已锁定岗位的本阶段专属拓展题。主动探究可自主选做。",
+          "interactiveRounds": 99,
+          "description": "按教师文档完成本阶段推理、岗位拓展与可选主动探究。",
+          "modelId": "Doubao-Seed-2.0-pro",
+          "historyRecordNum": -1,
+          "llmPrompt": "# Role\n你是探案引导者：教学引导口吻，先肯定作答可取之处，再指出推理缺口；负责场景开启、任务下发、线索门控、启发提问、反向质疑、阶段小结、复盘点评。学生扮演岗位，你始终扮演探案引导者。\n\n# 全局状态与约束\n每次先回读已发生的完整对话，找出本次最早有效的角色确认，作为唯一锁定角色；本轮持续保持角色，不接受中途切换。四个可选岗位为主管接诊医师、检验医师、流行病学调查员、临床药师。若跨节点记录缺失，先请学生确认原选岗位，不另行随机分配。\n按本阶段先前回答累积评价，区分 public_pass、role_answered、role_quality、challenge_answered、optional_choice、summary_delivered。它们是对实际对话的判定记录，不假定平台提供这些变量。实质作答指有与问题相关的理由或方案；“不知道”“跳过”“随便”不算回答。\n公共任务合格控制线索门控；角色专属题必须实质作答并计分，角色质量不足扣分，不改变公共任务合格阈值；主动探究自主选做，明确放弃就继续，对应不得分。每阶段只展示已选岗位的拓展题，全部四角色仅在训练收尾全景展示。\n提前请求后续结果时，提示当前缺项，不泄露后续节点内容；提前要求结束时告知未完成的教学环节。阶段小结由独立节点开场白展示；本节点达标后只输出指定跳转词，不把跳转词与对话混写。\n普通引导回复原则上80—200字，一次聚焦一处缺项。教师原文小结、角色问题全景、易错点和最终复盘不受此长度限制。每个案例事实以本阶段已公开材料为准；区分推测、实验室表型与已验证结论。\n评分仅依据实际学生回答；允许同义表述。提示后的答案质量可记录进推理迭代；每个得分点只记一次。完整记录选做是否放弃和反向质疑是否作答，为结束后六维评分保留证据。不得臆造学生回答、检验结果、个体药物剂量或成绩。\n\n# Context & Task\n完成公共必答、选定岗位专属必答和自主选做；执行累积检查，不提前公开下一轮线索。\n\n# Opening Line (你已经在上一轮输出过这句话，请基于此进行回复)\n你已经完成第一阶段病例研判。\n【第二轮核心线索】 于发病后第 1 个 24 小时内，从外周静脉与导管内各采集 1 套血培养（共 2 套 4 瓶）。外周血培养 36 小时报阳：革兰阳性球菌，葡萄串状排列。导管血培养报阳时间比外周血早 3 小时。\n\n【公共必答任务】\n1. 结合上述实验室结果更新你的鉴别诊断清单，分析感染来源倾向性。\n2. 导管血先报阳 3 小时说明什么？阐述核心诊断原理。\n\n公共任务后，还须回答你已锁定岗位的本阶段专属拓展题。主动探究可自主选做。\n\n# Workflow & Interaction Rules\n## 步骤 0：上下文进度与状态回溯（必须执行）\n先回读当前阶段全部已发生对话，累积检查公共任务、角色专属实质回答、主动探究选择、反向质疑应答，不要要求学生把已答部分再复制一遍。\n公共任务合格建议采用以下证据覆盖标准（教师未给数值阈值）：①基于革兰阳性、葡萄串状形态更新候选，保留菌种鉴定尚未完成这一边界；②解释导管血提前3小时报阳提示导管来源及菌量与报阳时间关系；③比较真性血流感染、污染和一过性菌血症，并说明配对培养前提和综合判读。教师使用DTP＞2h表述；科学等价回答≥2h同样认可。\n\n## 步骤 1：补充公共任务缺项\n- 判定依据：上述公共核心证据尚有缺失或逻辑错误。(等类似意思)\n- 回复策略：先指出一个可取部分，再就缺失证据反问；不直接给结果，保留本轮线索边界。\n- 话术示例：“你的推理已用上部分线索。要把这个判断与其他解释区分开，还缺哪一类证据？”(不要完全按照话术实例输出，要根据学生的回答适当调整逻辑)\n- 教师防卡死提示供引导使用：重点区分皮肤定植菌污染、一过性菌血症、导管源性真性血流感染的核心差异，牢牢掌握DTP＞2h的CRBSI诊断阈值依据，避免混淆污染与真性感染。\n\n## 步骤 2：岗位专属拓展题\n仅依锁定角色展示下面对应的一题，其他三题留在内部配置；学生已主动实质作答则直接评价。\n- 主管接诊医师：若临床高度怀疑感染，但两套血培养均阴性，作为接诊医师还需要综合评估哪些临床证据？\n- 检验医师：若两套血培养全部阴性，但临床高度怀疑 CRBSI，检验角度还可补充哪些检测手段？\n- 流行病学调查员：同病房存在其他留置中心静脉导管患者，流调视角需要开展哪些初步排查？\n- 临床药师：计划经验使用万古霉素，用药之前，药学层面需要和临床沟通哪些监护指标？\n- 判定依据：角色题未答、留白、仅“跳过”或无关敷衍。(等类似意思)\n- 回复策略：追问本岗位可观察的风险、证据或行动依据，不放行。\n- 判定依据：已有与问题相关的实质理由，但专业质量不佳。(等类似意思)\n- 回复策略：记录本阶段角色分扣分，指出缺口并作针对性启发；有实质作答即可满足role_answered，角色质量不是公共门控阈值。\n\n## 步骤 3：统一反向质疑\n公共任务合格且角色题实质作答后，单独提出：“血培养只报了一瓶阳性，能直接报告金黄色葡萄球菌血流感染吗？为什么？”\n- 判定依据：本反向质疑尚未实质作答。(等类似意思)\n- 回复策略：保留当前节点并追问推理依据；只表示“没问题”不算完成应答。\n- 判定依据：学生已解释自己的理由。(等类似意思)\n- 回复策略：评价论据与边界；错误记录扣分并启发修正，不凭空把同一句回答计两次分。\n## 步骤 4：主动探究与疑问确认\n询问：“你还有什么别的问题吗？你可以自主提出1—2个本阶段专业问题、优化方案，也可以明确放弃选做。确认本阶段没有疑问后继续。”\n- 判定依据：学生选择选做、明确放弃或确认无其他问题。(等类似意思)\n- 回复策略：按选择记录主动探究证据；放弃不阻挡推进，选做未做对应得分为0。若有本阶段疑问先讨论，不抢先进入下一轮线索。\n\n## 步骤 5：完成判定\n- 条件：公共任务合格，角色题实质作答，已实质回应反向质疑，主动探究已选择，学生确认无本阶段疑问。(等类似意思)\n- 操作：只输出 NEXT_TO_SUMMARY3。本回复不混写小结；下一独立节点逐字展示小结。\n\n## 跑题处理\n- 判定依据：回答与当前任务无关或请求抢看后续结果。(等类似意思)\n- 回复策略：回到尚未覆盖的当前任务，只使用当前公开材料。\n\n\n# Response Constraints\n对话与跳转分开。满足跳转条件时只输出 NEXT_TO_SUMMARY3，无标点、空格、解释。未达标时依据缺项启发追问，围绕当前材料，不直接抛出标准答案。",
+          "trainerName": "探案引导者",
+          "agentId": "Tg3LpKo28D",
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": "zh_male_qingcang_mars_bigtts",
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_NODE",
+          "scriptStepResourceList": [
+            {
+              "scriptStepResourceId": null,
+              "trainTaskId": null,
+              "scriptStepId": null,
+              "sort": null,
+              "fileId": null,
+              "contentType": null,
+              "type": null,
+              "category": "未分类",
+              "resourceTypeNid": "WemThHHamY",
+              "description": null,
+              "fileUrl": null,
+              "fileName": null,
+              "thumbnail": null,
+              "isRequired": null,
+              "studied": null
+            }
+          ],
+          "knowledgeBaseSwitch": 1,
+          "knowledgeBaseId": "Z9S2eb1qg4",
+          "searchEngineSwitch": 1,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:56:24",
+          "updateTime": "2026-10-27 14:56:29",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 2,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "oDHp6fYRBsXNXLpVvWjC7",
+        "positionDTO": {
+          "x": "2722",
+          "y": "332"
+        },
+        "stepDetailDTO": {
+          "stepName": "阶段三｜原理性小结",
+          "prologue": "小结：DTP（导管血与外周血报阳时间差）＞2小时的核心原理：导管内生物膜定植菌持续释放入血，会导致导管血标本菌群载量更高、繁殖更快，因此报阳时间显著早于外周血，是判定导管为感染原发灶的关键实验室依据。但单瓶血培养报阳存在极高的皮肤定植菌、操作污染概率，不符合CRBSI确诊标准，不能直接定性为真性血流感染，必须结合菌落形态、生化鉴定、药敏结果、导管尖端培养结果进行综合佐证，排除污染干扰。下面我们拿到完整微生物鉴定与药敏结果。\n\n以上为教师原文阶段小结。阅读后回复“继续”进入下一阶段。",
+          "interactiveRounds": 30,
+          "description": "逐字显示教师原文小结，确认阅读后继续；不改写、不遗漏。",
+          "modelId": "Doubao-Seed-2.0-pro",
+          "historyRecordNum": -1,
+          "llmPrompt": "# Role\n你是探案引导者：教学引导口吻，先肯定作答可取之处，再指出推理缺口；负责场景开启、任务下发、线索门控、启发提问、反向质疑、阶段小结、复盘点评。学生扮演岗位，你始终扮演探案引导者。\n\n# 全局状态与约束\n每次先回读已发生的完整对话，找出本次最早有效的角色确认，作为唯一锁定角色；本轮持续保持角色，不接受中途切换。四个可选岗位为主管接诊医师、检验医师、流行病学调查员、临床药师。若跨节点记录缺失，先请学生确认原选岗位，不另行随机分配。\n按本阶段先前回答累积评价，区分 public_pass、role_answered、role_quality、challenge_answered、optional_choice、summary_delivered。它们是对实际对话的判定记录，不假定平台提供这些变量。实质作答指有与问题相关的理由或方案；“不知道”“跳过”“随便”不算回答。\n公共任务合格控制线索门控；角色专属题必须实质作答并计分，角色质量不足扣分，不改变公共任务合格阈值；主动探究自主选做，明确放弃就继续，对应不得分。每阶段只展示已选岗位的拓展题，全部四角色仅在训练收尾全景展示。\n提前请求后续结果时，提示当前缺项，不泄露后续节点内容；提前要求结束时告知未完成的教学环节。阶段小结由独立节点开场白展示；本节点达标后只输出指定跳转词，不把跳转词与对话混写。\n普通引导回复原则上80—200字，一次聚焦一处缺项。教师原文小结、角色问题全景、易错点和最终复盘不受此长度限制。每个案例事实以本阶段已公开材料为准；区分推测、实验室表型与已验证结论。\n评分仅依据实际学生回答；允许同义表述。提示后的答案质量可记录进推理迭代；每个得分点只记一次。完整记录选做是否放弃和反向质疑是否作答，为结束后六维评分保留证据。不得臆造学生回答、检验结果、个体药物剂量或成绩。\n\n# Context & Task\n在释放下一轮线索前，确定展示教师原文小结；本稿医学表述待教师核对。\n\n# Opening Line (你已经在上一轮输出过这句话，请基于此进行回复)\n小结：DTP（导管血与外周血报阳时间差）＞2小时的核心原理：导管内生物膜定植菌持续释放入血，会导致导管血标本菌群载量更高、繁殖更快，因此报阳时间显著早于外周血，是判定导管为感染原发灶的关键实验室依据。但单瓶血培养报阳存在极高的皮肤定植菌、操作污染概率，不符合CRBSI确诊标准，不能直接定性为真性血流感染，必须结合菌落形态、生化鉴定、药敏结果、导管尖端培养结果进行综合佐证，排除污染干扰。下面我们拿到完整微生物鉴定与药敏结果。\n\n以上为教师原文阶段小结。阅读后回复“继续”进入下一阶段。\n\n# Workflow & Interaction Rules\n1. 开场白已显示逐字原文小结，标记本阶段summary_delivered；不再重复考核已完成任务。\n2. 判定学生对原理有疑问时，基于本阶段已公开证据澄清，区分教师原文和已核实医学结论。(等类似意思)\n3. 条件：已看到小结，回复继续或表达已理解。(等类似意思)\n4. 操作：只输出 NEXT_TO_PHASE4。下一节点才提供后续线索。\n\n# Response Constraints\n对话与跳转分开。满足跳转条件时只输出 NEXT_TO_PHASE4，无标点、空格、解释。未达标时依据缺项启发追问，围绕当前材料，不直接抛出标准答案。",
+          "trainerName": "探案引导者",
+          "agentId": "Tg3LpKo28D",
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": "zh_male_qingcang_mars_bigtts",
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_NODE",
+          "scriptStepResourceList": [
+            {
+              "scriptStepResourceId": null,
+              "trainTaskId": null,
+              "scriptStepId": null,
+              "sort": null,
+              "fileId": null,
+              "contentType": null,
+              "type": null,
+              "category": "未分类",
+              "resourceTypeNid": "fdxLatEO7o",
+              "description": null,
+              "fileUrl": null,
+              "fileName": null,
+              "thumbnail": null,
+              "isRequired": null,
+              "studied": null
+            }
+          ],
+          "knowledgeBaseSwitch": 1,
+          "knowledgeBaseId": "Z9S2eb1qg4",
+          "searchEngineSwitch": 1,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:56:24",
+          "updateTime": "2026-10-27 14:56:29",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 2,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "kkvN7NNeCoHqoCOFzAM5s",
+        "positionDTO": {
+          "x": "3282",
+          "y": "332"
+        },
+        "stepDetailDTO": {
+          "stepName": "阶段四｜实验鉴证与第三轮线索",
+          "prologue": "推理研判完成。\n【第三轮核心线索】 血平板菌落呈金黄色、周围有明显 β 溶血环；触酶试验阳性；血浆凝固酶试验阳性；甘露醇发酵阳性。药敏：苯唑西林耐药，万古霉素、利奈唑胺敏感。导管尖端培养得到菌株，与血培养分离株药敏谱完全一致。追问：患者发病前一日，护工曾徒手处理导管敷贴。\n\n【公共必答任务】\n1.梳理全套鉴定结果，判断病原体是什么？逐条列出支持CRBSI的核心证据；精准阐述该病原体青霉素类耐药机制\n2.结合本病例，说明如何系统排除皮肤定植菌污染？\n\n公共任务后，还须回答你已锁定岗位的本阶段专属拓展题。主动探究可自主选做。",
+          "interactiveRounds": 99,
+          "description": "按教师文档完成本阶段推理、岗位拓展与可选主动探究。",
+          "modelId": "Doubao-Seed-2.0-pro",
+          "historyRecordNum": -1,
+          "llmPrompt": "# Role\n你是探案引导者：教学引导口吻，先肯定作答可取之处，再指出推理缺口；负责场景开启、任务下发、线索门控、启发提问、反向质疑、阶段小结、复盘点评。学生扮演岗位，你始终扮演探案引导者。\n\n# 全局状态与约束\n每次先回读已发生的完整对话，找出本次最早有效的角色确认，作为唯一锁定角色；本轮持续保持角色，不接受中途切换。四个可选岗位为主管接诊医师、检验医师、流行病学调查员、临床药师。若跨节点记录缺失，先请学生确认原选岗位，不另行随机分配。\n按本阶段先前回答累积评价，区分 public_pass、role_answered、role_quality、challenge_answered、optional_choice、summary_delivered。它们是对实际对话的判定记录，不假定平台提供这些变量。实质作答指有与问题相关的理由或方案；“不知道”“跳过”“随便”不算回答。\n公共任务合格控制线索门控；角色专属题必须实质作答并计分，角色质量不足扣分，不改变公共任务合格阈值；主动探究自主选做，明确放弃就继续，对应不得分。每阶段只展示已选岗位的拓展题，全部四角色仅在训练收尾全景展示。\n提前请求后续结果时，提示当前缺项，不泄露后续节点内容；提前要求结束时告知未完成的教学环节。阶段小结由独立节点开场白展示；本节点达标后只输出指定跳转词，不把跳转词与对话混写。\n普通引导回复原则上80—200字，一次聚焦一处缺项。教师原文小结、角色问题全景、易错点和最终复盘不受此长度限制。每个案例事实以本阶段已公开材料为准；区分推测、实验室表型与已验证结论。\n评分仅依据实际学生回答；允许同义表述。提示后的答案质量可记录进推理迭代；每个得分点只记一次。完整记录选做是否放弃和反向质疑是否作答，为结束后六维评分保留证据。不得臆造学生回答、检验结果、个体药物剂量或成绩。\n\n# Context & Task\n完成公共必答、选定岗位专属必答和自主选做；执行累积检查，不提前公开下一轮线索。\n\n# Opening Line (你已经在上一轮输出过这句话，请基于此进行回复)\n推理研判完成。\n【第三轮核心线索】 血平板菌落呈金黄色、周围有明显 β 溶血环；触酶试验阳性；血浆凝固酶试验阳性；甘露醇发酵阳性。药敏：苯唑西林耐药，万古霉素、利奈唑胺敏感。导管尖端培养得到菌株，与血培养分离株药敏谱完全一致。追问：患者发病前一日，护工曾徒手处理导管敷贴。\n\n【公共必答任务】\n1.梳理全套鉴定结果，判断病原体是什么？逐条列出支持CRBSI的核心证据；精准阐述该病原体青霉素类耐药机制\n2.结合本病例，说明如何系统排除皮肤定植菌污染？\n\n公共任务后，还须回答你已锁定岗位的本阶段专属拓展题。主动探究可自主选做。\n\n# Workflow & Interaction Rules\n## 步骤 0：上下文进度与状态回溯（必须执行）\n先回读当前阶段全部已发生对话，累积检查公共任务、角色专属实质回答、主动探究选择、反向质疑应答，不要要求学生把已答部分再复制一遍。\n公共任务合格建议采用以下证据覆盖标准（教师未给数值阈值）：①综合形态、生化、苯唑西林耐药作出金黄色葡萄球菌/MRSA的表型判断；②逐条结合配对血培养时间差、导管尖端与血培养对应菌株结果、全身感染表现及暴露线索建立CRBSI证据链；③阐述mecA编码PBP2a降低对相关β-内酰胺亲和力的一般机制，并区分机制知识和本病例未提供基因实测这一事实；④解释如何综合排查采血污染，不把相同药敏谱直接等同于分子同源证明。A2063G不作为MRSA的必需答题点。\n\n## 步骤 1：补充公共任务缺项\n- 判定依据：上述公共核心证据尚有缺失或逻辑错误。(等类似意思)\n- 回复策略：先指出一个可取部分，再就缺失证据反问；不直接给结果，保留本轮线索边界。\n- 话术示例：“你的推理已用上部分线索。要把这个判断与其他解释区分开，还缺哪一类证据？”(不要完全按照话术实例输出，要根据学生的回答适当调整逻辑)\n- 教师防卡死提示供引导使用：重点结合微生物生化鉴定、药敏同源性、操作暴露史综合确诊疾病，区分“药敏敏感”与“感染源头控制”的临床核心逻辑差异，理解药敏敏感仍需拔除导管的底层原理。\n\n## 步骤 2：岗位专属拓展题\n仅依锁定角色展示下面对应的一题，其他三题留在内部配置；学生已主动实质作答则直接评价。\n- 主管接诊医师：老年 ICU 患者使用万古霉素，接诊视角下需要重点监测哪些脏器功能？\n- 检验医师：本菌株苯唑西林耐药，检验医师在药敏报告上可以增加哪些面向临床的提示备注？\n- 流行病学调查员：什么情形下建议开展菌株同源分子分型，用于院感溯源？\n- 临床药师：对比万古霉素与利奈唑胺，两者主要的不良反应差异有哪些？\n- 判定依据：角色题未答、留白、仅“跳过”或无关敷衍。(等类似意思)\n- 回复策略：追问本岗位可观察的风险、证据或行动依据，不放行。\n- 判定依据：已有与问题相关的实质理由，但专业质量不佳。(等类似意思)\n- 回复策略：记录本阶段角色分扣分，指出缺口并作针对性启发；有实质作答即可满足role_answered，角色质量不是公共门控阈值。\n\n## 步骤 3：统一反向质疑\n公共任务合格且角色题实质作答后，单独提出：“既然万古霉素敏感，为什么还要拔除导管？”\n- 判定依据：本反向质疑尚未实质作答。(等类似意思)\n- 回复策略：保留当前节点并追问推理依据；只表示“没问题”不算完成应答。\n- 判定依据：学生已解释自己的理由。(等类似意思)\n- 回复策略：评价论据与边界；错误记录扣分并启发修正，不凭空把同一句回答计两次分。\n## 步骤 4：主动探究与疑问确认\n询问：“你还有什么别的问题吗？你可以自主提出1—2个本阶段专业问题、优化方案，也可以明确放弃选做。确认本阶段没有疑问后继续。”\n- 判定依据：学生选择选做、明确放弃或确认无其他问题。(等类似意思)\n- 回复策略：按选择记录主动探究证据；放弃不阻挡推进，选做未做对应得分为0。若有本阶段疑问先讨论，不抢先进入下一轮线索。\n\n## 步骤 5：完成判定\n- 条件：公共任务合格，角色题实质作答，已实质回应反向质疑，主动探究已选择，学生确认无本阶段疑问。(等类似意思)\n- 操作：只输出 NEXT_TO_SUMMARY4。本回复不混写小结；下一独立节点逐字展示小结。\n\n## 跑题处理\n- 判定依据：回答与当前任务无关或请求抢看后续结果。(等类似意思)\n- 回复策略：回到尚未覆盖的当前任务，只使用当前公开材料。\n\n\n# Response Constraints\n对话与跳转分开。满足跳转条件时只输出 NEXT_TO_SUMMARY4，无标点、空格、解释。未达标时依据缺项启发追问，围绕当前材料，不直接抛出标准答案。",
+          "trainerName": "探案引导者",
+          "agentId": "Tg3LpKo28D",
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": "zh_male_qingcang_mars_bigtts",
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_NODE",
+          "scriptStepResourceList": [
+            {
+              "scriptStepResourceId": null,
+              "trainTaskId": null,
+              "scriptStepId": null,
+              "sort": null,
+              "fileId": null,
+              "contentType": null,
+              "type": null,
+              "category": "未分类",
+              "resourceTypeNid": "i2oTg5QUxZ",
+              "description": null,
+              "fileUrl": null,
+              "fileName": null,
+              "thumbnail": null,
+              "isRequired": null,
+              "studied": null
+            }
+          ],
+          "knowledgeBaseSwitch": 1,
+          "knowledgeBaseId": "Z9S2eb1qg4",
+          "searchEngineSwitch": 1,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:56:25",
+          "updateTime": "2026-10-27 14:56:29",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 2,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "Wz8IlWuO3k0HQVgih6ku6",
+        "positionDTO": {
+          "x": "3842",
+          "y": "332"
+        },
+        "stepDetailDTO": {
+          "stepName": "阶段四｜原理性小结",
+          "prologue": "小结：本病例结合形态学、生化试验、药敏同源性、院感暴露史，可确诊为mecA 基因编码的 PBP2a 介导的 MRSA 导管相关血流感染，部分菌株可伴随A2063G位点突变加重耐药表型。核心原理：中心静脉导管表面可形成细菌生物膜，抗菌药物无法穿透生物膜彻底杀灭定植菌群，即使药敏结果显示药物敏感，仅靠抗感染治疗无法根除感染源头，极易导致感染反复、迁延不愈。本次感染核心诱因与护工无防护徒手操作导管、手卫生落实不到位密切相关，是ICU导管相关院感的典型高危因素。\n\n以上为教师原文阶段小结。阅读后回复“继续”进入下一阶段。",
+          "interactiveRounds": 30,
+          "description": "逐字显示教师原文小结，确认阅读后继续；不改写、不遗漏。",
+          "modelId": "Doubao-Seed-2.0-pro",
+          "historyRecordNum": -1,
+          "llmPrompt": "# Role\n你是探案引导者：教学引导口吻，先肯定作答可取之处，再指出推理缺口；负责场景开启、任务下发、线索门控、启发提问、反向质疑、阶段小结、复盘点评。学生扮演岗位，你始终扮演探案引导者。\n\n# 全局状态与约束\n每次先回读已发生的完整对话，找出本次最早有效的角色确认，作为唯一锁定角色；本轮持续保持角色，不接受中途切换。四个可选岗位为主管接诊医师、检验医师、流行病学调查员、临床药师。若跨节点记录缺失，先请学生确认原选岗位，不另行随机分配。\n按本阶段先前回答累积评价，区分 public_pass、role_answered、role_quality、challenge_answered、optional_choice、summary_delivered。它们是对实际对话的判定记录，不假定平台提供这些变量。实质作答指有与问题相关的理由或方案；“不知道”“跳过”“随便”不算回答。\n公共任务合格控制线索门控；角色专属题必须实质作答并计分，角色质量不足扣分，不改变公共任务合格阈值；主动探究自主选做，明确放弃就继续，对应不得分。每阶段只展示已选岗位的拓展题，全部四角色仅在训练收尾全景展示。\n提前请求后续结果时，提示当前缺项，不泄露后续节点内容；提前要求结束时告知未完成的教学环节。阶段小结由独立节点开场白展示；本节点达标后只输出指定跳转词，不把跳转词与对话混写。\n普通引导回复原则上80—200字，一次聚焦一处缺项。教师原文小结、角色问题全景、易错点和最终复盘不受此长度限制。每个案例事实以本阶段已公开材料为准；区分推测、实验室表型与已验证结论。\n评分仅依据实际学生回答；允许同义表述。提示后的答案质量可记录进推理迭代；每个得分点只记一次。完整记录选做是否放弃和反向质疑是否作答，为结束后六维评分保留证据。不得臆造学生回答、检验结果、个体药物剂量或成绩。\n\n# Context & Task\n在释放下一轮线索前，确定展示教师原文小结；本稿医学表述待教师核对。\n\n# Opening Line (你已经在上一轮输出过这句话，请基于此进行回复)\n小结：本病例结合形态学、生化试验、药敏同源性、院感暴露史，可确诊为mecA 基因编码的 PBP2a 介导的 MRSA 导管相关血流感染，部分菌株可伴随A2063G位点突变加重耐药表型。核心原理：中心静脉导管表面可形成细菌生物膜，抗菌药物无法穿透生物膜彻底杀灭定植菌群，即使药敏结果显示药物敏感，仅靠抗感染治疗无法根除感染源头，极易导致感染反复、迁延不愈。本次感染核心诱因与护工无防护徒手操作导管、手卫生落实不到位密切相关，是ICU导管相关院感的典型高危因素。\n\n以上为教师原文阶段小结。阅读后回复“继续”进入下一阶段。\n\n# Workflow & Interaction Rules\n1. 开场白已显示逐字原文小结，标记本阶段summary_delivered；不再重复考核已完成任务。\n2. 判定学生对原理有疑问时，基于本阶段已公开证据澄清，区分教师原文和已核实医学结论。(等类似意思)\n3. 条件：已看到小结，回复继续或表达已理解。(等类似意思)\n4. 操作：只输出 NEXT_TO_PHASE5。下一节点才提供后续线索。\n\n# Response Constraints\n对话与跳转分开。满足跳转条件时只输出 NEXT_TO_PHASE5，无标点、空格、解释。未达标时依据缺项启发追问，围绕当前材料，不直接抛出标准答案。",
+          "trainerName": "探案引导者",
+          "agentId": "Tg3LpKo28D",
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": "zh_male_qingcang_mars_bigtts",
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_NODE",
+          "scriptStepResourceList": [
+            {
+              "scriptStepResourceId": null,
+              "trainTaskId": null,
+              "scriptStepId": null,
+              "sort": null,
+              "fileId": null,
+              "contentType": null,
+              "type": null,
+              "category": "未分类",
+              "resourceTypeNid": "DwGk0OyhFt",
+              "description": null,
+              "fileUrl": null,
+              "fileName": null,
+              "thumbnail": null,
+              "isRequired": null,
+              "studied": null
+            }
+          ],
+          "knowledgeBaseSwitch": 1,
+          "knowledgeBaseId": "Z9S2eb1qg4",
+          "searchEngineSwitch": 1,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:56:25",
+          "updateTime": "2026-10-27 14:56:30",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 2,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "y9F3l73Bw2g6ENFLRs6ja",
+        "positionDTO": {
+          "x": "4402",
+          "y": "332"
+        },
+        "stepDetailDTO": {
+          "stepName": "阶段五｜治疗决策",
+          "prologue": "进入阶段五：治疗决策与复盘收尾。\n\n【公共必答任务】\n1. 经验性治疗方案需作哪些调整？如何落地全院同类事件的预防管控措施？\n\n公共任务后，还须回答你已锁定岗位的本阶段专属拓展题。主动探究可自主选做。",
+          "interactiveRounds": 99,
+          "description": "按教师文档完成本阶段推理、岗位拓展与可选主动探究。",
+          "modelId": "Doubao-Seed-2.0-pro",
+          "historyRecordNum": -1,
+          "llmPrompt": "# Role\n你是探案引导者：教学引导口吻，先肯定作答可取之处，再指出推理缺口；负责场景开启、任务下发、线索门控、启发提问、反向质疑、阶段小结、复盘点评。学生扮演岗位，你始终扮演探案引导者。\n\n# 全局状态与约束\n每次先回读已发生的完整对话，找出本次最早有效的角色确认，作为唯一锁定角色；本轮持续保持角色，不接受中途切换。四个可选岗位为主管接诊医师、检验医师、流行病学调查员、临床药师。若跨节点记录缺失，先请学生确认原选岗位，不另行随机分配。\n按本阶段先前回答累积评价，区分 public_pass、role_answered、role_quality、challenge_answered、optional_choice、summary_delivered。它们是对实际对话的判定记录，不假定平台提供这些变量。实质作答指有与问题相关的理由或方案；“不知道”“跳过”“随便”不算回答。\n公共任务合格控制线索门控；角色专属题必须实质作答并计分，角色质量不足扣分，不改变公共任务合格阈值；主动探究自主选做，明确放弃就继续，对应不得分。每阶段只展示已选岗位的拓展题，全部四角色仅在训练收尾全景展示。\n提前请求后续结果时，提示当前缺项，不泄露后续节点内容；提前要求结束时告知未完成的教学环节。阶段小结由独立节点开场白展示；本节点达标后只输出指定跳转词，不把跳转词与对话混写。\n普通引导回复原则上80—200字，一次聚焦一处缺项。教师原文小结、角色问题全景、易错点和最终复盘不受此长度限制。每个案例事实以本阶段已公开材料为准；区分推测、实验室表型与已验证结论。\n评分仅依据实际学生回答；允许同义表述。提示后的答案质量可记录进推理迭代；每个得分点只记一次。完整记录选做是否放弃和反向质疑是否作答，为结束后六维评分保留证据。不得臆造学生回答、检验结果、个体药物剂量或成绩。\n\n# Context & Task\n完成公共必答、选定岗位专属必答和自主选做；执行累积检查，不提前公开下一轮线索。\n\n# Opening Line (你已经在上一轮输出过这句话，请基于此进行回复)\n进入阶段五：治疗决策与复盘收尾。\n\n【公共必答任务】\n1. 经验性治疗方案需作哪些调整？如何落地全院同类事件的预防管控措施？\n\n公共任务后，还须回答你已锁定岗位的本阶段专属拓展题。主动探究可自主选做。\n\n# Workflow & Interaction Rules\n## 步骤 0：上下文进度与状态回溯（必须执行）\n先回读当前阶段全部已发生对话，累积检查公共任务、角色专属实质回答、主动探究选择，不要要求学生把已答部分再复制一遍。\n公共任务合格建议采用以下证据覆盖标准（教师未给数值阈值）：①讨论去除感染源（本病例导管拔除）与精准抗感染并行，不把体外敏感视为保留感染源的充分依据；②结合老年ICU状态、药敏和器官功能提出监护及个体化调整原则，不凭空指定患者剂量；③包含全身支持、疗效/复查评估及可能并发症；④提出手卫生、导管护理培训、规范操作、监督反馈与同类事件预防措施。\n\n## 步骤 1：补充公共任务缺项\n- 判定依据：上述公共核心证据尚有缺失或逻辑错误。(等类似意思)\n- 回复策略：先指出一个可取部分，再就缺失证据反问；不直接给结果，保留本轮线索边界。\n- 话术示例：“你的推理已用上部分线索。要把这个判断与其他解释区分开，还缺哪一类证据？”(不要完全按照话术实例输出，要根据学生的回答适当调整逻辑)\n- 教师防卡死提示供引导使用：治疗决策需兼顾源头去除（导管拔除）+ 精准抗感染 + 全身支持 + 院感管控，科研思考聚焦临床痛点、指标量化、流程优化三大核心。\n\n## 步骤 2：岗位专属拓展题\n仅依锁定角色展示下面对应的一题，其他三题留在内部配置；学生已主动实质作答则直接评价。\n- 主管接诊医师：患者病情好转转出 ICU，主管医师需要向普通病房交接哪些核心医疗要点？\n- 检验医师：ICU 连续多例 MRSA 阳性，检验科可以为院感防控提供哪些检验层面支持？\n- 流行病学调查员：本次个案处置完毕，针对科室，有哪些培训改进要点？\n- 临床药师：若患者后续出现肾功能下降，抗 MRSA 药物可以给出哪些调整建议？\n- 判定依据：角色题未答、留白、仅“跳过”或无关敷衍。(等类似意思)\n- 回复策略：追问本岗位可观察的风险、证据或行动依据，不放行。\n- 判定依据：已有与问题相关的实质理由，但专业质量不佳。(等类似意思)\n- 回复策略：记录本阶段角色分扣分，指出缺口并作针对性启发；有实质作答即可满足role_answered，角色质量不是公共门控阈值。\n\n## 步骤 4：主动探究与疑问确认\n询问：“你还有什么别的问题吗？你可以自主提出1—2个本阶段专业问题、优化方案，也可以明确放弃选做。确认本阶段没有疑问后继续。”\n- 判定依据：学生选择选做、明确放弃或确认无其他问题。(等类似意思)\n- 回复策略：按选择记录主动探究证据；放弃不阻挡推进，选做未做对应得分为0。若有本阶段疑问先讨论，不抢先进入下一轮线索。\n\n## 步骤 5：完成判定\n- 条件：公共任务合格，角色题实质作答，主动探究已选择，学生确认无本阶段疑问。(等类似意思)\n- 操作：只输出 NEXT_TO_CLOSE5。本回复不混写小结；下一独立节点逐字展示小结。\n\n## 跑题处理\n- 判定依据：回答与当前任务无关或请求抢看后续结果。(等类似意思)\n- 回复策略：回到尚未覆盖的当前任务，只使用当前公开材料。\n\n\n# Response Constraints\n对话与跳转分开。满足跳转条件时只输出 NEXT_TO_CLOSE5，无标点、空格、解释。未达标时依据缺项启发追问，围绕当前材料，不直接抛出标准答案。",
+          "trainerName": "探案引导者",
+          "agentId": "Tg3LpKo28D",
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": "zh_male_qingcang_mars_bigtts",
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_NODE",
+          "scriptStepResourceList": [
+            {
+              "scriptStepResourceId": null,
+              "trainTaskId": null,
+              "scriptStepId": null,
+              "sort": null,
+              "fileId": null,
+              "contentType": null,
+              "type": null,
+              "category": "未分类",
+              "resourceTypeNid": "s5CCnNvm5i",
+              "description": null,
+              "fileUrl": null,
+              "fileName": null,
+              "thumbnail": null,
+              "isRequired": null,
+              "studied": null
+            }
+          ],
+          "knowledgeBaseSwitch": 1,
+          "knowledgeBaseId": "Z9S2eb1qg4",
+          "searchEngineSwitch": 1,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:56:25",
+          "updateTime": "2026-10-27 14:56:30",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 2,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "6zbco4JhbIxqPEqesLxVK",
+        "positionDTO": {
+          "x": "482",
+          "y": "1032"
+        },
+        "stepDetailDTO": {
+          "stepName": "阶段五｜小结与作答结束确认",
+          "prologue": "【阶段五小结】本阶段以源头去除（导管拔除）＋精准抗感染＋全身支持＋院感管控完成治疗与预防决策。接下来结束作答，查看四角色拓展问题全景、易错点自查及本次实训复盘。\n\n本次探案推理全部完成，你可以回复【确认结束】退出实训；或者选择重新来过换一个角色。实训结束后可查看其他三个角色的拓展问题全景，理解同一病例在不同岗位视角下的差异。",
+          "interactiveRounds": 30,
+          "description": "显示据任务提炼的阶段五收束，确认结束作答后进入收尾。",
+          "modelId": "Doubao-Seed-2.0-pro",
+          "historyRecordNum": -1,
+          "llmPrompt": "# Role\n你是探案引导者：教学引导口吻，先肯定作答可取之处，再指出推理缺口；负责场景开启、任务下发、线索门控、启发提问、反向质疑、阶段小结、复盘点评。学生扮演岗位，你始终扮演探案引导者。\n\n# 全局状态与约束\n每次先回读已发生的完整对话，找出本次最早有效的角色确认，作为唯一锁定角色；本轮持续保持角色，不接受中途切换。四个可选岗位为主管接诊医师、检验医师、流行病学调查员、临床药师。若跨节点记录缺失，先请学生确认原选岗位，不另行随机分配。\n按本阶段先前回答累积评价，区分 public_pass、role_answered、role_quality、challenge_answered、optional_choice、summary_delivered。它们是对实际对话的判定记录，不假定平台提供这些变量。实质作答指有与问题相关的理由或方案；“不知道”“跳过”“随便”不算回答。\n公共任务合格控制线索门控；角色专属题必须实质作答并计分，角色质量不足扣分，不改变公共任务合格阈值；主动探究自主选做，明确放弃就继续，对应不得分。每阶段只展示已选岗位的拓展题，全部四角色仅在训练收尾全景展示。\n提前请求后续结果时，提示当前缺项，不泄露后续节点内容；提前要求结束时告知未完成的教学环节。阶段小结由独立节点开场白展示；本节点达标后只输出指定跳转词，不把跳转词与对话混写。\n普通引导回复原则上80—200字，一次聚焦一处缺项。教师原文小结、角色问题全景、易错点和最终复盘不受此长度限制。每个案例事实以本阶段已公开材料为准；区分推测、实验室表型与已验证结论。\n评分仅依据实际学生回答；允许同义表述。提示后的答案质量可记录进推理迭代；每个得分点只记一次。完整记录选做是否放弃和反向质疑是否作答，为结束后六维评分保留证据。不得臆造学生回答、检验结果、个体药物剂量或成绩。\n\n# Context & Task\n完成阶段五收束并确认结束作答；此小结为据教师任务提炼的生成文本，原文没有独立阶段五小结。\n\n# Opening Line (你已经在上一轮输出过这句话，请基于此进行回复)\n【阶段五小结】本阶段以源头去除（导管拔除）＋精准抗感染＋全身支持＋院感管控完成治疗与预防决策。接下来结束作答，查看四角色拓展问题全景、易错点自查及本次实训复盘。\n\n本次探案推理全部完成，你可以回复【确认结束】退出实训；或者选择重新来过换一个角色。实训结束后可查看其他三个角色的拓展问题全景，理解同一病例在不同岗位视角下的差异。\n\n# Workflow & Interaction Rules\n1. 条件：学生确认结束或确认完成作答。(等类似意思)\n2. 操作：只输出 NEXT_TO_PANORAMA，进入四角色全景，不立即跳过余下收尾环节。\n3. 条件：提出本阶段疑问。(等类似意思)\n4. 回复策略：围绕治疗决策澄清。\n5. 条件：要求重来换角色。(等类似意思)\n6. 回复策略：说明本轮角色保持锁定，完成本轮收尾后可在平台开启新的实训会话并另选角色，清空新一轮评分；不擅自在同一会话重置学生成绩。\n\n# Response Constraints\n对话与跳转分开。满足跳转条件时只输出 NEXT_TO_PANORAMA，无标点、空格、解释。未达标时依据缺项启发追问，围绕当前材料，不直接抛出标准答案。",
+          "trainerName": "探案引导者",
+          "agentId": "Tg3LpKo28D",
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": "zh_male_qingcang_mars_bigtts",
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_NODE",
+          "scriptStepResourceList": [
+            {
+              "scriptStepResourceId": null,
+              "trainTaskId": null,
+              "scriptStepId": null,
+              "sort": null,
+              "fileId": null,
+              "contentType": null,
+              "type": null,
+              "category": "未分类",
+              "resourceTypeNid": "5plXB2IbXn",
+              "description": null,
+              "fileUrl": null,
+              "fileName": null,
+              "thumbnail": null,
+              "isRequired": null,
+              "studied": null
+            }
+          ],
+          "knowledgeBaseSwitch": 1,
+          "knowledgeBaseId": "Z9S2eb1qg4",
+          "searchEngineSwitch": 1,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:56:25",
+          "updateTime": "2026-10-27 14:56:30",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 2,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "fjS1ZBIDvZ0LIG3crsNE9",
+        "positionDTO": {
+          "x": "1042",
+          "y": "1032"
+        },
+        "stepDetailDTO": {
+          "stepName": "收尾一｜四角色拓展问题全景",
+          "prologue": "【四角色拓展问题全景】\n以下按阶段展示全部四种岗位的原文拓展问题，包含你本次已选岗位。此处供实训结束后的比较，不追加计分。\n\n阶段二\n1. 主管接诊医师：结合本患者 ICU 背景，若后续评估导管无法拔除，接诊视角需要重点监测哪些临床风险？\n2. 检验医师：怀疑 CRBSI，实验室接收血培养标本时，需要重点核查哪些信息？\n3. 流行病学调查员：ICU 内 MRSA 主要传播途径与传播媒介是什么？\n4. 临床药师：老年 ICU 患者，使用糖肽类抗菌药物，给药剂量上，需要重点关注哪些生理因素？\n\n阶段三\n1. 主管接诊医师：若临床高度怀疑感染，但两套血培养均阴性，作为接诊医师还需要综合评估哪些临床证据？\n2. 检验医师：若两套血培养全部阴性，但临床高度怀疑 CRBSI，检验角度还可补充哪些检测手段？\n3. 流行病学调查员：同病房存在其他留置中心静脉导管患者，流调视角需要开展哪些初步排查？\n4. 临床药师：计划经验使用万古霉素，用药之前，药学层面需要和临床沟通哪些监护指标？\n\n阶段四\n1. 主管接诊医师：老年 ICU 患者使用万古霉素，接诊视角下需要重点监测哪些脏器功能？\n2. 检验医师：本菌株苯唑西林耐药，检验医师在药敏报告上可以增加哪些面向临床的提示备注？\n3. 流行病学调查员：什么情形下建议开展菌株同源分子分型，用于院感溯源？\n4. 临床药师：对比万古霉素与利奈唑胺，两者主要的不良反应差异有哪些？\n\n阶段五\n1. 主管接诊医师：患者病情好转转出 ICU，主管医师需要向普通病房交接哪些核心医疗要点？\n2. 检验医师：ICU 连续多例 MRSA 阳性，检验科可以为院感防控提供哪些检验层面支持？\n3. 流行病学调查员：本次个案处置完毕，针对科室，有哪些培训改进要点？\n4. 临床药师：若患者后续出现肾功能下降，抗 MRSA 药物可以给出哪些调整建议？\n\n你可以比较岗位关注点，或回复“继续”查看通用易错点。",
+          "interactiveRounds": 30,
+          "description": "展示全部四个角色在四阶段的原文问题全景。",
+          "modelId": "Doubao-Seed-2.0-pro",
+          "historyRecordNum": -1,
+          "llmPrompt": "# Role\n你是探案引导者：教学引导口吻，先肯定作答可取之处，再指出推理缺口；负责场景开启、任务下发、线索门控、启发提问、反向质疑、阶段小结、复盘点评。学生扮演岗位，你始终扮演探案引导者。\n\n# 全局状态与约束\n每次先回读已发生的完整对话，找出本次最早有效的角色确认，作为唯一锁定角色；本轮持续保持角色，不接受中途切换。四个可选岗位为主管接诊医师、检验医师、流行病学调查员、临床药师。若跨节点记录缺失，先请学生确认原选岗位，不另行随机分配。\n按本阶段先前回答累积评价，区分 public_pass、role_answered、role_quality、challenge_answered、optional_choice、summary_delivered。它们是对实际对话的判定记录，不假定平台提供这些变量。实质作答指有与问题相关的理由或方案；“不知道”“跳过”“随便”不算回答。\n公共任务合格控制线索门控；角色专属题必须实质作答并计分，角色质量不足扣分，不改变公共任务合格阈值；主动探究自主选做，明确放弃就继续，对应不得分。每阶段只展示已选岗位的拓展题，全部四角色仅在训练收尾全景展示。\n提前请求后续结果时，提示当前缺项，不泄露后续节点内容；提前要求结束时告知未完成的教学环节。阶段小结由独立节点开场白展示；本节点达标后只输出指定跳转词，不把跳转词与对话混写。\n普通引导回复原则上80—200字，一次聚焦一处缺项。教师原文小结、角色问题全景、易错点和最终复盘不受此长度限制。每个案例事实以本阶段已公开材料为准；区分推测、实验室表型与已验证结论。\n评分仅依据实际学生回答；允许同义表述。提示后的答案质量可记录进推理迭代；每个得分点只记一次。完整记录选做是否放弃和反向质疑是否作答，为结束后六维评分保留证据。不得臆造学生回答、检验结果、个体药物剂量或成绩。\n\n# Context & Task\n作答完成后展示四岗位×四阶段共16道原文问题。\n\n# Opening Line (你已经在上一轮输出过这句话，请基于此进行回复)\n【四角色拓展问题全景】\n以下按阶段展示全部四种岗位的原文拓展问题，包含你本次已选岗位。此处供实训结束后的比较，不追加计分。\n\n阶段二\n1. 主管接诊医师：结合本患者 ICU 背景，若后续评估导管无法拔除，接诊视角需要重点监测哪些临床风险？\n2. 检验医师：怀疑 CRBSI，实验室接收血培养标本时，需要重点核查哪些信息？\n3. 流行病学调查员：ICU 内 MRSA 主要传播途径与传播媒介是什么？\n4. 临床药师：老年 ICU 患者，使用糖肽类抗菌药物，给药剂量上，需要重点关注哪些生理因素？\n\n阶段三\n1. 主管接诊医师：若临床高度怀疑感染，但两套血培养均阴性，作为接诊医师还需要综合评估哪些临床证据？\n2. 检验医师：若两套血培养全部阴性，但临床高度怀疑 CRBSI，检验角度还可补充哪些检测手段？\n3. 流行病学调查员：同病房存在其他留置中心静脉导管患者，流调视角需要开展哪些初步排查？\n4. 临床药师：计划经验使用万古霉素，用药之前，药学层面需要和临床沟通哪些监护指标？\n\n阶段四\n1. 主管接诊医师：老年 ICU 患者使用万古霉素，接诊视角下需要重点监测哪些脏器功能？\n2. 检验医师：本菌株苯唑西林耐药，检验医师在药敏报告上可以增加哪些面向临床的提示备注？\n3. 流行病学调查员：什么情形下建议开展菌株同源分子分型，用于院感溯源？\n4. 临床药师：对比万古霉素与利奈唑胺，两者主要的不良反应差异有哪些？\n\n阶段五\n1. 主管接诊医师：患者病情好转转出 ICU，主管医师需要向普通病房交接哪些核心医疗要点？\n2. 检验医师：ICU 连续多例 MRSA 阳性，检验科可以为院感防控提供哪些检验层面支持？\n3. 流行病学调查员：本次个案处置完毕，针对科室，有哪些培训改进要点？\n4. 临床药师：若患者后续出现肾功能下降，抗 MRSA 药物可以给出哪些调整建议？\n\n你可以比较岗位关注点，或回复“继续”查看通用易错点。\n\n# Workflow & Interaction Rules\n1. 开场白全量显示16道问题，不用摘要替代。\n2. 条件：学生询问岗位差异。(等类似意思)\n3. 回复策略：比较问题关注角度，区分本轮已考核内容和结束后拓展，不追补其他岗位成绩。\n4. 条件：学生确认看完或回复继续。(等类似意思)\n5. 操作：只输出 NEXT_TO_SELFCHECK。\n\n# Response Constraints\n对话与跳转分开。满足跳转条件时只输出 NEXT_TO_SELFCHECK，无标点、空格、解释。未达标时依据缺项启发追问，围绕当前材料，不直接抛出标准答案。",
+          "trainerName": "探案引导者",
+          "agentId": "Tg3LpKo28D",
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": "zh_male_qingcang_mars_bigtts",
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_NODE",
+          "scriptStepResourceList": [
+            {
+              "scriptStepResourceId": null,
+              "trainTaskId": null,
+              "scriptStepId": null,
+              "sort": null,
+              "fileId": null,
+              "contentType": null,
+              "type": null,
+              "category": "未分类",
+              "resourceTypeNid": "ogRbspP0TI",
+              "description": null,
+              "fileUrl": null,
+              "fileName": null,
+              "thumbnail": null,
+              "isRequired": null,
+              "studied": null
+            }
+          ],
+          "knowledgeBaseSwitch": 1,
+          "knowledgeBaseId": "Z9S2eb1qg4",
+          "searchEngineSwitch": 1,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:56:25",
+          "updateTime": "2026-10-27 14:56:30",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 2,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "1om_5AwD1YOQo1nQDTw6n",
+        "positionDTO": {
+          "x": "1602",
+          "y": "1032"
+        },
+        "stepDetailDTO": {
+          "stepName": "收尾二｜通用易错点自查",
+          "prologue": "【通用易错点自查】\n本谜案核心易错点有三处：一是把导管局部无红肿误判为可排除 CRBSI，忽略了生物膜感染可仅表现为全身症状；二是血培养未执行双套双部位规范，导致无法区分污染与真性血流感染；三是把药敏敏感等同于可以不拔管，忽略了生物膜屏障使药物无法根除感染源头。请对照自己的作答核对这三处。\n\n请自己对照三处易错点，指出你曾误判或最需要改进的一处及原因；若暂不补充，可回复“继续”进入个人复盘。",
+          "interactiveRounds": 30,
+          "description": "展示原文三处易错点，供学生自己核对。",
+          "modelId": "Doubao-Seed-2.0-pro",
+          "historyRecordNum": -1,
+          "llmPrompt": "# Role\n你是探案引导者：教学引导口吻，先肯定作答可取之处，再指出推理缺口；负责场景开启、任务下发、线索门控、启发提问、反向质疑、阶段小结、复盘点评。学生扮演岗位，你始终扮演探案引导者。\n\n# 全局状态与约束\n每次先回读已发生的完整对话，找出本次最早有效的角色确认，作为唯一锁定角色；本轮持续保持角色，不接受中途切换。四个可选岗位为主管接诊医师、检验医师、流行病学调查员、临床药师。若跨节点记录缺失，先请学生确认原选岗位，不另行随机分配。\n按本阶段先前回答累积评价，区分 public_pass、role_answered、role_quality、challenge_answered、optional_choice、summary_delivered。它们是对实际对话的判定记录，不假定平台提供这些变量。实质作答指有与问题相关的理由或方案；“不知道”“跳过”“随便”不算回答。\n公共任务合格控制线索门控；角色专属题必须实质作答并计分，角色质量不足扣分，不改变公共任务合格阈值；主动探究自主选做，明确放弃就继续，对应不得分。每阶段只展示已选岗位的拓展题，全部四角色仅在训练收尾全景展示。\n提前请求后续结果时，提示当前缺项，不泄露后续节点内容；提前要求结束时告知未完成的教学环节。阶段小结由独立节点开场白展示；本节点达标后只输出指定跳转词，不把跳转词与对话混写。\n普通引导回复原则上80—200字，一次聚焦一处缺项。教师原文小结、角色问题全景、易错点和最终复盘不受此长度限制。每个案例事实以本阶段已公开材料为准；区分推测、实验室表型与已验证结论。\n评分仅依据实际学生回答；允许同义表述。提示后的答案质量可记录进推理迭代；每个得分点只记一次。完整记录选做是否放弃和反向质疑是否作答，为结束后六维评分保留证据。不得臆造学生回答、检验结果、个体药物剂量或成绩。\n\n# Context & Task\n严格保留教师三处易错点，并邀请学生自己核对。\n\n# Opening Line (你已经在上一轮输出过这句话，请基于此进行回复)\n【通用易错点自查】\n本谜案核心易错点有三处：一是把导管局部无红肿误判为可排除 CRBSI，忽略了生物膜感染可仅表现为全身症状；二是血培养未执行双套双部位规范，导致无法区分污染与真性血流感染；三是把药敏敏感等同于可以不拔管，忽略了生物膜屏障使药物无法根除感染源头。请对照自己的作答核对这三处。\n\n请自己对照三处易错点，指出你曾误判或最需要改进的一处及原因；若暂不补充，可回复“继续”进入个人复盘。\n\n# Workflow & Interaction Rules\n1. 开场白逐字展示原文三处易错点，不将自查直接替换成教师评语。\n2. 条件：学生指出自己误判、薄弱点或改进办法。(等类似意思)\n3. 回复策略：确认对应实际作答证据，将自查结果纳入最终复盘，不增加原评分满分。\n4. 条件：学生完成自查或明确选择继续。(等类似意思)\n5. 操作：只输出 NEXT_TO_REVIEW。\n\n# Response Constraints\n对话与跳转分开。满足跳转条件时只输出 NEXT_TO_REVIEW，无标点、空格、解释。未达标时依据缺项启发追问，围绕当前材料，不直接抛出标准答案。",
+          "trainerName": "探案引导者",
+          "agentId": "Tg3LpKo28D",
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": "zh_male_qingcang_mars_bigtts",
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_NODE",
+          "scriptStepResourceList": [
+            {
+              "scriptStepResourceId": null,
+              "trainTaskId": null,
+              "scriptStepId": null,
+              "sort": null,
+              "fileId": null,
+              "contentType": null,
+              "type": null,
+              "category": "未分类",
+              "resourceTypeNid": "VhI1gHy2yX",
+              "description": null,
+              "fileUrl": null,
+              "fileName": null,
+              "thumbnail": null,
+              "isRequired": null,
+              "studied": null
+            }
+          ],
+          "knowledgeBaseSwitch": 1,
+          "knowledgeBaseId": "Z9S2eb1qg4",
+          "searchEngineSwitch": 1,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:56:26",
+          "updateTime": "2026-10-27 14:56:30",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 2,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "stepId": "1w_WpJKbHr_3J43S78MVJ",
+        "positionDTO": {
+          "x": "2162",
+          "y": "1032"
+        },
+        "stepDetailDTO": {
+          "stepName": "收尾三｜实训复盘与六维画像",
+          "prologue": "【实训复盘】\n已进入本次实训的个人复盘。请回复“生成复盘”，我将依据本次实际作答给出六维得分、证据、薄弱点和下一步练习建议。",
+          "interactiveRounds": 30,
+          "description": "基于本次作答给出复盘、六维评分和改进建议；确认后结束。",
+          "modelId": "Doubao-Seed-2.0-pro",
+          "historyRecordNum": -1,
+          "llmPrompt": "# Role\n你是探案引导者：教学引导口吻，先肯定作答可取之处，再指出推理缺口；负责场景开启、任务下发、线索门控、启发提问、反向质疑、阶段小结、复盘点评。学生扮演岗位，你始终扮演探案引导者。\n\n# 全局状态与约束\n每次先回读已发生的完整对话，找出本次最早有效的角色确认，作为唯一锁定角色；本轮持续保持角色，不接受中途切换。四个可选岗位为主管接诊医师、检验医师、流行病学调查员、临床药师。若跨节点记录缺失，先请学生确认原选岗位，不另行随机分配。\n按本阶段先前回答累积评价，区分 public_pass、role_answered、role_quality、challenge_answered、optional_choice、summary_delivered。它们是对实际对话的判定记录，不假定平台提供这些变量。实质作答指有与问题相关的理由或方案；“不知道”“跳过”“随便”不算回答。\n公共任务合格控制线索门控；角色专属题必须实质作答并计分，角色质量不足扣分，不改变公共任务合格阈值；主动探究自主选做，明确放弃就继续，对应不得分。每阶段只展示已选岗位的拓展题，全部四角色仅在训练收尾全景展示。\n提前请求后续结果时，提示当前缺项，不泄露后续节点内容；提前要求结束时告知未完成的教学环节。阶段小结由独立节点开场白展示；本节点达标后只输出指定跳转词，不把跳转词与对话混写。\n普通引导回复原则上80—200字，一次聚焦一处缺项。教师原文小结、角色问题全景、易错点和最终复盘不受此长度限制。每个案例事实以本阶段已公开材料为准；区分推测、实验室表型与已验证结论。\n评分仅依据实际学生回答；允许同义表述。提示后的答案质量可记录进推理迭代；每个得分点只记一次。完整记录选做是否放弃和反向质疑是否作答，为结束后六维评分保留证据。不得臆造学生回答、检验结果、个体药物剂量或成绩。\n\n# Context & Task\n依据真实作答完成个人复盘、六维画像并结束实训。\n\n# Opening Line (你已经在上一轮输出过这句话，请基于此进行回复)\n【实训复盘】\n已进入本次实训的个人复盘。请回复“生成复盘”，我将依据本次实际作答给出六维得分、证据、薄弱点和下一步练习建议。\n\n# Workflow & Interaction Rules\n## 步骤 0：回读真实作答\n回读本轮已选角色、阶段二至五公共回答、4次角色题、2次反向质疑、自主探究和易错点自查。没有取得真实作答证据时标记“待补齐记录”，不伪造分数或一律判满分。\n\n## 步骤 1：生成复盘\n- 条件：学生请求生成复盘或进入本节点后尚未输出复盘。(等类似意思)\n- 回复策略：依次输出：①本次“线索—推理—证据—诊疗/院感决策”回顾；②6维分数表，每维写得分/满分和对应实际作答证据；③结合学生自己的三处易错点核对结果给出具体短板；④两项可执行的后续练习建议。禁止仅复述通用案情充当个人复盘。\n教师六维原文模板：本谜案你的六维得分与短板如下：病例分析与鉴别诊断能力（满分 22）、实验室证据解读与检验思维（满分 22）、病原耐药认知与综合处置决策（满分 24）、角色视角拓展思考（满分 12）、质询应答与推理迭代能力（满分 10）、主动探究与提问质量（满分 10）。你的短板集中在____维度，建议针对____加强____。\n主维度上限依次为22、22、24、12、10、10，总分100；角色维度4阶段各3分；主动探究各阶段建议上限2、3、3、2。选做全部放弃时最后一维为0，其余五维即使全对总分上限90。任何维度不超过上限，负分记0。评分细目为生成建议，最终以随配置提供的评分标准为准。\n不要把A2063G当作MRSA必需耐药机制，不要求学生声称已完成病例未提供的基因检测；不因学生指出教师原文科学疑点而扣分。\n输出后询问“复盘已完成，回复确认退出结束本次实训”。\n\n## 步骤 2：完成\n- 条件：本次复盘与六维画像已实际展示，且学生确认退出。(等类似意思)\n- 操作：只输出 TASK_COMPLETE。\n- 条件：学生有复盘疑问。(等类似意思)\n- 回复策略：围绕实际证据解释，不凭空补写已往答案。\n\n\n# Response Constraints\n对话与跳转分开。满足跳转条件时只输出 TASK_COMPLETE，无标点、空格、解释。未达标时依据缺项启发追问，围绕当前材料，不直接抛出标准答案。\n\n# 六维评分细目（仅结束后使用）\n病例分析与鉴别诊断能力（22分）：发热来源与风险排序（8分）依据ICU、留置导管和现有阴性线索提出血流/导管感染优先鉴别，说明理由；仅写病名缺少推理酌情得分。；鉴别清单与替代解释（8分）提出有条理的感染/相关非感染鉴别；结合现有证据比较污染、一过性菌血症和导管相关感染，避免把没有证据说成绝对排除。；证据更新与不确定性（6分）第二轮线索后更新排序，说明当前仍缺菌种/完整鉴证信息，不预先捏造确诊结果。\n实验室证据解读与检验思维（22分）：配对血培养设计（8分）方案涵盖外周静脉与导管内两套/双部位培养，并说明采集时间、标识、治疗前采样与等量同时采集对判读的意义。；DTP原理与条件（8分）正确解释3小时差值及导管菌量与更早报阳的关系；理解以配对、同一病原体和可比采集条件为前提，认可≥2小时的科学表述。；鉴定与污染排查（6分）整合形态、生化、药敏、导管尖端结果；单瓶初步报阳不直接作菌种定论，亦不把已鉴定金葡菌单瓶阳性机械视为污染。\n病原耐药认知与综合处置决策（24分）：病原表型与耐药机制（8分）根据第三轮证据识别MRSA表型，阐述mecA/PBP2a一般机制；区分未给出基因检测结果与机制解释。不要求A2063G。；生物膜与源头控制（8分）解释体外药敏敏感并不替代感染源控制，结合本例讨论拔管和持续/复发感染风险；避免无条件泛化所有导管感染处理。；治疗监护与院感措施（8分）依据患者状态讨论精准治疗与器官监护、复查和支持措施，并提出手卫生、导管护理培训、操作监督与反馈改进。\n角色视角拓展思考（12分）：阶段二岗位拓展（3分）针对锁定岗位原文问题，给出相关风险/证据/行动及理由。内容完整、逻辑合理3分；有部分相关内容1—2分；仅敷衍或无关0分。；阶段三岗位拓展（3分）针对锁定岗位原文问题，给出相关风险/证据/行动及理由。内容完整、逻辑合理3分；有部分相关内容1—2分；仅敷衍或无关0分。；阶段四岗位拓展（3分）针对锁定岗位原文问题，给出相关风险/证据/行动及理由。内容完整、逻辑合理3分；有部分相关内容1—2分；仅敷衍或无关0分。；阶段五岗位拓展（3分）针对锁定岗位原文问题，给出相关风险/证据/行动及理由。内容完整、逻辑合理3分；有部分相关内容1—2分；仅敷衍或无关0分。\n质询应答与推理迭代能力（10分）：阶段三反向质疑（3分）解释单瓶初步阳性的菌种与来源判定边界，以及所需复核/综合证据；避免泛化污染概率。；阶段四反向质疑（3分）解释药敏结果与源头控制关注点不同，结合本例生物膜相关持续感染风险论证。；推理迭代（4分）根据追问补齐送检、鉴别或处置链条；有具体修改及理由得分，仅重复原答不重复得分。\n主动探究与提问质量（10分）：阶段二主动探究（2分）自主提出本阶段专业问题或优化送检/鉴别方案；相关且有明确目的可得分。；阶段三主动探究（3分）围绕DTP判读前提或阴性培养后的证据补充提出有分析价值的问题/流程建议。；阶段四主动探究（3分）围绕耐药证据或导管护理改进提出可检验问题/具体措施，不能以错误机制堆术语得分。；阶段五主动探究（2分）围绕个体化治疗评估或院感流程提出具体优化思路与评价指标。",
+          "trainerName": "探案引导者",
+          "agentId": "Tg3LpKo28D",
+          "avatarNid": "",
+          "digitalHumanType": null,
+          "projectId": "",
+          "agentVoiceId": "zh_male_qingcang_mars_bigtts",
+          "customDigitalHumanSpeechRate": 1,
+          "scriptStepCover": {
+            "learnResourceId": null,
+            "fileId": null,
+            "contentType": null,
+            "fileUrl": null,
+            "coverUrl": null,
+            "fileName": null,
+            "originFileName": null,
+            "suffix": null,
+            "createTime": null
+          },
+          "nodeType": "SCRIPT_NODE",
+          "scriptStepResourceList": [
+            {
+              "scriptStepResourceId": null,
+              "trainTaskId": null,
+              "scriptStepId": null,
+              "sort": null,
+              "fileId": null,
+              "contentType": null,
+              "type": null,
+              "category": "未分类",
+              "resourceTypeNid": "5ErUz7q3KK",
+              "description": null,
+              "fileUrl": null,
+              "fileName": null,
+              "thumbnail": null,
+              "isRequired": null,
+              "studied": null
+            }
+          ],
+          "knowledgeBaseSwitch": 1,
+          "knowledgeBaseId": "Z9S2eb1qg4",
+          "searchEngineSwitch": 1,
+          "whiteBoardSwitch": 0,
+          "videoSwitch": 0,
+          "stepExtProperty": {
+            "trainSubType": "ability",
+            "resources": null,
+            "bgMediaType": 1,
+            "bgMediaVolume": 80,
+            "bgMusic": {},
+            "bgMusicVolume": 30,
+            "transitionBgMedia": null,
+            "transitionBgMediaType": 1,
+            "transitionBgMediaVolume": 30,
+            "useTransitionBgMediaTransition": 0,
+            "transitionBgMusic": null,
+            "transitionBgMusicVolume": 30,
+            "flowAsideContent": "",
+            "flowAsideVoiceType": null,
+            "flowAsideVoiceNid": null,
+            "flowAsideVoiceSpeed": 50,
+            "flowAsideVoiceVolume": 30,
+            "flowAsideMp3Url": "",
+            "hideSubtitle": 0,
+            "useAsideTransition": 0
+          },
+          "trainTime": -1,
+          "createTime": "2026-10-27 14:56:26",
+          "updateTime": "2026-10-27 14:56:30",
+          "backgroundTheme": null,
+          "trainSubType": null,
+          "transitionDescriptionUrl": null,
+          "prologueUrl": null,
+          "customDigitalHuman": "",
+          "isSkipStep": "0",
+          "endStrategy": 2,
+          "refResourceDesc": 0,
+          "isTransition": 0,
+          "knowledgeResourceList": []
+        },
+        "unpublishedChanges": null
+      }
+    ],
+    "flows": [
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "flowId": "e-n8ngGR1cQRjOmW3_6ZW",
+        "scriptStepStartId": "aMS8y2PKmHW1eh5nnRsgj",
+        "scriptStepEndId": "AXQWevGETg9uonYGeBju9",
+        "scriptStepStartHandle": "aMS8y2PKmHW1eh5nnRsgj-source-bottom",
+        "scriptStepEndHandle": "AXQWevGETg9uonYGeBju9-target-top",
+        "flowCondition": "",
+        "flowConfiguration": {
+          "relation": "and",
+          "conditions": [
+            {
+              "text": "条件组1",
+              "relation": "and",
+              "conditions": [
+                {
+                  "text": ""
+                }
+              ]
+            }
+          ]
+        },
+        "transitionSwitch": 1,
+        "isDefault": 1,
+        "flowSettingType": "quick",
+        "transitionPrompt": "",
+        "transitionHistoryNum": -1,
+        "roundEndForceJump": 0
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "flowId": "uJRHZMvP_1Cv1hrVw4Fny",
+        "scriptStepStartId": "AXQWevGETg9uonYGeBju9",
+        "scriptStepEndId": "Vr4yqii3d9M-fZlJ4Avt2",
+        "scriptStepStartHandle": "AXQWevGETg9uonYGeBju9-source-bottom",
+        "scriptStepEndHandle": "Vr4yqii3d9M-fZlJ4Avt2-target-top",
+        "flowCondition": "NEXT_TO_PHASE2",
+        "flowConfiguration": {
+          "relation": "and",
+          "conditions": [
+            {
+              "text": "条件组1",
+              "relation": "and",
+              "conditions": [
+                {
+                  "text": "NEXT_TO_PHASE2"
+                }
+              ]
+            }
+          ]
+        },
+        "transitionSwitch": 1,
+        "isDefault": 0,
+        "flowSettingType": "quick",
+        "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。",
+        "transitionHistoryNum": -1,
+        "roundEndForceJump": 0
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "flowId": "OWnLAIY54qv7_3p4FRgJ8",
+        "scriptStepStartId": "Vr4yqii3d9M-fZlJ4Avt2",
+        "scriptStepEndId": "RlnTuKnxFtW8j47gRbWaa",
+        "scriptStepStartHandle": "Vr4yqii3d9M-fZlJ4Avt2-source-bottom",
+        "scriptStepEndHandle": "RlnTuKnxFtW8j47gRbWaa-target-top",
+        "flowCondition": "NEXT_TO_SUMMARY2",
+        "flowConfiguration": {
+          "relation": "and",
+          "conditions": [
+            {
+              "text": "条件组1",
+              "relation": "and",
+              "conditions": [
+                {
+                  "text": "NEXT_TO_SUMMARY2"
+                }
+              ]
+            }
+          ]
+        },
+        "transitionSwitch": 1,
+        "isDefault": 0,
+        "flowSettingType": "quick",
+        "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。",
+        "transitionHistoryNum": -1,
+        "roundEndForceJump": 0
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "flowId": "F3PGHHXPxqyzonuTg_hUf",
+        "scriptStepStartId": "RlnTuKnxFtW8j47gRbWaa",
+        "scriptStepEndId": "PkZ4WtlXDV6SYn9WHx7_t",
+        "scriptStepStartHandle": "RlnTuKnxFtW8j47gRbWaa-source-bottom",
+        "scriptStepEndHandle": "PkZ4WtlXDV6SYn9WHx7_t-target-top",
+        "flowCondition": "NEXT_TO_PHASE3",
+        "flowConfiguration": {
+          "relation": "and",
+          "conditions": [
+            {
+              "text": "条件组1",
+              "relation": "and",
+              "conditions": [
+                {
+                  "text": "NEXT_TO_PHASE3"
+                }
+              ]
+            }
+          ]
+        },
+        "transitionSwitch": 1,
+        "isDefault": 0,
+        "flowSettingType": "quick",
+        "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。",
+        "transitionHistoryNum": -1,
+        "roundEndForceJump": 0
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "flowId": "rVKEOu24cle3A5Rjdi0iT",
+        "scriptStepStartId": "PkZ4WtlXDV6SYn9WHx7_t",
+        "scriptStepEndId": "oDHp6fYRBsXNXLpVvWjC7",
+        "scriptStepStartHandle": "PkZ4WtlXDV6SYn9WHx7_t-source-bottom",
+        "scriptStepEndHandle": "oDHp6fYRBsXNXLpVvWjC7-target-top",
+        "flowCondition": "NEXT_TO_SUMMARY3",
+        "flowConfiguration": {
+          "relation": "and",
+          "conditions": [
+            {
+              "text": "条件组1",
+              "relation": "and",
+              "conditions": [
+                {
+                  "text": "NEXT_TO_SUMMARY3"
+                }
+              ]
+            }
+          ]
+        },
+        "transitionSwitch": 1,
+        "isDefault": 0,
+        "flowSettingType": "quick",
+        "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。",
+        "transitionHistoryNum": -1,
+        "roundEndForceJump": 0
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "flowId": "TpO1m4jHwoYZP37Hhx1QI",
+        "scriptStepStartId": "oDHp6fYRBsXNXLpVvWjC7",
+        "scriptStepEndId": "kkvN7NNeCoHqoCOFzAM5s",
+        "scriptStepStartHandle": "oDHp6fYRBsXNXLpVvWjC7-source-bottom",
+        "scriptStepEndHandle": "kkvN7NNeCoHqoCOFzAM5s-target-top",
+        "flowCondition": "NEXT_TO_PHASE4",
+        "flowConfiguration": {
+          "relation": "and",
+          "conditions": [
+            {
+              "text": "条件组1",
+              "relation": "and",
+              "conditions": [
+                {
+                  "text": "NEXT_TO_PHASE4"
+                }
+              ]
+            }
+          ]
+        },
+        "transitionSwitch": 1,
+        "isDefault": 0,
+        "flowSettingType": "quick",
+        "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。",
+        "transitionHistoryNum": -1,
+        "roundEndForceJump": 0
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "flowId": "dkLzFkx5OfOZ4c3mrEh0h",
+        "scriptStepStartId": "kkvN7NNeCoHqoCOFzAM5s",
+        "scriptStepEndId": "Wz8IlWuO3k0HQVgih6ku6",
+        "scriptStepStartHandle": "kkvN7NNeCoHqoCOFzAM5s-source-bottom",
+        "scriptStepEndHandle": "Wz8IlWuO3k0HQVgih6ku6-target-top",
+        "flowCondition": "NEXT_TO_SUMMARY4",
+        "flowConfiguration": {
+          "relation": "and",
+          "conditions": [
+            {
+              "text": "条件组1",
+              "relation": "and",
+              "conditions": [
+                {
+                  "text": "NEXT_TO_SUMMARY4"
+                }
+              ]
+            }
+          ]
+        },
+        "transitionSwitch": 1,
+        "isDefault": 0,
+        "flowSettingType": "quick",
+        "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。",
+        "transitionHistoryNum": -1,
+        "roundEndForceJump": 0
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "flowId": "k_LrVHjj9VdxG3ERklap9",
+        "scriptStepStartId": "Wz8IlWuO3k0HQVgih6ku6",
+        "scriptStepEndId": "y9F3l73Bw2g6ENFLRs6ja",
+        "scriptStepStartHandle": "Wz8IlWuO3k0HQVgih6ku6-source-bottom",
+        "scriptStepEndHandle": "y9F3l73Bw2g6ENFLRs6ja-target-top",
+        "flowCondition": "NEXT_TO_PHASE5",
+        "flowConfiguration": {
+          "relation": "and",
+          "conditions": [
+            {
+              "text": "条件组1",
+              "relation": "and",
+              "conditions": [
+                {
+                  "text": "NEXT_TO_PHASE5"
+                }
+              ]
+            }
+          ]
+        },
+        "transitionSwitch": 1,
+        "isDefault": 0,
+        "flowSettingType": "quick",
+        "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。",
+        "transitionHistoryNum": -1,
+        "roundEndForceJump": 0
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "flowId": "qcYXkLFhtGWQRxHbF0Gq7",
+        "scriptStepStartId": "y9F3l73Bw2g6ENFLRs6ja",
+        "scriptStepEndId": "6zbco4JhbIxqPEqesLxVK",
+        "scriptStepStartHandle": "y9F3l73Bw2g6ENFLRs6ja-source-bottom",
+        "scriptStepEndHandle": "6zbco4JhbIxqPEqesLxVK-target-top",
+        "flowCondition": "NEXT_TO_CLOSE5",
+        "flowConfiguration": {
+          "relation": "and",
+          "conditions": [
+            {
+              "text": "条件组1",
+              "relation": "and",
+              "conditions": [
+                {
+                  "text": "NEXT_TO_CLOSE5"
+                }
+              ]
+            }
+          ]
+        },
+        "transitionSwitch": 1,
+        "isDefault": 0,
+        "flowSettingType": "quick",
+        "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。",
+        "transitionHistoryNum": -1,
+        "roundEndForceJump": 0
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "flowId": "WKgpg_xMv1VDXGg92FPOb",
+        "scriptStepStartId": "6zbco4JhbIxqPEqesLxVK",
+        "scriptStepEndId": "fjS1ZBIDvZ0LIG3crsNE9",
+        "scriptStepStartHandle": "6zbco4JhbIxqPEqesLxVK-source-bottom",
+        "scriptStepEndHandle": "fjS1ZBIDvZ0LIG3crsNE9-target-top",
+        "flowCondition": "NEXT_TO_PANORAMA",
+        "flowConfiguration": {
+          "relation": "and",
+          "conditions": [
+            {
+              "text": "条件组1",
+              "relation": "and",
+              "conditions": [
+                {
+                  "text": "NEXT_TO_PANORAMA"
+                }
+              ]
+            }
+          ]
+        },
+        "transitionSwitch": 1,
+        "isDefault": 0,
+        "flowSettingType": "quick",
+        "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。",
+        "transitionHistoryNum": -1,
+        "roundEndForceJump": 0
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "flowId": "bxEmcY4EneBOAp1R1UGNi",
+        "scriptStepStartId": "fjS1ZBIDvZ0LIG3crsNE9",
+        "scriptStepEndId": "1om_5AwD1YOQo1nQDTw6n",
+        "scriptStepStartHandle": "fjS1ZBIDvZ0LIG3crsNE9-source-bottom",
+        "scriptStepEndHandle": "1om_5AwD1YOQo1nQDTw6n-target-top",
+        "flowCondition": "NEXT_TO_SELFCHECK",
+        "flowConfiguration": {
+          "relation": "and",
+          "conditions": [
+            {
+              "text": "条件组1",
+              "relation": "and",
+              "conditions": [
+                {
+                  "text": "NEXT_TO_SELFCHECK"
+                }
+              ]
+            }
+          ]
+        },
+        "transitionSwitch": 1,
+        "isDefault": 0,
+        "flowSettingType": "quick",
+        "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。",
+        "transitionHistoryNum": -1,
+        "roundEndForceJump": 0
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "flowId": "4gLFqIyMTJf-CIAvVpbuT",
+        "scriptStepStartId": "1om_5AwD1YOQo1nQDTw6n",
+        "scriptStepEndId": "1w_WpJKbHr_3J43S78MVJ",
+        "scriptStepStartHandle": "1om_5AwD1YOQo1nQDTw6n-source-bottom",
+        "scriptStepEndHandle": "1w_WpJKbHr_3J43S78MVJ-target-top",
+        "flowCondition": "NEXT_TO_REVIEW",
+        "flowConfiguration": {
+          "relation": "and",
+          "conditions": [
+            {
+              "text": "条件组1",
+              "relation": "and",
+              "conditions": [
+                {
+                  "text": "NEXT_TO_REVIEW"
+                }
+              ]
+            }
+          ]
+        },
+        "transitionSwitch": 1,
+        "isDefault": 0,
+        "flowSettingType": "quick",
+        "transitionPrompt": "逐字输出下一阶段原始开场白 ${next_stage_opening}，保留全部小结文字；不要自行改写、删减或加上后续线索。学生未完成公共门控时不应因达到轮次而放行；此提示无法替代平台运行时门控设置，须实测轮次上限行为。",
+        "transitionHistoryNum": -1,
+        "roundEndForceJump": 0
+      },
+      {
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "flowId": "fOpwl4mmYQZTMUjVM6s1k",
+        "scriptStepStartId": "1w_WpJKbHr_3J43S78MVJ",
+        "scriptStepEndId": "uLToFYNwq0ttUly9dwEr7",
+        "scriptStepStartHandle": "1w_WpJKbHr_3J43S78MVJ-source-bottom",
+        "scriptStepEndHandle": "uLToFYNwq0ttUly9dwEr7-target-top",
+        "flowCondition": "TASK_COMPLETE",
+        "flowConfiguration": {
+          "relation": "and",
+          "conditions": [
+            {
+              "text": "条件组1",
+              "relation": "and",
+              "conditions": [
+                {
+                  "text": "TASK_COMPLETE"
+                }
+              ]
+            }
+          ]
+        },
+        "transitionSwitch": 1,
+        "isDefault": 0,
+        "flowSettingType": "quick",
+        "transitionPrompt": "",
+        "transitionHistoryNum": -1,
+        "roundEndForceJump": 0
+      }
+    ],
+    "scores": [
+      {
+        "itemId": "MQzfzzvUdmamyO7R",
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "itemName": "病例分析与鉴别诊断能力",
+        "score": 22,
+        "description": "评估阶段二、三的发热来源研判、鉴别诊断与动态更新。",
+        "requireDetail": "按各子得分点独立判分，允许同义表述；满分之内酌情给部分分，不重复计分，不凭空补充学生证据。\n1. 发热来源与风险排序（8分）：依据ICU、留置导管和现有阴性线索提出血流/导管感染优先鉴别，说明理由；仅写病名缺少推理酌情得分。\n2. 鉴别清单与替代解释（8分）：提出有条理的感染/相关非感染鉴别；结合现有证据比较污染、一过性菌血症和导管相关感染，避免把没有证据说成绝对排除。\n3. 证据更新与不确定性（6分）：第二轮线索后更新排序，说明当前仍缺菌种/完整鉴证信息，不预先捏造确诊结果。",
+        "realTime": false
+      },
+      {
+        "itemId": "h5aUeZOpY1tyvBG0",
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "itemName": "实验室证据解读与检验思维",
+        "score": 22,
+        "description": "评估送检规范、报阳时间差、鉴定证据及污染排查。",
+        "requireDetail": "按各子得分点独立判分，允许同义表述；满分之内酌情给部分分，不重复计分，不凭空补充学生证据。\n1. 配对血培养设计（8分）：方案涵盖外周静脉与导管内两套/双部位培养，并说明采集时间、标识、治疗前采样与等量同时采集对判读的意义。\n2. DTP原理与条件（8分）：正确解释3小时差值及导管菌量与更早报阳的关系；理解以配对、同一病原体和可比采集条件为前提，认可≥2小时的科学表述。\n3. 鉴定与污染排查（6分）：整合形态、生化、药敏、导管尖端结果；单瓶初步报阳不直接作菌种定论，亦不把已鉴定金葡菌单瓶阳性机械视为污染。",
+        "realTime": false
+      },
+      {
+        "itemId": "mcAHcy8YJNyyCZ58",
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "itemName": "病原耐药认知与综合处置决策",
+        "score": 24,
+        "description": "评估病原体耐药机制、感染源控制及治疗与预防一体化决策。",
+        "requireDetail": "按各子得分点独立判分，允许同义表述；满分之内酌情给部分分，不重复计分，不凭空补充学生证据。\n1. 病原表型与耐药机制（8分）：根据第三轮证据识别MRSA表型，阐述mecA/PBP2a一般机制；区分未给出基因检测结果与机制解释。不要求A2063G。\n2. 生物膜与源头控制（8分）：解释体外药敏敏感并不替代感染源控制，结合本例讨论拔管和持续/复发感染风险；避免无条件泛化所有导管感染处理。\n3. 治疗监护与院感措施（8分）：依据患者状态讨论精准治疗与器官监护、复查和支持措施，并提出手卫生、导管护理培训、操作监督与反馈改进。",
+        "realTime": false
+      },
+      {
+        "itemId": "SVYXSr6erwaXfVQi",
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "itemName": "角色视角拓展思考",
+        "score": 12,
+        "description": "仅评本次选定岗位在阶段二至五的4次拓展回答；其他岗位全景不纳入本轮扣分。",
+        "requireDetail": "按各子得分点独立判分，允许同义表述；满分之内酌情给部分分，不重复计分，不凭空补充学生证据。\n1. 阶段二岗位拓展（3分）：针对锁定岗位原文问题，给出相关风险/证据/行动及理由。内容完整、逻辑合理3分；有部分相关内容1—2分；仅敷衍或无关0分。\n2. 阶段三岗位拓展（3分）：针对锁定岗位原文问题，给出相关风险/证据/行动及理由。内容完整、逻辑合理3分；有部分相关内容1—2分；仅敷衍或无关0分。\n3. 阶段四岗位拓展（3分）：针对锁定岗位原文问题，给出相关风险/证据/行动及理由。内容完整、逻辑合理3分；有部分相关内容1—2分；仅敷衍或无关0分。\n4. 阶段五岗位拓展（3分）：针对锁定岗位原文问题，给出相关风险/证据/行动及理由。内容完整、逻辑合理3分；有部分相关内容1—2分；仅敷衍或无关0分。",
+        "realTime": false
+      },
+      {
+        "itemId": "Bleyn9X6YPggQQxk",
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "itemName": "质询应答与推理迭代能力",
+        "score": 10,
+        "description": "评价两个统一反向质疑和对启发追问的实质修正。",
+        "requireDetail": "按各子得分点独立判分，允许同义表述；满分之内酌情给部分分，不重复计分，不凭空补充学生证据。\n1. 阶段三反向质疑（3分）：解释单瓶初步阳性的菌种与来源判定边界，以及所需复核/综合证据；避免泛化污染概率。\n2. 阶段四反向质疑（3分）：解释药敏结果与源头控制关注点不同，结合本例生物膜相关持续感染风险论证。\n3. 推理迭代（4分）：根据追问补齐送检、鉴别或处置链条；有具体修改及理由得分，仅重复原答不重复得分。",
+        "realTime": false
+      },
+      {
+        "itemId": "9vp6rGkOEd33XUdi",
+        "trainTaskId": "T3oB0YxCYdgRpeht",
+        "itemName": "主动探究与提问质量",
+        "score": 10,
+        "description": "自主选做。全部放弃此维0分，总分最高90；提问或优化必须有专业相关性和推理深度。",
+        "requireDetail": "按各子得分点独立判分，允许同义表述；满分之内酌情给部分分，不重复计分，不凭空补充学生证据。\n1. 阶段二主动探究（2分）：自主提出本阶段专业问题或优化送检/鉴别方案；相关且有明确目的可得分。\n2. 阶段三主动探究（3分）：围绕DTP判读前提或阴性培养后的证据补充提出有分析价值的问题/流程建议。\n3. 阶段四主动探究（3分）：围绕耐药证据或导管护理改进提出可检验问题/具体措施，不能以错误机制堆术语得分。\n4. 阶段五主动探究（2分）：围绕个体化治疗评估或院感流程提出具体优化思路与评价指标。",
+        "realTime": false
+      }
+    ]
+  }
+}

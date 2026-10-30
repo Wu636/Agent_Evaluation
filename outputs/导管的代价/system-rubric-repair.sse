@@ -1,0 +1,18 @@
+data: {"type":"start","phase":"rubric","message":"开始注入评分标准，共 6 个评分项...","total":6}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 1/6：病例分析与鉴别诊断能力（22分）","current":1,"total":6}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 2/6：实验室证据解读与检验思维（22分）","current":2,"total":6}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 3/6：病原耐药认知与综合处置决策（24分）","current":3,"total":6}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 4/6：角色视角拓展思考（12分）","current":4,"total":6}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 5/6：质询应答与推理迭代能力（10分）","current":5,"total":6}
+
+data: {"type":"progress","phase":"rubric","message":"正在创建评分项 6/6：主动探究与提问质量（10分）","current":6,"total":6}
+
+data: {"type":"phase_complete","phase":"rubric","message":"评分标准注入完成：6 个评分项"}
+
+data: {"type":"complete","message":"所有内容注入成功！请前往智慧树平台刷新对应任务页面查看结果。","summary":{"stepsCreated":0,"flowsCreated":0,"scoreItemsCreated":6,"stepsDeleted":0,"flowsDeleted":0}}
+

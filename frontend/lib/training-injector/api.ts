@@ -1,3 +1,4 @@
+export { toPlatformVocabularies } from "../oral-training/vocabulary";
 /**
  * 训练配置注入器 - polymas 平台 API 封装
  *
@@ -399,6 +400,7 @@ async function directRequestTo<T = unknown>(
 }
 
 interface ScriptStepMutationData {
+    stepExtProperty?: Record<string, unknown>;
     stepName: string;
     description: string;
     prologue: string;
@@ -406,6 +408,8 @@ interface ScriptStepMutationData {
     llmPrompt: string;
     trainerName: string;
     interactiveRounds: number;
+    // 关闭形象绑定时仍保留语音引擎参数，避免平台拒绝节点配置。
+    injectDigitalHuman?: boolean;
     agentId: string;
     agentVoiceId?: string;
     avatarNid: string;
@@ -486,7 +490,7 @@ interface PolymasLoginUserInfo {
     zhsUuid?: string;
 }
 
-function buildScriptStepDetailDTO(stepData: ScriptStepMutationData): Record<string, unknown> {
+function buildScriptStepDetailDTO(stepData: ScriptStepMutationData, trainSubType: "ability" | "oral" = "ability"): Record<string, unknown> {
     const scriptStepCover = stepData.scriptStepCover || {};
     const coverFileId = typeof scriptStepCover.fileId === "string" ? scriptStepCover.fileId : "";
     const backgroundTheme = stepData.backgroundTheme || coverFileId || null;
@@ -499,10 +503,10 @@ function buildScriptStepDetailDTO(stepData: ScriptStepMutationData): Record<stri
         interactiveRounds: Number(stepData.interactiveRounds) || 0,
         agentId: stepData.agentId || DEFAULT_AGENT_ID,
         agentVoiceId: stepData.agentVoiceId || DEFAULT_AGENT_VOICE_ID,
-        avatarNid: stepData.avatarNid || DEFAULT_AVATAR_NID,
+        avatarNid: stepData.injectDigitalHuman === false ? "" : (stepData.avatarNid || DEFAULT_AVATAR_NID),
         backgroundTheme,
         contentSkip: 0,
-        customDigitalHuman: stepData.customDigitalHuman || null,
+        customDigitalHuman: stepData.injectDigitalHuman === false ? null : (stepData.customDigitalHuman || null),
         description: stepData.description,
         digitalHumanType: null,
         historyRecordNum: -1,
@@ -519,8 +523,18 @@ function buildScriptStepDetailDTO(stepData: ScriptStepMutationData): Record<stri
         scriptStepCover,
         scriptStepResourceList: [],
         searchEngineSwitch: stepData.searchEngineSwitch ?? 1,
-        stepExtProperty: {
-            trainSubType: "ability",
+        stepExtProperty: trainSubType === "oral" ? {
+            backgroundMusic: { fileId: null, fileName: null, fileUrl: null },
+            transitionDescription: "",
+            useTransitionDescriptionAsAudio: false,
+            transitionVideo: { fileId: null, fileName: null, fileUrl: null },
+            useVideoOriginalSoundAsAudio: false,
+            resources: [{ nid: "", category: "未分类", list: [] }],
+            ...stepData.stepExtProperty,
+            keyVocabularies: stepData.stepExtProperty?.keyVocabularies || [],
+            backgroundTheme,
+        } : {
+            trainSubType,
             resources: [{ nid: "", category: "未分类", list: [] }],
             bgMediaType: 1,
             bgMediaVolume: 80,
@@ -541,7 +555,7 @@ function buildScriptStepDetailDTO(stepData: ScriptStepMutationData): Record<stri
             hideSubtitle: 0,
             useAsideTransition: 0,
         },
-        trainSubType: "ability",
+        trainSubType,
         trainerName: stepData.trainerName,
         transitionDescriptionUrl: null,
         useTransitionDescriptionAsAudio: false,
@@ -1541,7 +1555,7 @@ export async function queryScriptSteps(
 ): Promise<PolymasScriptStep[]> {
     const result = await directRequest<PolymasScriptStep[]>(
         "queryScriptStepList",
-        { trainTaskId, trainSubType: "ability" },
+        { trainTaskId, trainSubType: credentials.trainSubType || "ability" },
         credentials
     );
     return result.success ? (result.data || []) : [];
@@ -1618,7 +1632,7 @@ function extractTrainingTaskConfiguration(data: unknown): TrainingTaskConfigurat
         trainTaskName,
         description,
         trainTaskCover,
-        raw: data,
+        raw: candidates.find(candidate => candidate.extConfig && candidate.trainTaskName) || rootObject,
     };
 }
 
@@ -1632,7 +1646,7 @@ export async function queryTrainingTaskConfiguration(
 ): Promise<TrainingTaskConfiguration | null> {
     const payload: Record<string, unknown> = {
         trainTaskId: params.trainTaskId,
-        trainSubType: "ability",
+        trainSubType: credentials.trainSubType || "ability",
     };
     if (params.courseId) payload.courseId = params.courseId;
 
@@ -1684,6 +1698,7 @@ export async function createScriptStep(
             stepId,
             stepDetailDTO: {
                 nodeType: "SCRIPT_NODE",
+                ...(credentials.trainSubType === "oral" ? { stepExtProperty: { ...stepData.stepExtProperty, keyVocabularies: stepData.stepExtProperty?.keyVocabularies || [] } } : {}),
                 stepName: stepData.stepName,
                 description: stepData.description,
                 prologue: stepData.prologue,
@@ -1695,15 +1710,15 @@ export async function createScriptStep(
                 backgroundTheme: stepData.backgroundTheme || null,
                 whiteBoardSwitch: 0,
                 agentId: stepData.agentId || DEFAULT_AGENT_ID,
-                avatarNid: stepData.avatarNid || DEFAULT_AVATAR_NID,
+                avatarNid: stepData.injectDigitalHuman === false ? "" : (stepData.avatarNid || DEFAULT_AVATAR_NID),
                 videoSwitch: 0,
                 scriptStepResourceList: [],
                 knowledgeBaseSwitch: 1,
                 searchEngineSwitch: 1,
                 historyRecordNum: -1,
-                trainSubType: "ability",
+                trainSubType: credentials.trainSubType || "ability",
                 agentVoiceId: stepData.agentVoiceId || DEFAULT_AGENT_VOICE_ID,
-                customDigitalHuman: stepData.customDigitalHuman || null,
+                customDigitalHuman: stepData.injectDigitalHuman === false ? null : (stepData.customDigitalHuman || null),
             },
             positionDTO: position,
         },
@@ -1828,7 +1843,7 @@ export async function editScriptStep(
             stepId,
             courseId,
             libraryFolderId,
-            stepDetailDTO: buildScriptStepDetailDTO(stepData),
+            stepDetailDTO: buildScriptStepDetailDTO(stepData, credentials.trainSubType),
             positionDTO: position,
         },
         credentials
@@ -2007,18 +2022,27 @@ export async function editConfiguration(
         return false;
     }
 
+    let oralConfiguration: Record<string, unknown> | null = null;
+    if (credentials.trainSubType === "oral") {
+        const current = await queryTrainingTaskConfiguration(params, credentials);
+        oralConfiguration = parseMaybeJsonObject(current?.raw);
+        if (!oralConfiguration || oralConfiguration.trainSubType !== "oral" || !parseMaybeJsonObject(oralConfiguration.extConfig)) {
+            throw new Error("无法读取口语训练原有配置，已停止写入以保留语言、难度和口语评价设置。");
+        }
+    }
+
     const payload: Record<string, unknown> = {
         trainTaskId: params.trainTaskId,
         trainTaskName: params.trainTaskName,
         description: params.description,
         trainType: "all",
         trainTime: -1,
-        trainSubType: "ability",
+        trainSubType: credentials.trainSubType || "ability",
         entranceVoiceNid: params.entranceVoiceNid || DEFAULT_AGENT_ID,
         entranceVoiceType: params.entranceVoiceType || DEFAULT_AGENT_VOICE_ID,
         entranceVoiceSpeed: params.entranceVoiceSpeed ?? 0,
         extConfig: {
-            trainSubType: "ability",
+            trainSubType: credentials.trainSubType || "ability",
             trainTaskName: params.trainTaskName,
             description: params.description,
             dialogueLanguage: null,
@@ -2029,6 +2053,16 @@ export async function editConfiguration(
         communicateMethod: null,
     };
 
+    if (oralConfiguration) {
+        Object.assign(payload, oralConfiguration, {
+            trainTaskId: params.trainTaskId,
+            trainTaskName: params.trainTaskName,
+            description: params.description,
+            trainSubType: "oral",
+            extConfig: { ...parseMaybeJsonObject(oralConfiguration.extConfig), trainSubType: "oral" },
+        });
+    }
+    payload.courseId = params.courseId;
     payload.trainTaskCover = params.trainTaskCover;
 
     const result = await directRequest(
@@ -2065,7 +2099,7 @@ export async function editConfigurationCoverOnly(
         {
             trainTaskId: params.trainTaskId,
             courseId: params.courseId,
-            trainSubType: "ability",
+            trainSubType: credentials.trainSubType || "ability",
             trainTaskCover: params.trainTaskCover,
         },
         credentials

@@ -1,3 +1,4 @@
+import type { TrainingType } from "@/lib/oral-training/config";
 /**
  * 训练配置生成器 - 前端 SSE 客户端封装
  */
@@ -6,6 +7,7 @@ import { ScriptMode, TrainingGenerateRequestMode, TrainingFlowPlanningPreference
 import { loadLLMSettingsFromStorage } from "@/lib/llm/settings";
 
 export interface TrainingGenerateParams {
+    trainingType?: TrainingType;
     /** 正常生成，或从 priorScript 定位缺口后只续写缺失部分。 */
     requestMode?: TrainingGenerateRequestMode;
     /** 文件模式：传入 File 对象（服务端解析内容） */
@@ -87,6 +89,7 @@ export async function streamTrainingGenerate(params: TrainingGenerateParams): Pr
 
             if (file) {
                 const formData = new FormData();
+                if (params.trainingType) formData.append("trainingType", params.trainingType);
                 formData.append("file", file);
                 formData.append("teacherDocName", teacherDocName);
                 formData.append("requestMode", attemptMode);
@@ -113,6 +116,7 @@ export async function streamTrainingGenerate(params: TrainingGenerateParams): Pr
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
+                        trainingType: params.trainingType,
                         teacherDocContent: teacherDocContent || "",
                         teacherDocName,
                         requestMode: attemptMode,
@@ -203,6 +207,7 @@ export async function streamTrainingGenerate(params: TrainingGenerateParams): Pr
 }
 
 export interface TrainingPlanParams {
+    trainingType?: TrainingType;
     file?: File;
     teacherDocContent?: string;
     teacherDocName: string;
@@ -214,6 +219,7 @@ export interface TrainingPlanParams {
 }
 
 export interface ModuleRegenerateParams {
+    trainingType?: TrainingType;
     file?: File;
     teacherDocContent?: string;
     teacherDocName: string;
@@ -255,6 +261,7 @@ export async function createTrainingScriptPlan(params: TrainingPlanParams): Prom
 
     if (params.file) {
         const formData = new FormData();
+        if (params.trainingType) formData.append("trainingType", params.trainingType);
         formData.append("file", params.file);
         formData.append("teacherDocName", params.teacherDocName);
         if (options.planningFeedback) formData.append("planningFeedback", options.planningFeedback);
@@ -275,6 +282,7 @@ export async function createTrainingScriptPlan(params: TrainingPlanParams): Prom
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+                trainingType: params.trainingType,
                 teacherDocContent: params.teacherDocContent || "",
                 teacherDocName: params.teacherDocName,
                 planningFeedback: options.planningFeedback || "",
@@ -311,6 +319,7 @@ export async function regenerateTrainingScriptModule(params: ModuleRegeneratePar
 
     if (params.file) {
         const formData = new FormData();
+        if (params.trainingType) formData.append("trainingType", params.trainingType);
         formData.append("file", params.file);
         formData.append("teacherDocName", params.teacherDocName);
         formData.append("modulePlan", JSON.stringify(params.modulePlan));
@@ -331,6 +340,7 @@ export async function regenerateTrainingScriptModule(params: ModuleRegeneratePar
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+                trainingType: params.trainingType,
                 teacherDocContent: params.teacherDocContent || "",
                 teacherDocName: params.teacherDocName,
                 modulePlan: params.modulePlan,

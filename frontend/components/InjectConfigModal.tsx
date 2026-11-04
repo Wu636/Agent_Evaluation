@@ -37,6 +37,40 @@ const IMAGE_MODEL_OPTIONS = [
     { id: "gpt-image-1.5", name: "GPT Image 1.5", description: "OpenAI 图像生成模型" },
 ];
 const BACKGROUND_IMAGE_CONCURRENCY = 2;
+const IMAGE_REGEN_RETRY_DELAYS_MS = [1500, 3500];
+
+async function callRegenerateWithImageRetry(
+    call: (payload: Record<string, unknown>) => Promise<unknown>,
+    payload: Record<string, unknown>,
+    options: {
+        providerPriorities: string[];
+        onRetry?: (attempt: number, error: unknown) => void;
+    }
+): Promise<boolean> {
+    const priorities = options.providerPriorities
+        .filter(Boolean)
+        .filter((priority, index, arr) => arr.indexOf(priority) === index);
+
+    for (let attempt = 0; attempt <= IMAGE_REGEN_RETRY_DELAYS_MS.length; attempt += 1) {
+        const priority = priorities.length > 0
+            ? priorities[Math.min(attempt, priorities.length - 1)]
+            : "";
+        try {
+            await call(priority ? { ...payload, imageProviderPriority: priority } : payload);
+            return true;
+        } catch (error) {
+            if (attempt >= IMAGE_REGEN_RETRY_DELAYS_MS.length) {
+                console.warn("[InjectModal] 图片补全重试后仍失败:", payload.targetType, payload.stepId, error);
+                return false;
+            }
+            console.warn(`[InjectModal] 图片补全第 ${attempt + 1} 次失败，准备重试:`, payload.targetType, payload.stepId, error);
+            options.onRetry?.(attempt + 1, error);
+            await new Promise((resolve) => setTimeout(resolve, IMAGE_REGEN_RETRY_DELAYS_MS[attempt]));
+        }
+    }
+
+    return false;
+}
 
 interface StoredTaskContext {
     courseId: string;
@@ -1046,18 +1080,28 @@ export function InjectConfigModal({
                             const matched = parsedSteps.find((step) => step.stepName === stage.stepName);
                             const stageDesc = matched?.description || "";
 
-                            try {
-                                await callRegenerateApi({
+                            const stageOk = await callRegenerateWithImageRetry(
+                                callRegenerateApi,
+                                {
                                     ...basePayload,
                                     targetType: "background",
                                     stepId: stage.stepId,
                                     stepSnapshot: stage.stepSnapshot,
                                     stageDescription: stageDesc || undefined,
-                                });
+                                },
+                                {
+                                    providerPriorities: [effectiveImageProviderPriority, effectiveSwitchedImageProviderPriority],
+                                    onRetry: (attempt) => setRegenMessage(
+                                        `${stage.stepName} 背景图生成失败，正在重试（${attempt}/${IMAGE_REGEN_RETRY_DELAYS_MS.length}）...`
+                                    ),
+                                }
+                            );
+
+                            if (stageOk) {
                                 successStages += 1;
-                            } catch (err) {
+                            } else {
                                 failedStages.push(stage.stepName || stage.stepId);
-                                console.warn("[InjectModal] 重生阶段背景失败，将继续下一个阶段:", stage.stepName, err);
+                                console.warn("[InjectModal] 重生阶段背景重试后仍失败，将继续下一个阶段:", stage.stepName);
                             }
 
                             completedStages += 1;
@@ -1422,100 +1466,67 @@ export function InjectConfigModal({
                     trainDescription: parseTaskConfig(effectiveScriptMd || "")?.description || "",
                 };
 
-                const runCoverRegenerateWithRetryForInject = async (): Promise<boolean> => {
-                    try {
-                        await callRegenerateApi({
-                            ...baseRegenPayload,
-                            targetType: "cover",
-                            updateFullConfiguration: true,
-                            imageProviderPriority: effectiveImageProviderPriority,
-                        });
-                        return true;
-                    } catch (firstErr) {
-                        if (effectiveSwitchedImageProviderPriority === effectiveImageProviderPriority) {
-                            console.warn("[InjectModal] 注入后补全封面失败，当前执行计划已禁用 cloudapi 回退:", firstErr);
-                            return false;
-                        }
-                        console.warn("[InjectModal] 注入后补全封面首次失败，切换提供方重试:", firstErr);
-                        pushImageLog("封面图首次补全失败，正在切换生图方式重试（1/1）...", currentImageTask, totalImageTasks);
-                        await new Promise((resolve) => setTimeout(resolve, 1200));
-                        try {
-                            await callRegenerateApi({
-                                ...baseRegenPayload,
-                                targetType: "cover",
-                                updateFullConfiguration: true,
-                                imageProviderPriority: effectiveSwitchedImageProviderPriority,
-                            });
-                            return true;
-                        } catch (secondErr) {
-                            console.warn("[InjectModal] 注入后补全封面重试失败:", secondErr);
-                            return false;
-                        }
-                    }
-                };
-
-                let coverPromise: Promise<boolean> | null = null;
+                const postImageTasks: Array<{ label: string; payload: Record<string, unknown> }> = [];
                 if (shouldGenerateCoverForThisRun) {
-                    pushImageLog(`正在并行补全课程封面图（与阶段背景并行）...`, currentImageTask, totalImageTasks);
-                    coverPromise = runCoverRegenerateWithRetryForInject();
+                    postImageTasks.push({
+                        label: "课程封面图",
+                        payload: { targetType: "cover", updateFullConfiguration: true },
+                    });
+                }
+                for (const stage of stageList) {
+                    const stageNameKey = normalizeStageNameForAppend(stage.stepName);
+                    const matched = parsedSteps.find((step) => normalizeStageNameForAppend(step.stepName) === stageNameKey);
+                    postImageTasks.push({
+                        label: `阶段背景：${stage.stepName || stage.stepId}`,
+                        payload: {
+                            targetType: "background",
+                            stepId: stage.stepId,
+                            stepSnapshot: stage.stepSnapshot,
+                            stageDescription: matched?.description || undefined,
+                        },
+                    });
                 }
 
-                if (shouldGenerateBackgroundForThisRun) {
-                    const concurrency = Math.min(BACKGROUND_IMAGE_CONCURRENCY, stageList.length);
-                    if (stageList.length > 0) {
-                        pushImageLog(`正在并发补全阶段背景（并发 ${concurrency}，共 ${stageList.length} 个）...`, currentImageTask, totalImageTasks);
-                    }
+                if (postImageTasks.length > 0) {
+                    const concurrency = Math.min(BACKGROUND_IMAGE_CONCURRENCY, postImageTasks.length);
+                    pushImageLog(
+                        `正在并发补全图片（并发 ${concurrency}，共 ${postImageTasks.length} 项）...`,
+                        currentImageTask,
+                        totalImageTasks
+                    );
 
-                    let nextIndex = 0;
-                    const runWorker = async () => {
+                    let nextImageTaskIndex = 0;
+                    const runImageWorker = async () => {
                         while (true) {
-                            const index = nextIndex;
-                            if (index >= stageList.length) return;
-                            nextIndex += 1;
+                            const index = nextImageTaskIndex;
+                            if (index >= postImageTasks.length) return;
+                            nextImageTaskIndex += 1;
 
-                            const stage = stageList[index];
-                            const stageNameKey = normalizeStageNameForAppend(stage.stepName);
-                            const matched = parsedSteps.find((step) => normalizeStageNameForAppend(step.stepName) === stageNameKey);
-                            let stageOk = true;
-                            try {
-                                await callRegenerateApi({
-                                    ...baseRegenPayload,
-                                    targetType: "background",
-                                    stepId: stage.stepId,
-                                    stepSnapshot: stage.stepSnapshot,
-                                    stageDescription: matched?.description || undefined,
-                                });
-                            } catch (stageErr) {
-                                stageOk = false;
-                                failedItems.push(stage.stepName || stage.stepId);
-                                console.warn("[InjectModal] 注入后补全阶段背景失败:", stage.stepName, stageErr);
-                            }
+                            const task = postImageTasks[index];
+                            const taskOk = await callRegenerateWithImageRetry(
+                                callRegenerateApi,
+                                { ...baseRegenPayload, ...task.payload },
+                                {
+                                    providerPriorities: [effectiveImageProviderPriority, effectiveSwitchedImageProviderPriority],
+                                    onRetry: (attempt) => pushImageLog(
+                                        `${task.label} 补全失败，正在重试（${attempt}/${IMAGE_REGEN_RETRY_DELAYS_MS.length}）...`,
+                                        currentImageTask,
+                                        totalImageTasks
+                                    ),
+                                }
+                            );
 
+                            if (!taskOk) failedItems.push(task.label);
                             currentImageTask += 1;
                             pushImageLog(
-                                `${stageOk ? "已补全" : "补全失败"}阶段背景：${stage.stepName}（${currentImageTask}/${totalImageTasks}）`,
+                                `${taskOk ? "已补全" : "补全失败"}${task.label}（${currentImageTask}/${totalImageTasks}）`,
                                 currentImageTask,
                                 totalImageTasks
                             );
                         }
                     };
 
-                    if (stageList.length > 0) {
-                        await Promise.all(Array.from({ length: concurrency }, () => runWorker()));
-                    }
-                }
-
-                if (shouldGenerateCoverForThisRun) {
-                    const coverOk = coverPromise ? await coverPromise : false;
-                    currentImageTask += 1;
-                    if (!coverOk) {
-                        failedItems.push("课程封面");
-                    }
-                    pushImageLog(
-                        `${coverOk ? "已补全" : "补全失败"}课程封面图（${currentImageTask}/${totalImageTasks}）`,
-                        currentImageTask,
-                        totalImageTasks
-                    );
+                    await Promise.all(Array.from({ length: concurrency }, () => runImageWorker()));
                 }
 
                 if (failedItems.length > 0) {

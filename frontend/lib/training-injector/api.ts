@@ -837,9 +837,32 @@ function normalizeDalleImageSize(imageSize?: string): string {
         : "1024x1024";
 }
 
+function extractImageErrorDetail(value: unknown, depth = 0): string {
+    if (!value || typeof value !== "object" || depth > 4) return "";
+    const error = value as Record<string, unknown>;
+    const nested = extractImageErrorDetail(error.error, depth + 1);
+    if (nested) return nested;
+    for (const detail of [error.message, error.msg, error.error]) {
+        if (typeof detail === "string" && detail.trim()) return detail.trim();
+    }
+    // 平台网关可能把供应商 JSON 错误包在 stackTrace 字符串内。
+    if (Array.isArray(error.stackTrace)) {
+        for (const entry of error.stackTrace) {
+            if (typeof entry !== "string") continue;
+            try {
+                const detail = extractImageErrorDetail(JSON.parse(entry), depth + 1);
+                if (detail) return detail;
+            } catch {
+                // 忽略包含内部地址的堆栈文本。
+            }
+        }
+    }
+    return "";
+}
+
 async function generateImageViaArk(
     prompt: string,
-    options?: { apiKey?: string; secondaryApiKey?: string; endpoint?: string; cookie?: string; imageModel?: string; timeoutMs?: number; imageSize?: string; watermark?: boolean }
+    options?: { apiKey?: string; secondaryApiKey?: string; endpoint?: string; cookie?: string; imageModel?: string; timeoutMs?: number; imageSize?: string; watermark?: boolean; throwOnError?: boolean }
 ): Promise<{ fileUrl: string } | null> {
     const requestTimeoutMs = Number(options?.timeoutMs) > 0
         ? Number(options?.timeoutMs)
@@ -849,6 +872,14 @@ async function generateImageViaArk(
     const preferredEndpoint = normalizeEndpoint(options?.endpoint);
     const endpointCandidates = buildImageEndpointCandidates(selectedModel, preferredEndpoint);
     const watermark = options?.watermark ?? true;
+    const failures: string[] = [];
+    const sanitizeDetail = (value: unknown): string => {
+        let detail = extractImageErrorDetail(value);
+        for (const key of [options?.apiKey, options?.secondaryApiKey, POLYMAS_IMAGE_FALLBACK_API_KEY, process.env.ARK_API_KEY]) {
+            if (key) detail = detail.split(key).join("[redacted]");
+        }
+        return detail.replace(/Bearer\s+\S+|sk-[A-Za-z0-9_-]+/gi, "[redacted]").slice(0, 200);
+    };
 
     for (const endpoint of endpointCandidates) {
         const apiKeys = buildImageApiKeysForEndpoint(endpoint, {
@@ -888,7 +919,6 @@ async function generateImageViaArk(
                     : {
                         model: selectedModel,
                         prompt,
-                        watermark,
                     };
 
             for (const authHeaders of authHeaderStrategies) {
@@ -910,6 +940,13 @@ async function generateImageViaArk(
                     if (!res.ok) {
                         const txt = await res.text().catch(() => "");
                         console.error("[ark-image] 接口请求失败:", endpoint, res.status, txt.substring(0, 300));
+                        let detail = "";
+                        try {
+                            detail = sanitizeDetail(JSON.parse(txt));
+                        } catch {
+                            // 网关 HTML 或堆栈不直接回传到页面。
+                        }
+                        failures.push(`${new URL(endpoint).host} HTTP ${res.status}${detail ? `：${detail}` : ""}`);
                         continue;
                     }
 
@@ -920,14 +957,18 @@ async function generateImageViaArk(
                     }
 
                     console.error("[ark-image] 返回数据缺少可用图片字段(url/b64_json):", endpoint, JSON.stringify(result).substring(0, 300));
+                    const detail = sanitizeDetail(result);
+                    failures.push(`${new URL(endpoint).host} 未返回图片（url/b64_json）${detail ? `：${detail}` : ""}`);
                     continue;
                 } catch (err) {
                     if (isAbortError(err)) {
                         console.error(`[ark-image] 接口请求超时（${Math.round(requestTimeoutMs / 1000)}秒）:`, endpoint);
+                        failures.push(`${new URL(endpoint).host} 请求超时（${Math.round(requestTimeoutMs / 1000)}秒）`);
                         endpointTimedOut = true;
                         break;
                     }
                     console.error("[ark-image] 请求异常:", endpoint, err);
+                    failures.push(`${new URL(endpoint).host} 连接异常`);
                     continue;
                 }
             }
@@ -938,6 +979,9 @@ async function generateImageViaArk(
         }
     }
 
+    if (options?.throwOnError) {
+        throw new Error(`图片模型 ${selectedModel} 生成失败：${[...new Set(failures)].join("；") || "未配置可用的生图 API Key"}`);
+    }
     return null;
 }
 
@@ -992,6 +1036,7 @@ export async function generateBackgroundImage(
         llmApiUrl?: string;
         imageModel?: string;
         imageProviderPriority?: string | ImageProvider[];
+        throwOnError?: boolean;
     },
     credentials: PolymasCredentials
 ): Promise<BgImageResult | null> {
@@ -999,8 +1044,9 @@ export async function generateBackgroundImage(
     const preferredPrompt = buildBackgroundFallbackPrompt(params);
     const providerPriority = resolveImageProviderPriority(params.imageProviderPriority);
 
-    try {
-        for (const provider of providerPriority) {
+    const failures: string[] = [];
+    for (const provider of providerPriority) {
+        try {
             if (provider === "cloudapi") {
                 const res = await fetchWithTimeout(targetUrl, {
                     method: "POST",
@@ -1045,6 +1091,7 @@ export async function generateBackgroundImage(
                 cookie: credentials.cookie,
                 imageModel: params.imageModel,
                 timeoutMs: OPENAI_COMPAT_IMAGE_TIMEOUT_MS,
+                throwOnError: params.throwOnError,
             });
 
             if (preferredGenerated?.fileUrl) {
@@ -1053,14 +1100,15 @@ export async function generateBackgroundImage(
                     return uploadedPreferred;
                 }
                 console.error("[bg-image] openai 生成成功但上传失败，继续下一个提供方");
+                failures.push("图片已生成，但下载或上传到平台失败，请检查平台凭证和素材服务。");
             }
+        } catch (err) {
+            console.error(`[bg-image] ${provider} 请求异常，继续下一个提供方:`, err);
+            failures.push(isAbortError(err) ? `${provider} 生图请求超时` : err instanceof Error ? err.message : `${provider} 生图请求异常`);
         }
-
-        return null;
-    } catch (err) {
-        console.error("[bg-image] 请求异常:", err);
-        return null;
     }
+    if (params.throwOnError) throw new Error(failures.join("；") || "新背景生成失败，图片服务没有返回可用素材。");
+    return null;
 }
 
 /** 为训练任务生成课程封面图源（仅获取图片URL，不直接写入任务封面） */
@@ -1073,6 +1121,7 @@ export async function generateCourseCoverImageSource(
         llmApiUrl?: string;
         imageModel?: string;
         imageProviderPriority?: string | ImageProvider[];
+        throwOnError?: boolean;
     },
     credentials: PolymasCredentials
 ): Promise<{ fileUrl: string; fileId?: string } | null> {
@@ -1080,8 +1129,9 @@ export async function generateCourseCoverImageSource(
     const preferredPrompt = buildCoverFallbackPrompt(params);
     const providerPriority = resolveImageProviderPriority(params.imageProviderPriority);
 
-    try {
-        for (const provider of providerPriority) {
+    const failures: string[] = [];
+    for (const provider of providerPriority) {
+        try {
             if (provider === "cloudapi") {
                 const res = await fetchWithTimeout(targetUrl, {
                     method: "POST",
@@ -1130,18 +1180,19 @@ export async function generateCourseCoverImageSource(
                 cookie: credentials.cookie,
                 imageModel: params.imageModel,
                 timeoutMs: Math.max(COVER_GENERATE_TIMEOUT_MS, OPENAI_COMPAT_IMAGE_TIMEOUT_MS),
+                throwOnError: params.throwOnError,
             });
 
             if (preferredGenerated?.fileUrl) {
                 return preferredGenerated;
             }
+        } catch (err) {
+            console.error(`[course-cover] ${provider} 生成异常，继续下一个提供方:`, err);
+            failures.push(isAbortError(err) ? `${provider} 生图请求超时` : err instanceof Error ? err.message : `${provider} 生图请求异常`);
         }
-
-        return null;
-    } catch (err) {
-        console.error("[course-cover] 生成异常:", err);
-        return null;
     }
+    if (params.throwOnError) throw new Error(failures.join("；") || "新封面生成失败，图片服务没有返回可用素材。");
+    return null;
 }
 
 /** 将封面图URL下载后，通过平台上传接口上传，返回可用于 trainTaskCover 的 fileId/fileUrl */
@@ -1928,6 +1979,7 @@ export async function createScriptFlow(
             },
             transitionPrompt: transitionPrompt,
             transitionHistoryNum: -1,
+            transitionSwitch: 0,
             isDefault,
             isError: false,
         },

@@ -556,6 +556,7 @@ async function createFlow(params: {
       flowSettingType: "quick",
       transitionPrompt: params.transitionPrompt,
       transitionHistoryNum: params.sourceFlow?.transitionHistoryNum ?? -1,
+      transitionSwitch: 0,
       isDefault: params.defaultFlow ? 1 : 0,
       isError: false,
     },

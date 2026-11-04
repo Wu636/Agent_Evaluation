@@ -825,7 +825,7 @@ function routeHarness(t, { sourceGate, generate } = {}) {
   return { route, clock, generated, completed, calls, controller, request };
 }
 
-function imageRouteHarness(t, { importMode = false } = {}) {
+function imageRouteHarness(t, { importMode = false, imageError } = {}) {
   const generated = { cover: [], background: [] };
   let injected = false;
   const params = fixture();
@@ -844,6 +844,7 @@ function imageRouteHarness(t, { importMode = false } = {}) {
         }),
         generateCourseCoverImageSource: async input => {
           generated.cover.push(input);
+          if (imageError) throw imageError;
           return { fileUrl: 'https://generated.invalid/cover.png' };
         },
         uploadCoverImageFromUrl: async fileUrl => ({
@@ -852,6 +853,7 @@ function imageRouteHarness(t, { importMode = false } = {}) {
         }),
         generateBackgroundImage: async input => {
           generated.background.push(input);
+          if (imageError) throw imageError;
           return { fileId: 'generated-background', fileUrl: 'https://files.invalid/background.png' };
         },
       },
@@ -1230,9 +1232,50 @@ test('route：generate-image 生成封面并上传素材，不读取源图或写
   assert.equal(typeof result.image.contextKey, 'string');
   assert.equal(h.generated.cover.length, 1);
   assert.equal(h.generated.cover[0].coverStylePrompt, '统一冷色调');
+  assert.equal(h.generated.cover[0].imageProviderPriority, 'openai', '使用所选图片模型的接口');
+  assert.equal(h.generated.cover[0].throwOnError, true, '保留具体生图错误');
   assert.equal(h.generated.background.length, 0);
   assert.equal(h.injected, false);
 });
+
+test('route：背景使用所选模型并保留当前卡片上下文', async t => {
+  const h = imageRouteHarness(t);
+  const response = await h.route.POST(h.request({
+    action: 'generate-image', sourceUrl: 'https://source.invalid/training',
+    credentials: { authorization: 'fake-auth', cookie: 'fake-cookie' },
+    plan: h.plan, injectScript: true, injectMode: 'replace',
+    imageKind: 'background', nodeId: 'node-a',
+    imageOptions: { generateCover: true, generateBackgrounds: true },
+    llmSettings: { imageModel: 'gpt-image-2' },
+  }));
+  const result = await response.json();
+  assert.equal(result.ok, true);
+  assert.equal(result.nodeId, 'node-a');
+  assert.equal(h.generated.background[0].imageModel, 'gpt-image-2');
+  assert.equal(h.generated.background[0].imageProviderPriority, 'openai');
+  assert.equal(h.generated.background[0].throwOnError, true);
+  assert.equal(h.injected, false);
+});
+
+for (const imageKind of ['cover', 'background']) {
+  test(`route：${imageKind} 透传具体模型错误，不写目标`, async t => {
+    const error = '图片模型 image-model 生成失败：gateway.invalid HTTP 429：rate limit';
+    const h = imageRouteHarness(t, { imageError: new Error(error) });
+    const response = await h.route.POST(h.request({
+      action: 'generate-image', sourceUrl: 'https://source.invalid/training',
+      credentials: { authorization: 'fake-auth', cookie: 'fake-cookie' },
+      plan: h.plan, injectScript: true, injectMode: 'replace',
+      imageKind, nodeId: 'node-a',
+      imageOptions: { generateCover: true, generateBackgrounds: true },
+      llmSettings: { imageModel: 'image-model' },
+    }));
+    const result = await response.json();
+    assert.equal(response.status, 400);
+    assert.equal(result.ok, false);
+    assert.equal(result.error, error);
+    assert.equal(h.injected, false);
+  });
+}
 
 test('route：导入前拒绝缺失或过期背景，平台写接口保持未调用', async t => {
   const h = imageRouteHarness(t, { importMode: true });

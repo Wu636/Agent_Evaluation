@@ -215,6 +215,8 @@ async function generateRefinementImage(
         arkApiKey: cleanText(body.llmSettings?.apiKey),
         llmApiUrl: cleanText(body.llmSettings?.apiUrl),
         imageModel,
+        imageProviderPriority: "openai",
+        throwOnError: true,
       },
       credentials,
     );
@@ -262,6 +264,8 @@ async function generateRefinementImage(
       arkApiKey: cleanText(body.llmSettings?.apiKey),
       llmApiUrl: cleanText(body.llmSettings?.apiUrl),
       imageModel,
+      imageProviderPriority: "openai",
+      throwOnError: true,
     },
     credentials,
   );

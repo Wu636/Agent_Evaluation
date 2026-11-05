@@ -66,7 +66,7 @@ const DEFAULT_IMAGE_PROVIDER_PRIORITY: ImageProvider[] = ["cloudapi", "openai"];
 
 const DEFAULT_BG_IMAGE_REQUIREMENT = "专业写实教学场景背景图，严格16:9横版宽屏构图，单一完整场景，画面干净稳定，适合作为课程阶段背景；禁止拼贴、多宫格、海报排版、极端透视、鱼眼、抽象艺术、卡通漫画；无任何文字、英文单词、logo、字幕、水印，尽量不要出现西方面孔和元素";
 const DEFAULT_COVER_STYLE_REQUIREMENT = "专业、简洁、写实的课程封面图，严格16:9横版宽屏构图，主体明确、构图完整、画面克制；禁止拼贴、多宫格、海报排版、卡通漫画、抽象风格；无任何文字、英文单词、logo、水印，尽量不要出现西方面孔和元素";
-const DEFAULT_SEEDREAM_IMAGE_SIZE = "2560x1440";
+const DEFAULT_LANDSCAPE_IMAGE_SIZE = "2560x1440";
 const DEFAULT_AVATAR_IMAGE_SIZE =
     process.env.POLYMAS_AVATAR_IMAGE_SIZE || "1920x1920";
 const CLOUDAPI_PROBE_PAYLOAD = {
@@ -862,7 +862,7 @@ function extractImageErrorDetail(value: unknown, depth = 0): string {
 
 async function generateImageViaArk(
     prompt: string,
-    options?: { apiKey?: string; secondaryApiKey?: string; endpoint?: string; cookie?: string; imageModel?: string; timeoutMs?: number; imageSize?: string; watermark?: boolean; throwOnError?: boolean }
+    options?: { apiKey?: string; secondaryApiKey?: string; endpoint?: string; cookie?: string; imageModel?: string; timeoutMs?: number; imageSize?: string; watermark?: boolean; throwOnError?: boolean; landscape?: boolean }
 ): Promise<{ fileUrl: string } | null> {
     const requestTimeoutMs = Number(options?.timeoutMs) > 0
         ? Number(options?.timeoutMs)
@@ -899,19 +899,21 @@ async function generateImageViaArk(
 
             const isDalleModel = isDalleImageModel(selectedModel);
             const isSeedreamModel = isSeedreamImageModel(selectedModel);
+            const landscape = options?.landscape === true;
+            const landscapeSize = options?.imageSize || DEFAULT_LANDSCAPE_IMAGE_SIZE;
             const requestBody = isDalleModel
                 ? {
                     model: selectedModel,
                     prompt,
                     n: 1,
-                    size: normalizeDalleImageSize(options?.imageSize),
+                    size: landscape ? "1792x1024" : normalizeDalleImageSize(options?.imageSize),
                     quality: "standard",
                 }
                 : isSeedreamModel
                     ? {
                         model: selectedModel,
                         prompt,
-                        size: options?.imageSize || DEFAULT_SEEDREAM_IMAGE_SIZE,
+                        size: landscape ? landscapeSize : options?.imageSize || DEFAULT_LANDSCAPE_IMAGE_SIZE,
                         response_format: "url",
                         sequential_image_generation: "disabled",
                         watermark,
@@ -919,6 +921,8 @@ async function generateImageViaArk(
                     : {
                         model: selectedModel,
                         prompt,
+                        n: 1,
+                        ...(landscape ? { size: landscapeSize } : {}),
                     };
 
             for (const authHeaders of authHeaderStrategies) {
@@ -1091,6 +1095,7 @@ export async function generateBackgroundImage(
                 cookie: credentials.cookie,
                 imageModel: params.imageModel,
                 timeoutMs: OPENAI_COMPAT_IMAGE_TIMEOUT_MS,
+                landscape: true,
                 throwOnError: params.throwOnError,
             });
 
@@ -1180,6 +1185,7 @@ export async function generateCourseCoverImageSource(
                 cookie: credentials.cookie,
                 imageModel: params.imageModel,
                 timeoutMs: Math.max(COVER_GENERATE_TIMEOUT_MS, OPENAI_COMPAT_IMAGE_TIMEOUT_MS),
+                landscape: true,
                 throwOnError: params.throwOnError,
             });
 

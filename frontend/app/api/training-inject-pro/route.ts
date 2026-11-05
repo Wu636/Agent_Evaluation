@@ -1328,7 +1328,7 @@ async function generateOpenAICompatibleImage(
           sequential_image_generation: "disabled",
           watermark: true,
         }
-      : { model, prompt, n: 1, size: "1792x1024" };
+      : { model, prompt, n: 1, size: "2560x1440" };
     const response = await fetch(POLYMAS_COMPAT_IMAGE_ENDPOINT, {
       method: "POST",
       headers: {
@@ -1342,7 +1342,17 @@ async function generateOpenAICompatibleImage(
     if (!response.ok) return null;
     const result = await response.json();
     const fileUrl = result?.data?.[0]?.url || "";
-    return fileUrl ? { fileUrl } : null;
+    if (fileUrl) return { fileUrl };
+    const b64 = result?.data?.[0]?.b64_json;
+    if (typeof b64 === "string" && b64.trim()) {
+      const trimmed = b64.trim();
+      return {
+        fileUrl: trimmed.startsWith("data:")
+          ? trimmed
+          : `data:image/png;base64,${trimmed}`,
+      };
+    }
+    return null;
   } catch (error) {
     console.error("[pro-image] OpenAI 兼容生图异常:", error);
     return null;

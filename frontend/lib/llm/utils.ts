@@ -33,6 +33,32 @@ function formatLlmNetworkError(baseUrl: string, error: unknown): Error {
     return error instanceof Error ? error : new Error(String(error || "LLM 请求失败"));
 }
 
+const LLM_NETWORK_RETRY_DELAYS_MS = [800, 2000, 4000];
+
+async function postLlmWithRetry(
+    url: string,
+    init: Omit<RequestInit, "signal">,
+    timeoutMs: number,
+): Promise<Response> {
+    for (let attempt = 0; ; attempt += 1) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            return await fetch(url, { ...init, signal: controller.signal });
+        } catch (error) {
+            if ((error as { name?: string })?.name === "AbortError") throw error;
+            if (attempt >= LLM_NETWORK_RETRY_DELAYS_MS.length) {
+                throw formatLlmNetworkError(url, error);
+            }
+            await new Promise((resolve) =>
+                setTimeout(resolve, LLM_NETWORK_RETRY_DELAYS_MS[attempt]),
+            );
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+}
+
 function buildLlmHeaders(apiKey?: string): Record<string, string> {
     const headers: Record<string, string> = {
         "api-key": apiKey || "",
@@ -296,24 +322,21 @@ export async function callLLM(
     const startTime = Date.now();
 
     try {
-        // 使用 AbortController 来控制超时
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 180000); // 3分钟超时
-
+        // 3 分钟超时；连接被重置时自动重试，避免整条测试因偶发断链中断
         let response: Response;
         try {
-            response = await fetch(baseUrl, {
-                method: "POST",
-                headers: buildLlmHeaders(apiKey),
-                body: JSON.stringify(payload),
-                signal: controller.signal,
-            });
+            response = await postLlmWithRetry(
+                baseUrl,
+                {
+                    method: "POST",
+                    headers: buildLlmHeaders(apiKey),
+                    body: JSON.stringify(payload),
+                },
+                180000,
+            );
         } catch (error) {
-            clearTimeout(timeoutId);
             throw formatLlmNetworkError(baseUrl, error);
         }
-
-        clearTimeout(timeoutId);
 
         const elapsed = Date.now() - startTime;
         console.log(`[LLM响应] 耗时: ${elapsed}ms, 状态: ${response.status}`);

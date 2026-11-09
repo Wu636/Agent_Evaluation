@@ -53,6 +53,7 @@ homework_review/runtime/outputs/
 homework_review/runtime/uploads/
 
 # 临时文件
+tmp/
 temp_*
 *.tmp
 *.bak

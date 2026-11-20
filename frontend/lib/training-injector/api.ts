@@ -59,7 +59,8 @@ const ARK_IMAGE_ENDPOINT = process.env.ARK_IMAGE_ENDPOINT || "https://ark.cn-bei
 const ARK_IMAGE_MODEL = process.env.ARK_IMAGE_MODEL || "doubao-seedream-5-0-260128";
 const POLYMAS_IMAGE_FALLBACK_API_KEY =
     process.env.POLYMAS_IMAGE_FALLBACK_API_KEY ||
-    "sk-jqzsYB7vjZ6NEdfsP7oZ17Gti45cSMrHSCxQJzq7hz8Coq7h";
+    process.env.LLM_API_KEY ||
+    "";
 
 type ImageProvider = "cloudapi" | "openai";
 const DEFAULT_IMAGE_PROVIDER_PRIORITY: ImageProvider[] = ["cloudapi", "openai"];

@@ -48,7 +48,9 @@ const POLYMAS_COMPAT_IMAGE_ENDPOINT =
   process.env.POLYMAS_OPENAI_IMAGE_ENDPOINT ||
   "https://llm-service-beta.polymas.com/api/openai/v1/images/generations";
 const POLYMAS_IMAGE_FALLBACK_API_KEY =
-  process.env.POLYMAS_IMAGE_FALLBACK_API_KEY || "";
+  process.env.POLYMAS_IMAGE_FALLBACK_API_KEY ||
+  process.env.LLM_API_KEY ||
+  "";
 
 const DEFAULT_STEP_MODEL_CODE = "deepseek-v4-flash";
 const STAGE_POSITION_X = 0;

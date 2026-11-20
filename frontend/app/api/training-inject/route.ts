@@ -4,6 +4,9 @@
  */
 
 import { NextRequest } from "next/server";
+import { resolveImagePreservation } from "@/lib/training-injector/image-preservation";
+import { resolveRubricFastPath } from "@/lib/training-injector/rubric-structured.mjs";
+import { imagePreparationScope, prepareImages, type ImagePreparationJob } from "@/lib/training-injector/image-preparation";
 import { parseTrainingScript, parseRubricMarkdown, parseTaskConfig, parseTrainingScriptFlowConfig } from "@/lib/training-injector/parser";
 import { extractScriptConfig, extractRubricConfig, LLMSettings } from "@/lib/training-injector/llm-extractor";
 import {
@@ -349,6 +352,10 @@ export async function POST(request: NextRequest) {
                     }
                 }
 
+                const rubricFastPath = rubricMarkdown && credentials.trainSubType !== "oral"
+                    ? resolveRubricFastPath(rubricMarkdown, body.structuredRubric) : null;
+                if (rubricFastPath && !rubricFastPath.ok && rubricFastPath.blocked) throw new Error("结构化评分包含无法保真写入的字段，已停止，禁止AI回退覆盖原评分");
+
                 let stepsCreated = 0;
                 let flowsCreated = 0;
                 let scoreItemsCreated = 0;
@@ -465,60 +472,71 @@ export async function POST(request: NextRequest) {
                         send({ type: "progress", phase: "script", message: `已选择注入 ${steps.reduce((count, step) => count + step.vocabularyPayload.length, 0)} 条阶段重点词汇`, current: 0, total: steps.length });
                     }
 
-                    // 3.1 课程封面图：先生成源图，再走上传接口，最终用于 trainTaskCover
-                    let trainTaskCover: { fileId: string; fileUrl: string } | null = null;
-                    const shouldProcessCoverImage = injectCoverImage && injectMode !== "append";
-                    if (!shouldProcessCoverImage) {
-                        send({
-                            type: "progress",
-                            phase: "script",
-                            message: injectMode === "append" && injectCoverImage
-                                ? "追加模式已跳过课程封面图注入，避免覆盖已有封面"
-                                : "已跳过课程封面图注入",
-                            current: 0,
-                            total: steps.length,
-                        });
-                    } else if (finalCourseId && taskConfig?.trainTaskName) {
-                        send({ type: "progress", phase: "script", message: "正在生成课程封面图...", current: 0, total: steps.length });
-                        try {
-                            const coverSource = await generateCourseCoverImageSource(
-                                {
-                                    trainName: taskConfig.trainTaskName,
-                                    trainDescription: taskConfig?.description || "",
-                                    coverStylePrompt: (coverStylePrompt || "").trim() || undefined,
-                                    arkApiKey: llmSettings?.apiKey,
-                                    llmApiUrl: llmSettings?.apiUrl,
-                                    imageModel: imageModel || undefined,
-                                    imageProviderPriority,
-                                },
-                                credentials
-                            );
-
-                            if (coverSource?.fileUrl) {
-                                if (coverSource.fileId) {
-                                    trainTaskCover = {
-                                        fileId: coverSource.fileId,
-                                        fileUrl: coverSource.fileUrl,
-                                    };
-                                } else {
-                                    send({ type: "progress", phase: "script", message: "正在上传课程封面图...", current: 0, total: steps.length });
-                                    trainTaskCover = await uploadCoverImageFromUrl(coverSource.fileUrl, credentials);
-                                }
-                                if (trainTaskCover) {
-                                    send({ type: "progress", phase: "script", message: "课程封面图准备完成", current: 0, total: steps.length });
-                                } else {
-                                    send({ type: "progress", phase: "script", message: "课程封面图上传失败，将跳过封面设置", current: 0, total: steps.length });
-                                }
-                            } else {
-                                send({ type: "progress", phase: "script", message: "课程封面图生成失败，将跳过封面设置", current: 0, total: steps.length });
-                            }
-                        } catch (err) {
-                            console.warn("课程封面图生成/上传失败:", err);
-                            send({ type: "progress", phase: "script", message: "课程封面图处理异常，将跳过封面设置", current: 0, total: steps.length });
-                        }
-                    } else if (shouldProcessCoverImage) {
-                        send({ type: "progress", phase: "script", message: "缺少课程ID或任务名称，跳过课程封面图注入", current: 0, total: steps.length });
+                    // Prepare only validated, eligible images. Background generation returns an
+                    // uploaded resource (not a stage binding); node binding remains sequential below.
+                    const imageStrategy = body.imageStrategy ?? "regenerate";
+                    if (!["regenerate", "preserve", "missing"].includes(imageStrategy)) throw new Error("Invalid imageStrategy");
+                    const imageConcurrency = body.imageConcurrency ?? 3;
+                    const imageCacheMode = body.imageCacheMode ?? "reuse";
+                    const imagePrepareOnly = body.imagePrepareOnly === true;
+                    const imagePrepareIds = body.imagePrepareIds;
+                    if (imagePrepareIds !== undefined && (!imagePrepareOnly || !Array.isArray(imagePrepareIds) || imagePrepareIds.some((id: unknown) => typeof id !== "string"))) {
+                        throw new Error("imagePrepareIds requires imagePrepareOnly and an array of image IDs");
                     }
+                    const [existingSteps, existingFlows, imageSourceConfiguration] = await Promise.all([
+                        queryScriptSteps(finalTrainTaskId, credentials),
+                        queryScriptFlows(finalTrainTaskId, credentials),
+                        imageStrategy !== "regenerate" ? queryTrainingTaskConfiguration({ trainTaskId: finalTrainTaskId, courseId: finalCourseId }, credentials) : Promise.resolve(null),
+                    ]);
+                    if (imageStrategy !== "regenerate" && !imageSourceConfiguration) throw new Error("Cannot read existing image configuration; refusing destructive rebuild");
+                    const preservedImages = resolveImagePreservation(imageStrategy, steps, getScriptNodes(existingSteps), imageSourceConfiguration?.trainTaskCover);
+                    const { startId, endId } = extractStartEndIds(existingSteps);
+                    if (!startId || !endId) throw new Error("未找到 START/END 节点，已停止图片准备和注入");
+                    const existingNames = new Set(getScriptNodes(existingSteps).map(step => normalizeStageNameForAppend(step.stepDetailDTO?.stepName)));
+                    const eligibleSteps = steps.filter(step => injectMode !== "append" || !existingNames.has(normalizeStageNameForAppend(step.stepName)));
+                    const canSetBgImage = !!(injectBackgroundImage && finalCourseId && finalLibraryFolderId);
+                    const shouldProcessCoverImage = injectCoverImage && injectMode !== "append";
+                    const baseImageInput = {
+                        trainName: taskConfig?.trainTaskName || "训练任务",
+                        trainDescription: taskConfig?.description || "",
+                        llmApiUrl: llmSettings?.apiUrl || "",
+                        imageModel: imageModel || "",
+                        imageProviderPriority: imageProviderPriority || "",
+                    };
+                    const imageJobs: ImagePreparationJob[] = [];
+                    if (shouldProcessCoverImage && imageStrategy !== "preserve" && !preservedImages.cover && finalCourseId && taskConfig?.trainTaskName) {
+                        const input = { ...baseImageInput, coverStylePrompt: (coverStylePrompt || "").trim() || undefined };
+                        imageJobs.push({ id: "cover", fingerprint: input, generate: async () => {
+                            const source = await generateCourseCoverImageSource({ ...input, arkApiKey: llmSettings?.apiKey }, credentials);
+                            if (!source?.fileUrl) return null;
+                            return source.fileId ? { fileId: source.fileId, fileUrl: source.fileUrl } : uploadCoverImageFromUrl(source.fileUrl, credentials);
+                        } });
+                    }
+                    const backgroundJobIds = new Map<any, string>();
+                    eligibleSteps.forEach((step, index) => {
+                        if (!canSetBgImage || imageStrategy === "preserve" || preservedImages.backgrounds.get(String(step.stepName).trim())?.present) return;
+                        const id = `background:${index + 1}`;
+                        backgroundJobIds.set(step, id);
+                        const input = { ...baseImageInput, stageName: step.stepName, stageDescription: step.description || "", backgroundStylePrompt: (backgroundStylePrompt || "").trim() || undefined };
+                        imageJobs.push({ id, fingerprint: input, generate: () => generateBackgroundImage({ ...input, arkApiKey: llmSettings?.apiKey }, credentials) });
+                    });
+                    if (imagePrepareIds?.some((id: string) => !imageJobs.some(job => job.id === id))) throw new Error("Unknown imagePrepareIds");
+                    if (body.imageRefreshIds !== undefined && (!Array.isArray(body.imageRefreshIds) || body.imageRefreshIds.some((id: unknown) => typeof id !== "string"))) throw new Error("Invalid imageRefreshIds");
+                    const preparation = prepareImages(imagePrepareIds ? imageJobs.filter(job => imagePrepareIds.includes(job.id)) : imageJobs, {
+                        scope: imagePreparationScope({ userId: credentials.userNid, courseId: finalCourseId, taskId: finalTrainTaskId, apiOrigin: credentials.apiOrigin, authorization: credentials.authorization, cookie: credentials.cookie, generationKey: llmSettings?.apiKey }),
+                        concurrency: imageConcurrency, cacheMode: imageCacheMode, refreshIds: body.imageRefreshIds,
+                        onResult: result => send({ type: "progress", phase: "script", message: `[image] ${result.id} ${result.failed ? "失败/待补图" : "准备完成"}; cache=${result.cache}; durationMs=${result.durationMs}; queueMs=${result.queueMs}`, current: 0, total: imageJobs.length }),
+                    });
+                    if (imagePrepareOnly) {
+                        const results = await preparation.done;
+                        const failures = results.filter(result => result.failed).map(result => result.id);
+                        if (failures.length) send({ type: "error", message: `图片准备未全部完成：${failures.join(", ")}；可按imagePrepareIds单图补跑，不重建节点` });
+                        else send({ type: "complete", message: "图片准备完成；仅生成/上传素材，未修改任务、阶段、评分或发布", summary: { stepsCreated: 0, flowsCreated: 0, scoreItemsCreated: 0, stepsDeleted: 0, flowsDeleted: 0 } });
+                        controller.close();
+                        return;
+                    }
+                    let trainTaskCover = preservedImages.cover || (await preparation.results.get("cover"))?.image || null;
+                    if (!shouldProcessCoverImage) send({ type: "progress", phase: "script", message: "已跳过课程封面图注入", current: 0, total: steps.length });
 
                     // 3. 主注入路径完整更新基础配置：名称、描述、入口音色、封面图
                     if (finalCourseId && (taskConfig?.trainTaskName || taskConfig?.description || trainTaskCover)) {
@@ -596,20 +614,9 @@ export async function POST(request: NextRequest) {
                     }
 
                     // 提前检测背景图能力
-                    const canSetBgImage = !!(injectBackgroundImage && finalCourseId && finalLibraryFolderId);
                     const shouldGenerateDigitalHumanAvatar = injectDigitalHuman && digitalHumanAvatarMode === "ai";
 
-                    // 查询现有节点和连线
-                    send({ type: "progress", phase: "script", message: "正在查询现有工作流...", current: 0, total: steps.length });
-                    const existingSteps = await queryScriptSteps(finalTrainTaskId, credentials);
-                    const existingFlows = await queryScriptFlows(finalTrainTaskId, credentials);
-                    const { startId, endId } = extractStartEndIds(existingSteps);
-
-                    if (!startId || !endId) {
-                        send({ type: "error", message: `未找到 START/END 节点（查询到 ${existingSteps.length} 个节点）。请确认：1) 任务链接/ID 正确；2) 已在平台上打开过该任务的工作流编辑页（系统会自动初始化 START/END）；3) 凭证未过期。` });
-                        controller.close();
-                        return;
-                    }
+                    // Reuse the pre-image read-only snapshot; platform writes remain ordered.
                     const startStep = existingSteps.find((step) => step.stepId === startId)!;
                     const endStep = existingSteps.find((step) => step.stepId === endId)!;
 
@@ -820,44 +827,9 @@ export async function POST(request: NextRequest) {
                     for (let i = 0; i < steps.length; i++) {
                         const step = steps[i];
 
-                        // 生成背景图（仅在有 courseId + libraryFolderId 时才生成）
-                        let bgImage: { fileId: string; fileUrl: string } | null = null;
-                        if (canSetBgImage) {
-                            send({
-                                type: "progress",
-                                phase: "script",
-                                message: `正在为「${step.stepName}」生成背景图 (${i + 1}/${steps.length})...`,
-                                current: i + 1,
-                                total: steps.length,
-                            });
-
-                            try {
-                                const trainName = taskConfig?.trainTaskName || "训练任务";
-                                const trainDesc = taskConfig?.description || "";
-                                bgImage = await generateBackgroundImage(
-                                    {
-                                        trainName,
-                                        trainDescription: trainDesc,
-                                        stageName: step.stepName,
-                                        stageDescription: step.description || "",
-                                        backgroundStylePrompt: (backgroundStylePrompt || "").trim() || undefined,
-                                        arkApiKey: llmSettings?.apiKey,
-                                        llmApiUrl: llmSettings?.apiUrl,
-                                        imageModel: imageModel || undefined,
-                                        imageProviderPriority,
-                                    },
-                                    credentials
-                                );
-                            if (bgImage) {
-                                send({ type: "progress", phase: "script", message: `背景图生成成功`, current: i + 1, total: steps.length });
-                            } else {
-                                send({ type: "progress", phase: "script", message: `背景图生成跳过（返回为空）`, current: i + 1, total: steps.length });
-                            }
-                            } catch (err) {
-                                console.warn("背景图生成失败:", err);
-                                send({ type: "progress", phase: "script", message: `背景图生成失败，将跳过`, current: i + 1, total: steps.length });
-                            }
-                        } // end canSetBgImage
+                        const preservedBackground = preservedImages.backgrounds.get(String(step.stepName).trim());
+                        const bgJobId = backgroundJobIds.get(step);
+                        const bgImage = bgJobId ? (await preparation.results.get(bgJobId))?.image || null : null;
 
                         // 创建节点
                         send({
@@ -1249,8 +1221,8 @@ export async function POST(request: NextRequest) {
                                         scriptStepCover: bgImage ? {
                                             fileId: bgImage.fileId,
                                             fileUrl: bgImage.fileUrl,
-                                        } : (step.scriptStepCover || {}),
-                                        backgroundTheme: bgImage?.fileId || null,
+                                        } : (preservedBackground ? preservedBackground.cover : (step.scriptStepCover || {})),
+                                        backgroundTheme: bgImage?.fileId || preservedBackground?.theme || null,
                                         injectDigitalHuman,
                                         customDigitalHuman: customDigitalHuman || null,
                                     },
@@ -1482,8 +1454,13 @@ export async function POST(request: NextRequest) {
                 if (rubricMarkdown && credentials.trainSubType !== "oral") {
                     let items: any[] = [];
 
-                    // 1. LLM 提取（仅非 regex 模式时尝试）
-                    if (extractionMode !== "regex" && llmSettings?.apiKey && llmSettings?.apiUrl && llmSettings?.model) {
+                    // Deterministic / exact platform data avoids a second model extraction.
+                    if (rubricFastPath?.ok) {
+                        items = rubricFastPath.items;
+                        send({ type: "progress", phase: "rubric", message: `评分标准结构化直通：${rubricFastPath.source}，跳过AI提取`, current: 1, total: 1 });
+                    }
+                    // Fall back only when structured input could not be validated.
+                    if (items.length === 0 && extractionMode !== "regex" && llmSettings?.apiKey && llmSettings?.apiUrl && llmSettings?.model) {
                         send({
                             type: "progress",
                             phase: "rubric",

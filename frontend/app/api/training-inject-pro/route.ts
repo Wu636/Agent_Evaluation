@@ -11,6 +11,8 @@ import {
   ProStageConfig,
 } from "@/lib/training-generator-pro/types";
 import { parseProMarkdown } from "@/lib/training-injector-pro/parser";
+import { prepareProImages, buildProImageJobs, retainedProImages, type ProImageStrategy } from "@/lib/training-injector-pro/image-preparation";
+import { imagePreparationScope } from "@/lib/training-injector/image-preparation";
 import { encodePromptRoleTags } from "@/lib/training-injector-pro/prompt-role-tags";
 import { generateAndSyncDigitalHumanAvatar } from "@/lib/training-injector/api";
 import type { PolymasCredentials } from "@/lib/training-injector/types";
@@ -46,8 +48,7 @@ const POLYMAS_COMPAT_IMAGE_ENDPOINT =
   process.env.POLYMAS_OPENAI_IMAGE_ENDPOINT ||
   "https://llm-service-beta.polymas.com/api/openai/v1/images/generations";
 const POLYMAS_IMAGE_FALLBACK_API_KEY =
-  process.env.POLYMAS_IMAGE_FALLBACK_API_KEY ||
-  "sk-jqzsYB7vjZ6NEdfsP7oZ17Gti45cSMrHSCxQJzq7hz8Coq7h";
+  process.env.POLYMAS_IMAGE_FALLBACK_API_KEY || "";
 
 const DEFAULT_STEP_MODEL_CODE = "deepseek-v4-flash";
 const STAGE_POSITION_X = 0;
@@ -80,6 +81,10 @@ interface InjectProRequestBody {
   digitalHumanAvatarStylePrompt?: string;
   imageProviderMode?: ImageProviderMode;
   imageModel?: string;
+  imageStrategy?: ProImageStrategy;
+  imageConcurrency?: number;
+  imageCacheMode?: "reuse" | "refresh" | "off";
+  imageRefreshIds?: string[];
   injectCoverImage?: boolean;
   injectBackgroundImage?: boolean;
   skillIds?: string[];
@@ -1281,8 +1286,6 @@ async function generateCloudapiImage(
   payload: Record<string, unknown>,
 ): Promise<UploadedImage | null> {
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
     const response = await fetch(
       `${CLOUDAPI_BASE_URL}/ai-tools/image/generate`,
       {
@@ -1294,10 +1297,9 @@ async function generateCloudapiImage(
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
         },
         body: JSON.stringify(payload),
-        signal: controller.signal,
+        signal: AbortSignal.timeout(30_000),
       },
     );
-    clearTimeout(timer);
     if (!response.ok) return null;
     const result = (await response.json()) as PlatformApiEnvelope<any>;
     if (!isSuccessEnvelope(result)) return null;
@@ -1317,8 +1319,6 @@ async function generateOpenAICompatibleImage(
 ): Promise<UploadedImage | null> {
   if (!POLYMAS_IMAGE_FALLBACK_API_KEY) return null;
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 120_000);
     const payload = /^doubao-seedream-/i.test(model)
       ? {
           model,
@@ -1336,9 +1336,8 @@ async function generateOpenAICompatibleImage(
         Authorization: `Bearer ${POLYMAS_IMAGE_FALLBACK_API_KEY}`,
       },
       body: JSON.stringify(payload),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(120_000),
     });
-    clearTimeout(timer);
     if (!response.ok) return null;
     const result = await response.json();
     const fileUrl = result?.data?.[0]?.url || "";
@@ -1364,14 +1363,8 @@ async function uploadImageFromUrl(
   cookie: string,
 ): Promise<UploadedImage | null> {
   try {
-    let response = await fetch(fileUrl, {
-      headers: {
-        Cookie: cookie,
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-      },
-    });
-    if (!response.ok) response = await fetch(fileUrl);
+    // Generated URLs can belong to third-party storage; never forward platform cookies.
+    const response = await fetch(fileUrl, { signal: AbortSignal.timeout(120_000) });
     if (!response.ok) return null;
 
     const contentType = response.headers.get("content-type") || "image/png";
@@ -1405,6 +1398,7 @@ async function uploadImageFromUrl(
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
         },
         body: formData,
+        signal: AbortSignal.timeout(120_000),
       },
     );
     if (!uploadResponse.ok) return null;
@@ -1434,7 +1428,9 @@ async function generateAndUploadImage(
 ): Promise<UploadedImage | null> {
   if (providerMode === "cloudapi" || providerMode !== "openai") {
     const cloudImage = await generateCloudapiImage(cookie, params);
-    if (cloudImage) return cloudImage;
+    if (cloudImage?.fileId) return cloudImage;
+    // A URL without a platform file ID may be temporary: upload before binding/cache.
+    if (cloudImage?.fileUrl) return uploadImageFromUrl(cloudImage.fileUrl, cookie);
   }
 
   const prompt = `${params.stageDescription}
@@ -1446,7 +1442,8 @@ async function generateAndUploadImage(
     prompt,
   );
   if (!generated?.fileUrl) return null;
-  return (await uploadImageFromUrl(generated.fileUrl, cookie)) || generated;
+  // Never bind/cache a generator URL when the platform upload failed.
+  return uploadImageFromUrl(generated.fileUrl, cookie);
 }
 
 function buildOptions(body: InjectProRequestBody): InjectOptions {
@@ -1755,12 +1752,22 @@ export async function POST(request: NextRequest) {
     return jsonResponse({ error: "缺少必要参数: markdown" }, 400);
   }
 
+  const imageConcurrency = body.imageConcurrency ?? 3;
+  const imageStrategy = body.imageStrategy || "regenerate";
+  if (!["preserve", "missing", "regenerate"].includes(imageStrategy)) return jsonResponse({ error: "无效imageStrategy" }, 400);
+  if (!Number.isInteger(imageConcurrency) || imageConcurrency < 1 || imageConcurrency > 8 ||
+      !["reuse", "refresh", "off"].includes(body.imageCacheMode || "reuse") ||
+      (body.imageRefreshIds !== undefined && (!Array.isArray(body.imageRefreshIds) || body.imageRefreshIds.some(id => typeof id !== "string")))) {
+    return jsonResponse({ error: "图片准备参数无效：imageConcurrency 为1–8整数，imageCacheMode 为reuse/refresh/off" }, 400);
+  }
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      let streamOpen = true;
       const sendEvent = (data: Record<string, unknown>) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        if (streamOpen) controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
       };
+      let imagePreparation: ReturnType<typeof prepareProImages> | undefined;
 
       try {
         sendEvent({ type: "start", message: "开始注入 Pro 训练配置..." });
@@ -1791,7 +1798,33 @@ export async function POST(request: NextRequest) {
           authorization,
           deriveAuth,
         );
-        const taskDetail = await api.getTaskDetail().catch(() => null);
+        // Verify target access before starting any billable image preparation.
+        const taskDetail = await api.getTaskDetail();
+        const retained = imageStrategy === "regenerate" ? new Map<string, string>()
+          : retainedProImages(taskDetail, await api.listSteps(), stages);
+        const imagePlan = { global: globalConfig, stages, options, strategy: imageStrategy, retained };
+        if (options.imageProviderMode === "openai" && !POLYMAS_IMAGE_FALLBACK_API_KEY &&
+            buildProImageJobs(imagePlan, async () => null).length > 0) {
+          throw new Error("未配置 Pro OpenAI 兼容图片服务凭据，请配置 POLYMAS_IMAGE_FALLBACK_API_KEY");
+        }
+        sendEvent({ type: "progress", phase: "images", message: `图片策略 ${imageStrategy}，保留 ${retained.size} 个已知素材引用（不含附件）` });
+        imagePreparation = prepareProImages(
+          imagePlan,
+          async params => {
+            const image = await generateAndUploadImage(cookie, params, options.imageProviderMode, options.imageModel);
+            return image?.fileId && image.fileUrl ? { fileId: image.fileId, fileUrl: image.fileUrl } : null;
+          },
+          {
+            scope: imagePreparationScope({ userId: userNid, courseId: target.courseId,
+              taskId: trainTaskId, apiOrigin: `${CLOUDAPI_BASE_URL}|${POLYMAS_COMPAT_IMAGE_ENDPOINT}`, authorization, cookie,
+              generationKey: POLYMAS_IMAGE_FALLBACK_API_KEY }),
+            concurrency: imageConcurrency, cacheMode: body.imageCacheMode || "reuse",
+            refreshIds: body.imageRefreshIds,
+            onResult: result => sendEvent({ type: "progress", phase: "images",
+              message: `图片准备 ${result.id}: ${result.failed ? "失败（独立跳过）" : "完成"}`,
+              imageId: result.id, cache: result.cache, durationMs: result.durationMs, queueMs: result.queueMs }),
+          },
+        );
 
         let skillTypes: PlatformSkillType[] = [];
         try {
@@ -1867,7 +1900,7 @@ export async function POST(request: NextRequest) {
           total: 1,
         });
 
-        if (options.injectCoverImage && globalConfig.coverImageDescription) {
+        if (retained.has("cover") || (imageStrategy !== "preserve" && options.injectCoverImage && globalConfig.coverImageDescription)) {
           sendEvent({
             type: "progress",
             phase: "global_config",
@@ -1876,19 +1909,8 @@ export async function POST(request: NextRequest) {
             total: 1,
           });
           try {
-            const coverImage = await generateAndUploadImage(
-              cookie,
-              {
-                trainName: globalConfig.abilityName,
-                trainDescription:
-                  globalConfig.description || globalConfig.abilityName,
-                stageName: `${globalConfig.abilityName} 课程封面`,
-                stageDescription: `${globalConfig.coverImageDescription}
-封面风格要求：${options.coverStylePrompt}`,
-              },
-              options.imageProviderMode,
-              options.imageModel,
-            );
+            const coverImage = retained.has("cover") ? { fileUrl: retained.get("cover")! }
+              : (await imagePreparation.results.get("cover"))?.image;
             if (coverImage) {
               await api.editTask({
                 trainTaskId,
@@ -1898,7 +1920,7 @@ export async function POST(request: NextRequest) {
               sendEvent({
                 type: "progress",
                 phase: "global_config",
-                message: "封面图已生成并注入",
+                message: retained.has("cover") ? "已有封面引用已保留" : "封面图已生成并注入",
                 current: 1,
                 total: 1,
               });
@@ -2614,9 +2636,9 @@ export async function POST(request: NextRequest) {
             total: stages.length,
           });
 
-          let backgroundImageUrl: string | null = null;
+          let backgroundImageUrl: string | null = retained.get(`background:${index}`) || null;
           if (
-            options.injectBackgroundImage &&
+            !backgroundImageUrl && imageStrategy !== "preserve" && options.injectBackgroundImage &&
             stage.backgroundImageDescription
           ) {
             sendEvent({
@@ -2627,19 +2649,7 @@ export async function POST(request: NextRequest) {
               total: stages.length,
             });
             try {
-              const backgroundImage = await generateAndUploadImage(
-                cookie,
-                {
-                  trainName: globalConfig.abilityName,
-                  trainDescription:
-                    globalConfig.description || globalConfig.abilityName,
-                  stageName: stage.cardName,
-                  stageDescription: `${stage.backgroundImageDescription}
-背景风格要求：${options.backgroundStylePrompt}`,
-                },
-                options.imageProviderMode,
-                options.imageModel,
-              );
+              const backgroundImage = (await imagePreparation.results.get(`background:${index}`))?.image;
               if (backgroundImage) {
                 backgroundImageUrl = backgroundImage.fileUrl;
                 sendEvent({
@@ -2717,6 +2727,9 @@ export async function POST(request: NextRequest) {
           }`,
         });
       } finally {
+        // Drain preparation before closing SSE; no late progress writes or orphaned queued work.
+        await imagePreparation?.done;
+        streamOpen = false;
         controller.close();
       }
     },

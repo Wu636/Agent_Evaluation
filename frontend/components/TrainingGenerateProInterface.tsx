@@ -40,6 +40,7 @@ import {
   PRO_PROMPT_TEMPLATE_TAG,
   PRO_SCRIPT_TEMPLATE,
   PRO_TEMPLATE_VERSION,
+  resolveProPromptTemplateCache,
 } from "@/lib/training-generator-pro/prompts";
 import { loadLLMSettingsFromStorage } from "@/lib/llm/settings";
 import { stripRubricSections } from "@/lib/training-generator/doc-sections";
@@ -218,11 +219,7 @@ export function TrainingGenerateProInterface() {
     if (typeof window === "undefined") return PRO_SCRIPT_TEMPLATE;
     try {
       const saved = window.localStorage.getItem(PRO_PROMPT_SETTINGS_KEY);
-      if (!saved) return PRO_SCRIPT_TEMPLATE;
-      const parsed = JSON.parse(saved) as { version?: number; template?: string };
-      return parsed.version === PRO_TEMPLATE_VERSION && parsed.template
-        ? parsed.template
-        : PRO_SCRIPT_TEMPLATE;
+      return resolveProPromptTemplateCache(saved);
     } catch {
       return PRO_SCRIPT_TEMPLATE;
     }

@@ -1945,6 +1945,17 @@ export async function editScriptStepDetailDTO(
     return result.success;
 }
 
+/** Edit an existing flow in place; preserve its ID, topology and full raw payload. */
+export async function editScriptFlowDTO(
+    trainTaskId: string,
+    flow: Record<string, unknown>,
+    credentials: PolymasCredentials
+): Promise<boolean> {
+    if (!flow.flowId || flow.trainTaskId !== trainTaskId) throw new Error('连线目标不一致');
+    const result = await directRequest('editScriptStepFlow', { ...flow, trainTaskId }, credentials);
+    return result.success;
+}
+
 /** 创建连线 */
 export async function createScriptFlow(
     trainTaskId: string,

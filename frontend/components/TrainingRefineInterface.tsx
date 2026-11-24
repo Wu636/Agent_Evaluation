@@ -2291,7 +2291,7 @@ function LogPanel({
       <pre
         className={`min-h-36 max-h-96 overflow-auto whitespace-pre-wrap rounded-md px-3 py-3 text-xs leading-5 ${error ? "bg-red-50 text-red-800 ring-1 ring-red-100" : "bg-slate-950 text-slate-100"}`}
       >
-        {error || log || "等待拉取源训练……"}
+        {[error, log].filter(Boolean).join("\n\n") || "等待拉取源训练……"}
       </pre>
     </Panel>
   );

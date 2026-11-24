@@ -51,7 +51,7 @@ test('只剧本输出禁止复述教师原评分，同时保留平台既有评�
 test('每个阶段显式输出剧本模型，不能由成员模型代替', () => {
   assert.match(PRO_SCRIPT_TEMPLATE, /每个阶段.*剧本模型/);
   const stageFormat = PRO_SCRIPT_TEMPLATE.split('## 训练剧本')[1].split('# 最终约束')[0];
-  assert.match(stageFormat, /^\*\*剧本模型\*\*: Doubao-Seed-2\.0-pro$/m);
+  assert.match(stageFormat, /^\*\*剧本模型\*\*: deepseek-v4-flash$/m);
   assert.match(stageFormat, /每个阶段.*剧本模型/);
   assert.match(PRO_SCRIPT_TEMPLATE, /成员.*模型.*不能替代.*剧本模型/);
 });

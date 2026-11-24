@@ -263,7 +263,7 @@ python merge_training.py --import \
     "stepName": "关卡1.1：理解封装",      # 节点名称（用于关卡识别）
     "description": "...",                # 节点描述
     "prologue": "...",                   # 开场白
-    "modelId": "Doubao-Seed-2.0-pro",   # 模型ID
+    "modelId": "deepseek-v4-flash",   # 模型ID
     "llmPrompt": "...",                  # 提示词
     "trainerName": "...",                # 训练官名称
     "interactiveRounds": 5,              # 互动轮次

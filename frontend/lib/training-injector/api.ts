@@ -41,7 +41,7 @@ export function resolveCloudapiRoot(
 function resolvePolymasApiBase(credentials: PolymasCredentials, path: string): string {
     return `${resolveCloudapiRoot(credentials)}/${path}`;
 }
-const DEFAULT_SCRIPT_MODEL_ID = "Doubao-Seed-2.0-pro";
+const DEFAULT_SCRIPT_MODEL_ID = "deepseek-v4-flash";
 const DEFAULT_DIGITAL_HUMAN_USER_NID =
     process.env.POLYMAS_DIGITAL_HUMAN_USER_NID || "XnRLWOeg6H";
 const DEFAULT_AGENT_ID = process.env.POLYMAS_DEFAULT_AGENT_ID || "Tg3LpKo28D";

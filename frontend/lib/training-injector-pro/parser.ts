@@ -127,7 +127,7 @@ export function parseProMembers(markdown: string): ProMemberConfig[] {
         extractField(block, "角色描述") ||
         extractField(block, "描述") ||
         `你是${name}，在实训中承担相应职责。`,
-      modelId: extractField(block, "模型") || "Doubao-Seed-2.0-pro",
+      modelId: extractField(block, "模型") || "deepseek-v4-flash",
       voiceName: extractField(block, "声音") || "",
       avatarDescription:
         extractField(block, "形象描述") || extractField(block, "形象") || "",

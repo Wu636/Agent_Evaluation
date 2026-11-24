@@ -700,10 +700,10 @@ function findReusableDigitalHumanByName(
 }
 
 function normalizeModelId(value: string): string {
-  // 平台存储与展示均使用原始模型名（如 "Doubao-Seed-2.0-pro"），
+  // 平台存储与展示均使用原始模型名（如 "deepseek-v4-flash"），
   // 不做小写/横线转换，保证注入值与配置预览一致。
   const trimmed = String(value || "").trim();
-  return trimmed || "Doubao-Seed-2.0-pro";
+  return trimmed || "deepseek-v4-flash";
 }
 
 function pickAvatarNid(

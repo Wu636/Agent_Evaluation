@@ -332,7 +332,7 @@ def create_script_node_min(task_id, course_id, step_id, src_detail, rmap):
                 "stepName": renumber_name(src_detail.get("stepName", ""), rmap),
                 "description": src_detail.get("description", ""),
                 "prologue": "",
-                "modelId": src_detail.get("modelId") or "Doubao-Seed-2.0-pro",
+                "modelId": src_detail.get("modelId") or "deepseek-v4-flash",
                 "llmPrompt": "",
                 "trainerName": src_detail.get("trainerName", ""),
                 "interactiveRounds": src_detail.get("interactiveRounds", 0),

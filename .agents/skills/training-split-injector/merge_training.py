@@ -82,7 +82,7 @@ BRANCH_NODE_TEMPLATE = {
     "stepName": "分支选择",
     "description": "请选择接下来要进行的训练",
     "prologue": "你已经完成了当前阶段，接下来你想挑战哪个方向？",
-    "modelId": "Doubao-Seed-2.0-pro",
+    "modelId": "deepseek-v4-flash",
     "llmPrompt": (
         "# Role\n你是训练引导官，负责帮助学生选择下一步的训练方向。\n\n"
         "# Context & Task\n学生已完成当前阶段训练，需要选择下一个训练分支。\n\n"
@@ -353,7 +353,7 @@ def create_script_node_min(task_id, course_id, step_id, src_detail, rmap):
                 "stepName": renumber_name(src_detail.get("stepName", ""), rmap),
                 "description": src_detail.get("description", ""),
                 "prologue": "",
-                "modelId": src_detail.get("modelId") or "Doubao-Seed-2.0-pro",
+                "modelId": src_detail.get("modelId") or "deepseek-v4-flash",
                 "llmPrompt": "",
                 "trainerName": src_detail.get("trainerName", ""),
                 "interactiveRounds": src_detail.get("interactiveRounds", 0),

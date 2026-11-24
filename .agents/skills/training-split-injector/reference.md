@@ -105,7 +105,7 @@ payload = {
         "stepName": "关卡1.1：...",
         "description": "...",
         "prologue": "",  # 创建时留空，edit 时补全
-        "modelId": "Doubao-Seed-2.0-pro",
+        "modelId": "deepseek-v4-flash",
         "llmPrompt": "",  # 创建时留空，edit 时补全
         "trainerName": "...",
         "interactiveRounds": 5,
@@ -321,7 +321,7 @@ BRANCH_NODE_TEMPLATE = {
     "stepName": "分支选择",        # 自动命名为"选择源B或源C"
     "description": "请选择接下来要进行的训练",
     "prologue": "你已经完成了当前阶段，接下来你想挑战哪个方向？",
-    "modelId": "Doubao-Seed-2.0-pro",
+    "modelId": "deepseek-v4-flash",
     "llmPrompt": "...",           # 默认引导提示词
     "trainerName": "训练引导官",
     "interactiveRounds": 3,

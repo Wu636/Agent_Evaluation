@@ -76,6 +76,7 @@ interface RunCardResult {
 }
 
 interface ChatResult {
+    needSkipStep?: boolean;
     sessionId?: string;
     text?: string;
     nextStepId?: string | null;
@@ -401,8 +402,12 @@ export async function POST(request: NextRequest) {
                         });
                     }
 
-                    let nextStepId = card.nextStepId || null;
-                    const skipped = Boolean(card.needSkipStep || nextStepId);
+                    const cardTransition = Boolean(card.needSkipStep && card.nextStepId);
+                    let nextStepId = cardTransition ? card.nextStepId! : null;
+                    const skipped = cardTransition;
+                    send({ type: "platform_control", source: "runCard", stepId: step.stepId,
+                        round: 0, needSkipStep: card.needSkipStep ?? null,
+                        nextStepId: card.nextStepId || null, transitionAccepted: cardTransition });
 
 
                     while (!skipped && round < maxRoundsPerStage && totalRounds < maxTotalRounds) {
@@ -467,7 +472,11 @@ export async function POST(request: NextRequest) {
                             });
                         }
 
-                        nextStepId = chat?.nextStepId || null;
+                        const chatTransition = Boolean(chat?.needSkipStep && chat?.nextStepId);
+                        nextStepId = chatTransition ? chat.nextStepId! : null;
+                        send({ type: "platform_control", source: "chat", stepId: step.stepId,
+                            round, needSkipStep: chat?.needSkipStep ?? null,
+                            nextStepId: chat?.nextStepId || null, transitionAccepted: chatTransition });
                         if (nextStepId) break;
                         if (!aiText) break;
                     }

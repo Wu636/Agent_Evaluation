@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, CheckCircle, User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { X, CheckCircle, User, Mail, Lock, Eye, EyeOff, KeyRound, ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 interface EnhancedLoginModalProps {
@@ -19,6 +19,12 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+
+    // 忘记密码流程
+    const [isResetMode, setIsResetMode] = useState(false);
+    const [resetSent, setResetSent] = useState(false);
+    const [resetLoading, setResetLoading] = useState(false);
+    const [resetError, setResetError] = useState('');
 
     // 监听登录状态变化，登录成功后自动关闭弹窗
     useEffect(() => {
@@ -40,6 +46,10 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
             setPassword('');
             setError('');
             setLoading(false);
+            setIsResetMode(false);
+            setResetSent(false);
+            setResetLoading(false);
+            setResetError('');
         }
     }, [isOpen]);
 
@@ -110,6 +120,48 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
 
 
 
+    const handleSendResetEmail = async () => {
+        if (!supabase) {
+            setResetError('Supabase 未配置，无法发送重置邮件');
+            return;
+        }
+
+        const trimmedEmail = email.trim();
+        if (!trimmedEmail) {
+            setResetError('请填写注册邮箱');
+            return;
+        }
+
+        setResetLoading(true);
+        setResetError('');
+
+        try {
+            const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+                redirectTo: `${window.location.origin}/auth/reset-password`,
+            });
+
+            if (error) throw error;
+            setResetSent(true);
+        } catch (error: any) {
+            const message: string = error?.message || '';
+            if (message.toLowerCase().includes('rate limit')) {
+                setResetError('发送过于频繁，请稍后再试');
+            } else if (message.toLowerCase().includes('email')) {
+                setResetError('邮箱格式不正确或发送失败，请检查后重试');
+            } else {
+                setResetError(message || '发送失败，请稍后重试');
+            }
+        } finally {
+            setResetLoading(false);
+        }
+    };
+
+    const exitResetMode = () => {
+        setIsResetMode(false);
+        setResetSent(false);
+        setResetError('');
+    };
+
     const handleGuestMode = () => {
         // 设置游客模式标志
         localStorage.setItem('guest_mode', 'true');
@@ -177,7 +229,7 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
                 )}
 
                 {/* Email Login Form */}
-                {loginMode === 'email' && (
+                {loginMode === 'email' && !isResetMode && (
                     <div className="space-y-4">
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1.5">
@@ -192,9 +244,23 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                                密码
-                            </label>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <label className="block text-sm font-medium text-slate-700">
+                                    密码
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsResetMode(true);
+                                        setResetSent(false);
+                                        setResetError('');
+                                        setError('');
+                                    }}
+                                    className="text-sm font-medium text-indigo-600 hover:text-indigo-700 hover:underline transition-colors"
+                                >
+                                    忘记密码？
+                                </button>
+                            </div>
                             <div className="relative">
                                 <input
                                     type={showPassword ? 'text' : 'password'}
@@ -230,6 +296,98 @@ export function EnhancedLoginModal({ isOpen, onClose }: EnhancedLoginModalProps)
                                 </button>
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {/* Forgot Password */}
+                {loginMode === 'email' && isResetMode && (
+                    <div className="space-y-4">
+                        <div className="flex items-start gap-2">
+                            <button
+                                type="button"
+                                onClick={exitResetMode}
+                                className="mt-0.5 p-1.5 -ml-1.5 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"
+                                title="返回登录"
+                            >
+                                <ArrowLeft className="w-4 h-4" />
+                            </button>
+                            <div>
+                                <h3 className="text-base font-semibold text-slate-900 flex items-center gap-1.5">
+                                    <KeyRound className="w-4 h-4 text-indigo-600" />
+                                    重置密码
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                    输入注册邮箱，我们会发送一封重置密码邮件
+                                </p>
+                            </div>
+                        </div>
+
+                        {resetSent ? (
+                            <div className="space-y-4">
+                                <div className="rounded-xl bg-green-50 border border-green-200 p-4 text-sm text-green-800">
+                                    <p className="font-medium flex items-center gap-1.5">
+                                        <CheckCircle className="w-4 h-4" />
+                                        重置邮件已发送
+                                    </p>
+                                    <p className="mt-1.5 text-green-700 leading-relaxed">
+                                        已发送至 {email.trim()}，请点击邮件中的链接设置新密码。若未收到，请检查垃圾邮件，或稍后重新发送。
+                                    </p>
+                                </div>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={exitResetMode}
+                                        className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors"
+                                    >
+                                        返回登录
+                                    </button>
+                                    <button
+                                        onClick={handleSendResetEmail}
+                                        disabled={resetLoading}
+                                        className="flex-1 px-4 py-2.5 bg-white text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+                                    >
+                                        {resetLoading ? '发送中...' : '重新发送'}
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {resetError && (
+                                    <div className="p-3 rounded-lg text-sm bg-red-50 text-red-700">
+                                        {resetError}
+                                    </div>
+                                )}
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                                        注册邮箱
+                                    </label>
+                                    <input
+                                        type="email"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleSendResetEmail();
+                                        }}
+                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                                        placeholder="your@email.com"
+                                    />
+                                </div>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={handleSendResetEmail}
+                                        disabled={resetLoading}
+                                        className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+                                    >
+                                        {resetLoading ? '发送中...' : '发送重置邮件'}
+                                    </button>
+                                    <button
+                                        onClick={exitResetMode}
+                                        className="px-4 py-2.5 bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 font-medium transition-colors"
+                                    >
+                                        返回登录
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 

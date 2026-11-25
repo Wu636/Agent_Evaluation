@@ -750,12 +750,26 @@ function manualClock() {
   let id = 0;
   const timers = new Map();
   const add = (callback, ms, interval) => {
-    timers.set(++id, { callback, ms, interval });
+    timers.set(++id, { callback, ms, interval, at: now + ms });
     return id;
   };
   return {
     timers,
     advance(ms) { now += ms; },
+    tick(ms) {
+      const target = now + ms;
+      while (true) {
+        const entry = [...timers].filter(([, timer]) => timer.at <= target)
+          .sort((a, b) => a[1].at - b[1].at)[0];
+        if (!entry) break;
+        const [key, timer] = entry;
+        now = timer.at;
+        if (timer.interval) timer.at += timer.ms;
+        else timers.delete(key);
+        timer.callback();
+      }
+      now = target;
+    },
     fire(ms) {
       const entries = [...timers].filter(([, timer]) => timer.ms === ms);
       assert.ok(entries.length, `没有 ${ms}ms 定时器`);
@@ -1425,7 +1439,7 @@ test('route：JSON 客户端保留上游 504 状态，不误报为用户参数�
   assert.equal(h.clock.timers.size, 0);
 });
 
-for (const delay of [90_000, 150_000]) {
+for (const delay of [90_000, 60_000]) {
   test(`模型等待 ${delay}ms 到期后取消首轮并压缩重试，清理定时器`, async t => {
     const clock = manualClock();
     const timedEngine = sourceLoader({ globals: clock.globals })(enginePath);
@@ -1435,7 +1449,7 @@ for (const delay of [90_000, 150_000]) {
       return new Response(new ReadableStream({
         start(controller) {
           init.signal.addEventListener('abort', () => controller.error(init.signal.reason), { once: true });
-          if (delay === 150_000) controller.enqueue(new TextEncoder().encode(data(delta('{'))));
+          if (delay === 60_000) controller.enqueue(new TextEncoder().encode(data(delta('{'))));
         },
       }), { headers: { 'Content-Type': 'text/event-stream' } });
     });
@@ -1450,6 +1464,131 @@ for (const delay of [90_000, 150_000]) {
     assert.equal(clock.timers.size, 0);
   });
 }
+
+test('持续输出超过 150 秒仍完成首轮，不丢弃已有正文或压缩重试', async t => {
+  const clock = manualClock();
+  const timedEngine = sourceLoader({ globals: clock.globals })(enginePath);
+  const progress = [];
+  let upstream;
+  const calls = mockFetch(t, ({ init }) => new Response(new ReadableStream({
+    start(controller) {
+      upstream = controller;
+      init.signal.addEventListener('abort', () => controller.error(init.signal.reason), { once: true });
+    },
+  }), { headers: { 'Content-Type': 'text/event-stream' } }));
+  const pending = timedEngine.generateTrainingRefinementPlan({ ...fixture(), onProgress: message => progress.push(message) });
+  await until(() => upstream);
+  const text = JSON.stringify(patch());
+  const size = Math.ceil(text.length / 4);
+  for (let offset = 0; offset < text.length; offset += size) {
+    const end = Math.min(text.length, offset + size);
+    upstream.enqueue(new TextEncoder().encode(data(delta(text.slice(offset, end)))));
+    await until(() => progress.some(message => message.includes(`已接收 ${end.toLocaleString()} 字符`)));
+    clock.tick(50_000);
+    assert.equal(calls[0].init.signal.aborted, false);
+  }
+  upstream.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+  const result = await pending;
+  assert.equal(calls.length, 1);
+  assert.deepEqual(result.validation.errors, []);
+  assert.equal(clock.timers.size, 0);
+});
+
+for (const [budgetMs, deadlineAt] of [[270_000, undefined], [75_000, 85_000], [270_000, 900_000]]) {
+test(`总预算 ${budgetMs}ms 到期取消持续输出，调用方截止=${deadlineAt}，不接受半成品`, async t => {
+  const clock = manualClock();
+  const timedEngine = sourceLoader({ globals: clock.globals })(enginePath);
+  const progress = [];
+  let upstream;
+  const calls = mockFetch(t, ({ init }) => new Response(new ReadableStream({
+    start(controller) {
+      upstream = controller;
+      init.signal.addEventListener('abort', () => controller.error(init.signal.reason), { once: true });
+    },
+  }), { headers: { 'Content-Type': 'text/event-stream' } }));
+  const pending = timedEngine.generateTrainingRefinementPlan({ ...fixture(), deadlineAt, onProgress: message => progress.push(message) });
+  const rejected = assert.rejects(pending, error => {
+    assert.ok(error instanceof timedEngine.RefinerRequestError);
+    assert.equal(error.status, 504);
+    assert.equal(error.retryable, false);
+    assert.match(error.message, new RegExp(`总时间预算.*${budgetMs / 1000} 秒.*已接收 ${Math.ceil(budgetMs / 50_000)} 字符`));
+    assert.match(error.message, /未写入平台.*评分标准分开优化/);
+    assert.doesNotMatch(error.message, /ByteString|The operation was aborted/);
+    return true;
+  });
+  await until(() => upstream);
+  let remainingMs = budgetMs;
+  for (let chars = 1; remainingMs > 0; chars++) {
+    upstream.enqueue(new TextEncoder().encode(data(delta('{'))));
+    await until(() => progress.some(message => message.includes(`已接收 ${chars} 字符`)));
+    const elapsed = Math.min(remainingMs, 50_000);
+    clock.tick(elapsed);
+    remainingMs -= elapsed;
+  }
+  await rejected;
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].init.signal.aborted, true);
+  assert.equal(clock.timers.size, 0);
+});
+}
+
+test('剩余不足 30 秒不启动完整重试，也不发送虚假的重试进度', async t => {
+  const clock = manualClock();
+  const timedEngine = sourceLoader({ globals: clock.globals })(enginePath);
+  const progress = [];
+  const calls = mockFetch(t, () => { clock.advance(250_000); return httpError(); });
+  await assert.rejects(timedEngine.generateTrainingRefinementPlan({ ...fixture(), onProgress: message => progress.push(message) }), error => {
+    assert.ok(error instanceof timedEngine.RefinerRequestError);
+    assert.equal(error.status, 504);
+    assert.match(error.message, /剩余时间不足 30 秒.*未重新开始/);
+    return true;
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(progress.some(message => /将使用压缩|正在根据校验/.test(message)), false);
+  assert.equal(clock.timers.size, 0);
+});
+
+test('调用方绝对截止时间已过时不发模型请求，且清理总预算定时器', async t => {
+  const clock = manualClock();
+  const timedEngine = sourceLoader({ globals: clock.globals })(enginePath);
+  const calls = mockFetch(t, () => assert.fail('截止时间已过不能请求模型'));
+  await assert.rejects(timedEngine.generateTrainingRefinementPlan({ ...fixture(), deadlineAt: 9_999 }), error => {
+    assert.ok(error instanceof timedEngine.RefinerRequestError);
+    assert.equal(error.status, 504);
+    assert.match(error.message, /尚未开始模型生成/);
+    return true;
+  });
+  assert.equal(calls.length, 0);
+  assert.equal(clock.timers.size, 0);
+});
+
+test('route：源训练读取耗时计入模型绝对截止时间，保留发送终态的预算', async t => {
+  const sourceGate = Promise.withResolvers();
+  const h = routeHarness(t, { sourceGate });
+  const response = await h.route.POST(h.request());
+  await until(() => h.calls.length === 2);
+  h.clock.advance(60_000);
+  sourceGate.resolve();
+  const terminal = terminals(routeEvents(await response.text()));
+  assert.equal(terminal[0].type, 'result');
+  assert.equal(h.generated[0].deadlineAt, 10_000 + 285_000 - 5_000);
+  assert.equal(h.clock.timers.size, 0);
+});
+
+test('route：JSON 客户端耗尽总预算返回 504，不误报为参数错误', async t => {
+  const generation = Promise.withResolvers();
+  const h = routeHarness(t, { generate: () => generation.promise });
+  const pending = h.route.POST(h.request('application/json'));
+  await until(() => h.generated.length === 1);
+  h.clock.advance(285_000);
+  h.clock.fire(285_000);
+  const response = await pending;
+  assert.equal(response.status, 504);
+  assert.match((await response.json()).error, /285 秒总预算/);
+  generation.resolve(h.completed);
+  await turn();
+  assert.equal(h.clock.timers.size, 0);
+});
 
 test('route：JSON 客户端兼容成功路径，并清理预算定时器', async t => {
   const h = routeHarness(t);

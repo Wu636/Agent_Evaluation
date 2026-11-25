@@ -562,8 +562,10 @@ async function runOptimization(
   };
   const onTimeout = () => {
     abortController.abort(
-      new Error(
+      new RefinerRequestError(
         "优化超过 285 秒总预算（含读取源训练），已停止。请缩小优化范围后重试。",
+        false,
+        504,
       ),
     );
   };
@@ -616,6 +618,8 @@ async function runOptimization(
           optimizeScoring: body.optimizeScoring !== false,
           llmSettings: body.llmSettings || {},
           signal,
+          // 包含源图读取耗时，预留 5 秒向客户端发送可读的超时终态。
+          deadlineAt: startedAt + OPTIMIZATION_BUDGET_MS - 5_000,
           onProgress,
         });
         checkActive();

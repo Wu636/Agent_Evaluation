@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     const apiConfig: ApiConfig & { model: string } = {
       apiKey: String(body.apiKey || process.env.LLM_API_KEY || ""),
       baseUrl: String(body.apiUrl || process.env.LLM_BASE_URL || "https://llm-service.polymas.com/api/openai/v1/chat/completions"),
-      model: MODEL_NAME_MAPPING[String(body.model || "")] || String(body.model || process.env.LLM_MODEL || "gpt-4o"),
+      model: MODEL_NAME_MAPPING[String(body.model || "")] || String(body.model || process.env.LLM_MODEL || "deepseek-v4.1-flash-1017"),
     };
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {

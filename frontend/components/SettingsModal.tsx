@@ -124,9 +124,19 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const mergedImageModelOptions = useMemo(() => {
         const fallbackImageModels: ModelInfo[] = [
             {
+                id: "gpt-image-2.5-flare",
+                name: "GPT Image 2.5 Flare",
+                description: "推荐默认生图模型，支持 16:9 宽屏",
+            },
+            {
+                id: "gpt-image-2",
+                name: "GPT Image 2",
+                description: "兼容备用生图模型，支持 16:9 宽屏",
+            },
+            {
                 id: "doubao-seedream-5-0-260128",
                 name: "豆包 Seedream 5.0",
-                description: "推荐默认生图模型",
+                description: "Seedream 生图模型",
             },
             {
                 id: "doubao-seedream-4-0-250828",
@@ -141,7 +151,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             {
                 id: "gpt-image-1.5",
                 name: "GPT Image 1.5",
-                description: "OpenAI 图像生成模型",
+                description: "OpenAI 图像生成模型（仅支持标准尺寸）",
             },
         ];
         const baseOptions = imageModels.length > 0 ? imageModels : fallbackImageModels;

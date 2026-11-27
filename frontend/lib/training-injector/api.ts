@@ -41,7 +41,7 @@ export function resolveCloudapiRoot(
 function resolvePolymasApiBase(credentials: PolymasCredentials, path: string): string {
     return `${resolveCloudapiRoot(credentials)}/${path}`;
 }
-const DEFAULT_SCRIPT_MODEL_ID = "deepseek-v4-flash";
+const DEFAULT_SCRIPT_MODEL_ID = "deepseek-v4.1-flash-1017";
 const DEFAULT_DIGITAL_HUMAN_USER_NID =
     process.env.POLYMAS_DIGITAL_HUMAN_USER_NID || "XnRLWOeg6H";
 const DEFAULT_AGENT_ID = process.env.POLYMAS_DEFAULT_AGENT_ID || "Tg3LpKo28D";
@@ -56,7 +56,7 @@ const POLYMAS_DALLE_IMAGE_ENDPOINT =
     process.env.POLYMAS_DALLE_IMAGE_ENDPOINT ||
     "https://llm-service.polymas.com/api/openai/v1/images/generations";
 const ARK_IMAGE_ENDPOINT = process.env.ARK_IMAGE_ENDPOINT || "https://ark.cn-beijing.volces.com/api/v3/images/generations";
-const ARK_IMAGE_MODEL = process.env.ARK_IMAGE_MODEL || "doubao-seedream-5-0-260128";
+const ARK_IMAGE_MODEL = process.env.ARK_IMAGE_MODEL || "gpt-image-2.5-flare";
 const POLYMAS_IMAGE_FALLBACK_API_KEY =
     process.env.POLYMAS_IMAGE_FALLBACK_API_KEY ||
     process.env.LLM_API_KEY ||
@@ -694,6 +694,24 @@ function isSeedreamImageModel(model?: string): boolean {
     return /^doubao-seedream-/i.test(String(model || "").trim());
 }
 
+function isGptImageModel(model?: string): boolean {
+    return /^gpt-image/i.test(String(model || "").trim());
+}
+
+function isGptImage2Model(model?: string): boolean {
+    return /^gpt-image-2(?:$|[.-])/i.test(String(model || "").trim());
+}
+
+const GPT_IMAGE_STANDARD_SIZES = ["1024x1024", "1024x1536", "1536x1024", "auto"];
+
+function buildGptImageRequestSize(model: string, landscape: boolean, imageSize?: string): string {
+    const requested = String(imageSize || "").trim();
+    if (GPT_IMAGE_STANDARD_SIZES.includes(requested)) return requested;
+    // gpt-image-2 支持 16:9 宽屏；gpt-image-1.x 只接受标准尺寸，否则平台返回 Invalid size。
+    if (isGptImage2Model(model)) return landscape ? DEFAULT_LANDSCAPE_IMAGE_SIZE : "1024x1024";
+    return landscape ? "1536x1024" : "1024x1024";
+}
+
 function buildImageEndpointCandidates(selectedModel: string, preferredEndpoint?: string): string[] {
     const preferred = normalizeEndpoint(preferredEndpoint);
     const candidates = isDalleImageModel(selectedModel)
@@ -760,7 +778,12 @@ function buildImageAuthHeaderStrategies(endpoint: string, apiKey: string): Array
     }
 
     if (isPolymasImageEndpoint(endpoint)) {
-        return [{ "api-key": apiKey, Authorization: `Bearer ${apiKey}` }];
+        // 平台生图网关用 api-key 能路由全部模型；叠加 Authorization 会被转到未部署部分模型的网关。
+        return [
+            { "api-key": apiKey },
+            { Authorization: `Bearer ${apiKey}` },
+            { "api-key": apiKey, Authorization: `Bearer ${apiKey}` },
+        ];
     }
 
     return [
@@ -900,6 +923,7 @@ async function generateImageViaArk(
 
             const isDalleModel = isDalleImageModel(selectedModel);
             const isSeedreamModel = isSeedreamImageModel(selectedModel);
+            const isGptImage = isGptImageModel(selectedModel);
             const landscape = options?.landscape === true;
             const landscapeSize = options?.imageSize || DEFAULT_LANDSCAPE_IMAGE_SIZE;
             const requestBody = isDalleModel
@@ -919,12 +943,18 @@ async function generateImageViaArk(
                         sequential_image_generation: "disabled",
                         watermark,
                     }
-                    : {
-                        model: selectedModel,
-                        prompt,
-                        n: 1,
-                        ...(landscape ? { size: landscapeSize } : {}),
-                    };
+                    : isGptImage
+                        ? {
+                            model: selectedModel,
+                            prompt,
+                            size: buildGptImageRequestSize(selectedModel, landscape, options?.imageSize),
+                        }
+                        : {
+                            model: selectedModel,
+                            prompt,
+                            n: 1,
+                            ...(landscape ? { size: landscapeSize } : {}),
+                        };
 
             for (const authHeaders of authHeaderStrategies) {
                 try {
@@ -982,6 +1012,12 @@ async function generateImageViaArk(
                 break;
             }
         }
+    }
+
+    const fallbackModel = "gpt-image-2";
+    if (selectedModel !== fallbackModel && failures.some((detail) => /ClosedEndpoint|currently closed|temporarily unavailable|NO_AVAILABLE_DEPLOYMENT|模型未部署|no available channels/i.test(detail))) {
+        console.warn(`[ark-image] ${selectedModel} 平台端点不可用，改用 ${fallbackModel} 重试`);
+        return generateImageViaArk(prompt, { ...options, imageModel: fallbackModel });
     }
 
     if (options?.throwOnError) {

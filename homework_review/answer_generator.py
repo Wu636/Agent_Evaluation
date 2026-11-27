@@ -181,7 +181,7 @@ def load_llm_config_from_args(context: dict) -> Tuple[str, str, str]:
     """从上下文加载 LLM 配置"""
     api_key = context.get("llm_api_key") or os.getenv("LLM_API_KEY", "")
     api_url = context.get("llm_api_url") or os.getenv("LLM_API_URL", "http://llm-service.polymas.com/api/openai/v1/chat/completions")
-    raw_model = context.get("llm_model") or os.getenv("LLM_MODEL", "claude-sonnet-4-6")
+    raw_model = context.get("llm_model") or os.getenv("LLM_MODEL", "deepseek-v4.1-flash-1017")
     # 应用模型名映射（前端可能传了 id 如 "claude-sonnet-4.5"，API 需要 "Claude Sonnet 4.5"）
     model = MODEL_NAME_MAPPING.get(raw_model, raw_model)
     return api_key, api_url, model

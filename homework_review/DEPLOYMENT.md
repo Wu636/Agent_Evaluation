@@ -59,7 +59,7 @@ INSTANCE_NID=XLRNIzbkox
 # LLM配置
 LLM_API_KEY=your_llm_api_key
 LLM_API_URL=http://llm-service.polymas.com/api/openai/v1/chat/completions
-LLM_MODEL=claude-sonnet-4-20250514
+LLM_MODEL=deepseek-v4.1-flash-1017
 
 # AgentEval 登录校验（与前端使用同一个 Supabase 项目）
 SUPABASE_URL=https://your-project.supabase.co

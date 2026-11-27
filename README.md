@@ -58,7 +58,7 @@ npm install
 # LLM API 配置
 LLM_API_KEY=your-api-key
 LLM_BASE_URL=https://api.openai.com/v1/chat/completions
-LLM_MODEL=gpt-4o
+LLM_MODEL=deepseek-v4.1-flash-1017
 
 # Supabase 配置（可选，用于云端存储）
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-url

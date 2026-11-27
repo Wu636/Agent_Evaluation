@@ -99,7 +99,7 @@ export async function saveEvaluation(
     report: Record<string, unknown>,
     teacherDocName: string,
     dialogueRecordName: string,
-    model: string = 'gpt-4o'
+    model: string = 'deepseek-v4.1-flash-1017'
 ): Promise<string> {
     const history = await readHistory();
 

@@ -340,7 +340,7 @@ export async function POST(request: NextRequest) {
 
                 const apiKey = String(body.apiKey || process.env.LLM_API_KEY || "").trim();
                 const baseUrl = String(body.apiUrl || process.env.LLM_BASE_URL || "").trim();
-                const rawModel = String(body.model || process.env.LLM_MODEL || "gpt-5.6-sol").trim();
+                const rawModel = String(body.model || process.env.LLM_MODEL || "deepseek-v4.1-flash-1017").trim();
                 const model = MODEL_NAME_MAPPING[rawModel] || rawModel;
                 if (!baseUrl) throw new Error("未配置模拟学生所用的 LLM 地址（LLM_BASE_URL）");
 

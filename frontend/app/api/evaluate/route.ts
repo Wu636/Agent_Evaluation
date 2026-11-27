@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     const apiConfig = {
       apiKey: apiKey || process.env.LLM_API_KEY || "",
       baseUrl: apiUrl || process.env.LLM_BASE_URL || "",
-      model: model || process.env.LLM_MODEL || "gpt-4o",
+      model: model || process.env.LLM_MODEL || "deepseek-v4.1-flash-1017",
     };
 
     if (!apiConfig.apiKey) {

@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
                 const apiConfig: ApiConfig & { model: string } = {
                     apiKey: doc.apiKey || process.env.LLM_API_KEY || "",
                     baseUrl: doc.apiUrl || process.env.LLM_BASE_URL || "",
-                    model: MODEL_NAME_MAPPING[doc.model] || doc.model || process.env.LLM_MODEL || "gpt-4o",
+                    model: MODEL_NAME_MAPPING[doc.model] || doc.model || process.env.LLM_MODEL || "deepseek-v4.1-flash-1017",
                 };
                 if (!apiConfig.baseUrl) {
                     send({ type: "error", message: "未配置 LLM API，请先在设置中填写 API URL" });

@@ -71,7 +71,7 @@ export function saveToHistory(
     report: EvaluationReport,
     teacherDocName: string,
     dialogueRecordName: string,
-    model: string = 'gpt-4o'
+    model: string = 'deepseek-v4.1-flash-1017'
 ): string {
     const history = readHistory();
 

@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
           MODEL_NAME_MAPPING[model] ||
           model ||
           process.env.LLM_MODEL ||
-          "gpt-4o";
+          "deepseek-v4.1-flash-1017";
 
         const apiConfig: ApiConfig & { model: string } = {
           apiKey: finalApiKey,

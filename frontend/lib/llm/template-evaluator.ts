@@ -206,7 +206,7 @@ export async function evaluateWithTemplate(
     preferStaticPrompts?: boolean;
   }
 ): Promise<EvaluationReport> {
-  const mappedModel = MODEL_NAME_MAPPING[apiConfig.model || ""] || apiConfig.model || "gpt-4o";
+  const mappedModel = MODEL_NAME_MAPPING[apiConfig.model || ""] || apiConfig.model || "deepseek-v4.1-flash-1017";
   const normalizedTemplate = normalizeTemplateDimensions(templateDimensions);
   const enabledDimensions = normalizedTemplate.dimensions.filter((dimension) => dimension.enabled);
   const totalSubDimensions = enabledDimensions.reduce(

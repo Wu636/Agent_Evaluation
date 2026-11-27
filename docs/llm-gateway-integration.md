@@ -222,7 +222,7 @@ curl -sS https://llm-service.polymas.com/api/openai/v1/images/generations \
 | --- | --- | --- |
 | `LLM_API_KEY` | 前端服务端 + Python 批阅服务 | 必需 |
 | `LLM_BASE_URL` / `LLM_API_URL` | 前端用前者，Python 用后者 | 完整 chat 地址，也接受裸 base（代码会补 `/chat/completions`） |
-| `LLM_MODEL` | 默认模型 | 前端默认 `gpt-4o`，Python 默认 `claude-sonnet-4-6` |
+| `LLM_MODEL` | 默认模型 | 前端与 Python 默认 `deepseek-v4.1-flash-1017` |
 | `LLM_MODELS_URL` | 可选 | 覆盖模型目录地址 |
 | `ARK_API_KEY` | 生图直连火山方舟 | 与 `LLM_API_KEY` 相同值 |
 | `EMBEDDING_API_KEY` | 向量模型 | 同 key |

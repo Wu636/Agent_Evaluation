@@ -182,6 +182,8 @@ export const MODEL_NAME_MAPPING: Record<string, string> = {
   "gemini-2.5-flash": "gemini-2.5-flash",
   "deepseek-v4-pro": "deepseek-v4-pro",
   "deepseek-v4": "deepseek-v4",
+  "deepseek-v4.1-flash-1017": "deepseek-v4.1-flash-1017",
+  "DeepSeek V4.1 Flash 1017": "deepseek-v4.1-flash-1017",
   "deepseek-v3.1": "deepseek-v3.1",
   "qwen3.6-plus": "qwen3.6-plus",
   "claude-sonnet-4.5": "Claude Sonnet 4.5",
@@ -200,6 +202,7 @@ export const MODEL_NAME_MAPPING: Record<string, string> = {
  * 可用模型列表
  */
 export const AVAILABLE_MODELS = [
+  { id: "deepseek-v4.1-flash-1017", name: "DeepSeek V4.1 Flash 1017", description: "默认文本模型，快速且成本低" },
   { id: "gpt-5.4", name: "GPT-5.4", description: "Newest GPT-5 series" },
   { id: "gpt-4o", name: "GPT-4o", description: "Most capable" },
   { id: "gpt-4o-mini", name: "GPT-4o Mini", description: "Faster, cost-effective" },
@@ -219,6 +222,9 @@ export const AVAILABLE_MODELS = [
   { id: "claude-opus-4-6", name: "Claude Opus 4.6", description: "Latest Opus" },
   { id: "claude-opus-4-8", name: "Claude Opus 4.8", description: "Latest Opus" },
   { id: "grok-4", name: "Grok-4", description: "xAI's model" },
+  { id: "gpt-image-2.5-flare", name: "GPT Image 2.5 Flare", description: "默认生图模型，支持 16:9 宽屏" },
+  { id: "gpt-image-2", name: "GPT Image 2", description: "兼容备用生图模型" },
+  { id: "gpt-image-1.5", name: "GPT Image 1.5", description: "标准尺寸生图模型" },
 ];
 
 /**
@@ -233,6 +239,8 @@ export function normalizeModelId(model: string | undefined | null): string {
   if (raw === "Claude Sonnet 4.6") return "claude-sonnet-4-6";
   if (raw === "Claude Opus 4.6") return "claude-opus-4-6";
   if (raw === "Claude Opus 4.8") return "claude-opus-4-8";
+  if (raw === "DeepSeek V4.1 Flash 1017") return "deepseek-v4.1-flash-1017";
+  if (raw === "GPT Image 2.5 Flare") return "gpt-image-2.5-flare";
   return raw;
 }
 
@@ -243,7 +251,7 @@ export function getEnvConfig() {
   return {
     llmApiKey: process.env.LLM_API_KEY || "",
     llmBaseUrl: process.env.LLM_BASE_URL || "https://llm-service.polymas.com/api/openai/v1/chat/completions",
-    llmModel: process.env.LLM_MODEL || "gpt-4o",
+    llmModel: process.env.LLM_MODEL || "deepseek-v4.1-flash-1017",
     historyFile: process.env.HISTORY_FILE || "evaluations_history.json",
     dataDir: process.env.DATA_DIR || process.cwd(),
   };

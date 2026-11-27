@@ -64,17 +64,47 @@ test('所选模型失败时返回带模型和 HTTP 状态的错误，不包含�
   });
 });
 
-test('GPT 图片请求省略 Seedream 专属参数', async () => {
+for (const [model, size] of [
+  ['gpt-image-2', '2560x1440'],
+  ['gpt-image-2.5-flare', '2560x1440'],
+  ['gpt-image-2.5-sunburst', '2560x1440'],
+  ['gpt-image-1.5', '1536x1024'],
+]) {
+  test(`${model}: 使用模型支持的横版尺寸并省略 Seedream 专属参数`, async () => {
+    const api = loadApi(async (url, init) => {
+      assert.equal(url, endpoint);
+      assert.equal(init.headers['api-key'], 'model-fixture');
+      assert.equal(init.headers.Authorization, undefined);
+      const body = JSON.parse(init.body);
+      assert.deepEqual(Object.keys(body).sort(), ['model', 'prompt', 'size']);
+      assert.equal(body.model, model);
+      assert.equal(body.size, size);
+      assert.equal(typeof body.prompt, 'string');
+      return Response.json({ data: [{ url: 'https://files.invalid/gpt.png' }] });
+    });
+    const result = await api.generateCourseCoverImageSource({ ...params, imageModel: model, imageProviderPriority: 'openai' }, credentials);
+    assert.equal(result?.fileUrl, 'https://files.invalid/gpt.png');
+  });
+}
+
+test('所选模型端点关闭时自动改用 gpt-image-2', async () => {
+  const models = [];
   const api = loadApi(async (url, init) => {
     assert.equal(url, endpoint);
     const body = JSON.parse(init.body);
-    assert.deepEqual(Object.keys(body).sort(), ['model', 'prompt']);
+    models.push(body.model);
+    if (body.model === 'doubao-seedream-5-0-260128') {
+      return Response.json({ code: 500, stackTrace: [
+        JSON.stringify({ error: { code: 'InvalidEndpoint.ClosedEndpoint', message: 'The request targeted an endpoint that is currently closed or temporarily unavailable.' } }),
+      ] }, { status: 500 });
+    }
     assert.equal(body.model, 'gpt-image-2');
-    assert.equal(typeof body.prompt, 'string');
-    return Response.json({ data: [{ url: 'https://files.invalid/gpt.png' }] });
+    return Response.json({ data: [{ url: 'https://files.invalid/fallback.png' }] });
   });
-  const result = await api.generateCourseCoverImageSource({ ...params, imageModel: 'gpt-image-2', imageProviderPriority: 'openai' }, credentials);
-  assert.equal(result?.fileUrl, 'https://files.invalid/gpt.png');
+  const result = await api.generateCourseCoverImageSource({ ...params, imageProviderPriority: 'openai' }, credentials);
+  assert.equal(result?.fileUrl, 'https://files.invalid/fallback.png');
+  assert.equal(models.at(-1), 'gpt-image-2');
+  assert.ok(models.slice(0, -1).every((model) => model === 'doubao-seedream-5-0-260128'));
 });
 
 test('网关包裹的供应商错误展示具体原因并隐藏密钥和堆栈地址', async () => {

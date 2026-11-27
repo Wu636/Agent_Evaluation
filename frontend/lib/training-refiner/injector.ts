@@ -495,7 +495,7 @@ async function createBusinessNode(params: {
         stepName: params.detail.stepName || "未命名卡片",
         description: params.detail.description || "",
         prologue: "",
-        modelId: params.detail.modelId || "deepseek-v4-flash",
+        modelId: params.detail.modelId || "deepseek-v4.1-flash-1017",
         llmPrompt: "",
         trainerName: params.detail.trainerName || "",
         interactiveRounds: params.detail.interactiveRounds || 1,

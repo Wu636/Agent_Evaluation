@@ -223,7 +223,7 @@ export async function evaluate(
   console.log("=".repeat(70));
 
   // 使用映射后的模型名称
-  const mappedModel = MODEL_NAME_MAPPING[apiConfig.model || ""] || apiConfig.model || "gpt-4o";
+  const mappedModel = MODEL_NAME_MAPPING[apiConfig.model || ""] || apiConfig.model || "deepseek-v4.1-flash-1017";
 
   const dimensionScores: DimensionScore[] = [];
   const vetoReasons: string[] = [];

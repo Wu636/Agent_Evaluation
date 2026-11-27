@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ ok: false, error: "请先填写 API URL" }, { status: 400 });
         }
 
-        const model = MODEL_NAME_MAPPING[rawModel] || rawModel || "gpt-4o";
+        const model = MODEL_NAME_MAPPING[rawModel] || rawModel || "deepseek-v4.1-flash-1017";
         const endpoint = normalizeChatCompletionEndpoint(apiUrl);
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 30000);

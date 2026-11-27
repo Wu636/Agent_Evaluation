@@ -34,7 +34,7 @@ def load_llm_config() -> Tuple[str, str, str]:
     load_dotenv()
     api_key = os.getenv("LLM_API_KEY", "")
     api_url = os.getenv("LLM_API_URL", "http://llm-service.polymas.com/api/openai/v1/chat/completions")
-    raw_model = os.getenv("LLM_MODEL", "claude-sonnet-4-6")
+    raw_model = os.getenv("LLM_MODEL", "deepseek-v4.1-flash-1017")
     model = MODEL_NAME_MAPPING.get(raw_model, raw_model)
     return api_key, api_url, model
 

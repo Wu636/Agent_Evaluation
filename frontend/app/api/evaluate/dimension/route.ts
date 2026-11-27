@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
         const apiConfig: ApiConfig & { model: string } = {
             apiKey: clientApiConfig?.apiKey || process.env.LLM_API_KEY || "",
             baseUrl: clientApiConfig?.baseUrl || process.env.LLM_BASE_URL || "",
-            model: MODEL_NAME_MAPPING[clientApiConfig?.model || ""] || clientApiConfig?.model || process.env.LLM_MODEL || "gpt-4o",
+            model: MODEL_NAME_MAPPING[clientApiConfig?.model || ""] || clientApiConfig?.model || process.env.LLM_MODEL || "deepseek-v4.1-flash-1017",
         };
 
         if (!apiConfig.apiKey || !apiConfig.baseUrl) {

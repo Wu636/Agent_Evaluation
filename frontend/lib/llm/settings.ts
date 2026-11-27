@@ -5,9 +5,15 @@ export const LLM_SETTINGS_STORAGE_KEY = "llm-eval-settings";
 export const LLM_SETTINGS_UPDATED_EVENT = "llm-settings-updated";
 export const DEFAULT_LLM_API_URL =
   "https://llm-service.polymas.com/api/openai/v1/chat/completions";
-export const DEFAULT_IMAGE_MODEL = "doubao-seedream-5-0-260128";
-const LLM_SETTINGS_VERSION = 3;
-const LEGACY_DEFAULT_MODELS = new Set(["gpt-4o", "claude-sonnet-4.5"]);
+export const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-flare";
+const LLM_SETTINGS_VERSION = 4;
+const LEGACY_DEFAULT_MODELS = new Set([
+  "gpt-4o",
+  "claude-sonnet-4.5",
+  "claude-sonnet-4-6",
+  "claude-opus-4-6",
+  "claude-opus-4-8",
+]);
 
 export type LLMModelProfileId =
   | "default"
@@ -87,6 +93,16 @@ export const LLM_MODEL_PROFILE_OPTIONS: LLMModelProfileMeta[] = [
 ];
 
 export const RECOMMENDED_LLM_MODEL_PROFILES: LLMModelProfiles = {
+  default: "deepseek-v4.1-flash-1017",
+  evaluation: "deepseek-v4.1-flash-1017",
+  homeworkReview: "deepseek-v4.1-flash-1017",
+  trainingGenerate: "deepseek-v4.1-flash-1017",
+  trainingOptimize: "deepseek-v4.1-flash-1017",
+  trainingInject: "deepseek-v4.1-flash-1017",
+};
+
+// 仅用于识别“从未自定义、仍是旧版推荐值”的本地设置并升级到当前推荐值。
+const PREVIOUS_RECOMMENDED_LLM_MODEL_PROFILES: LLMModelProfiles = {
   default: "claude-sonnet-4-6",
   evaluation: "claude-opus-4-6",
   homeworkReview: "claude-sonnet-4-6",
@@ -94,6 +110,10 @@ export const RECOMMENDED_LLM_MODEL_PROFILES: LLMModelProfiles = {
   trainingOptimize: "claude-opus-4-6",
   trainingInject: "claude-sonnet-4-6",
 };
+const PREVIOUS_DEFAULT_IMAGE_MODELS = new Set([
+  "doubao-seedream-5-0-260128",
+  "gpt-image-2",
+]);
 
 function normalizeStoredModel(model: string | undefined | null): string {
   return normalizeModelId(model || "");
@@ -128,14 +148,31 @@ function shouldUpgradeLegacyDefaults(
   );
 }
 
+function arePreviousRecommendedProfiles(
+  rawProfiles: StoredLLMSettings["modelProfiles"]
+): boolean {
+  if (!rawProfiles) return false;
+
+  return LLM_MODEL_PROFILE_OPTIONS.every(
+    (profile) =>
+      normalizeStoredModel(rawProfiles[profile.id]) ===
+      PREVIOUS_RECOMMENDED_LLM_MODEL_PROFILES[profile.id]
+  );
+}
+
 function buildProfiles(
   parsed: StoredLLMSettings,
   legacyModel: string
 ): LLMModelProfiles {
   const rawProfiles = parsed.modelProfiles;
   const hasExplicitProfiles = hasExplicitProfileOverrides(rawProfiles);
+  const isOutdatedVersion = (parsed.version ?? 0) < LLM_SETTINGS_VERSION;
 
   if (shouldUpgradeLegacyDefaults(parsed, legacyModel, hasExplicitProfiles)) {
+    return { ...RECOMMENDED_LLM_MODEL_PROFILES };
+  }
+
+  if (isOutdatedVersion && arePreviousRecommendedProfiles(rawProfiles)) {
     return { ...RECOMMENDED_LLM_MODEL_PROFILES };
   }
 
@@ -187,7 +224,12 @@ export function resolveLLMSettings(
   const modelProfiles = buildProfiles(parsed, legacyModel);
   const apiUrl = String(parsed.apiUrl || parsed.baseUrl || DEFAULT_LLM_API_URL).trim();
   const selectedModel = modelProfiles[profileId] || modelProfiles.default;
-  const imageModel = String(parsed.imageModel || DEFAULT_IMAGE_MODEL).trim() || DEFAULT_IMAGE_MODEL;
+  const storedImageModel = String(parsed.imageModel || "").trim();
+  const imageModel =
+    (parsed.version ?? 0) < LLM_SETTINGS_VERSION &&
+    PREVIOUS_DEFAULT_IMAGE_MODELS.has(storedImageModel)
+      ? DEFAULT_IMAGE_MODEL
+      : storedImageModel || DEFAULT_IMAGE_MODEL;
 
   return {
     apiKey: String(parsed.apiKey || "").trim(),

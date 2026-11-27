@@ -40,7 +40,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const CLOUDAPI_BASE_URL = "https://cloudapi.polymas.com";
-const DEFAULT_IMAGE_MODEL = "doubao-seedream-5-0-260128";
+const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-flare";
 const DEFAULT_CUSTOM_SKILL_TYPE_NID =
   process.env.POLYMAS_PRO_CUSTOM_SKILL_TYPE_NID || "a1b2c3d4e5";
 const POLYMAS_COMPAT_IMAGE_ENDPOINT =
@@ -52,7 +52,7 @@ const POLYMAS_IMAGE_FALLBACK_API_KEY =
   process.env.LLM_API_KEY ||
   "";
 
-const DEFAULT_STEP_MODEL_CODE = "deepseek-v4-flash";
+const DEFAULT_STEP_MODEL_CODE = "deepseek-v4.1-flash-1017";
 const STAGE_POSITION_X = 0;
 const STAGE_POSITION_Y_GAP = 220;
 
@@ -700,10 +700,10 @@ function findReusableDigitalHumanByName(
 }
 
 function normalizeModelId(value: string): string {
-  // 平台存储与展示均使用原始模型名（如 "deepseek-v4-flash"），
+  // 平台存储与展示均使用原始模型名（如 "deepseek-v4.1-flash-1017"），
   // 不做小写/横线转换，保证注入值与配置预览一致。
   const trimmed = String(value || "").trim();
-  return trimmed || "deepseek-v4-flash";
+  return trimmed || "deepseek-v4.1-flash-1017";
 }
 
 function pickAvatarNid(
@@ -1315,49 +1315,79 @@ async function generateCloudapiImage(
   }
 }
 
-async function generateOpenAICompatibleImage(
+function buildProImagePayload(model: string, prompt: string) {
+  return /^doubao-seedream-/i.test(model)
+    ? {
+        model,
+        prompt,
+        size: "2560x1440",
+        response_format: "url",
+        sequential_image_generation: "disabled",
+        watermark: true,
+      }
+    : /^dall-e/i.test(model)
+      ? { model, prompt, n: 1, size: "1792x1024", quality: "standard" }
+      : /^gpt-image-2(?:$|[.-])/i.test(model)
+        ? { model, prompt, size: "2560x1440" }
+        : /^gpt-image/i.test(model)
+          ? { model, prompt, size: "1536x1024" }
+          : { model, prompt, n: 1, size: "2560x1440" };
+}
+
+async function requestOpenAICompatibleImage(
   model: string,
   prompt: string,
-): Promise<UploadedImage | null> {
-  if (!POLYMAS_IMAGE_FALLBACK_API_KEY) return null;
+): Promise<{ image: UploadedImage | null; endpointClosed: boolean }> {
   try {
-    const payload = /^doubao-seedream-/i.test(model)
-      ? {
-          model,
-          prompt,
-          size: "2560x1440",
-          response_format: "url",
-          sequential_image_generation: "disabled",
-          watermark: true,
-        }
-      : { model, prompt, n: 1, size: "2560x1440" };
     const response = await fetch(POLYMAS_COMPAT_IMAGE_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${POLYMAS_IMAGE_FALLBACK_API_KEY}`,
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(buildProImagePayload(model, prompt)),
       signal: AbortSignal.timeout(120_000),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      return {
+        image: null,
+        endpointClosed: /ClosedEndpoint|currently closed|temporarily unavailable|NO_AVAILABLE_DEPLOYMENT|模型未部署|no available channels/i.test(detail),
+      };
+    }
     const result = await response.json();
     const fileUrl = result?.data?.[0]?.url || "";
-    if (fileUrl) return { fileUrl };
+    if (fileUrl) return { image: { fileUrl }, endpointClosed: false };
     const b64 = result?.data?.[0]?.b64_json;
     if (typeof b64 === "string" && b64.trim()) {
       const trimmed = b64.trim();
       return {
-        fileUrl: trimmed.startsWith("data:")
-          ? trimmed
-          : `data:image/png;base64,${trimmed}`,
+        image: {
+          fileUrl: trimmed.startsWith("data:")
+            ? trimmed
+            : `data:image/png;base64,${trimmed}`,
+        },
+        endpointClosed: false,
       };
     }
-    return null;
+    return { image: null, endpointClosed: false };
   } catch (error) {
     console.error("[pro-image] OpenAI 兼容生图异常:", error);
-    return null;
+    return { image: null, endpointClosed: false };
   }
+}
+
+async function generateOpenAICompatibleImage(
+  model: string,
+  prompt: string,
+): Promise<UploadedImage | null> {
+  if (!POLYMAS_IMAGE_FALLBACK_API_KEY) return null;
+  const first = await requestOpenAICompatibleImage(model, prompt);
+  if (first.image || !first.endpointClosed || model === "gpt-image-2") {
+    return first.image;
+  }
+  console.warn(`[pro-image] ${model} 平台端点不可用，改用 gpt-image-2 重试`);
+  return (await requestOpenAICompatibleImage("gpt-image-2", prompt)).image;
 }
 
 async function uploadImageFromUrl(

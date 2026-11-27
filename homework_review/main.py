@@ -1404,7 +1404,7 @@ async def start_skill_review_job(
     skill_nid: str = Form(""),
     submission_requirement: str = Form(...),
     student_submission: str = Form("见附件"),
-    model_name: str = Form("claude-opus-4-8"),
+    model_name: str = Form("deepseek-v4.1-flash-1017"),
     attempts: int = Form(1),
     max_concurrency: int = Form(3),
     poll_interval_seconds: int = Form(5),

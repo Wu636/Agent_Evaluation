@@ -31,10 +31,12 @@ const IMAGE_PROVIDER_OPTIONS = [
     { id: "openai", name: "OpenAI 兼容接口（优先）" },
 ];
 const IMAGE_MODEL_OPTIONS = [
-    { id: "doubao-seedream-5-0-260128", name: "豆包 Seedream 5.0", description: "推荐默认生图模型" },
+    { id: "gpt-image-2.5-flare", name: "GPT Image 2.5 Flare", description: "推荐默认生图模型，支持 16:9 宽屏" },
+    { id: "gpt-image-2", name: "GPT Image 2", description: "兼容备用生图模型，支持 16:9 宽屏" },
+    { id: "doubao-seedream-5-0-260128", name: "豆包 Seedream 5.0", description: "Seedream 生图模型" },
     { id: "doubao-seedream-4-0-250828", name: "豆包 Seedream 4.0", description: "兼容的 Seedream 生图模型" },
     { id: "dall-e-3", name: "DALL-E 3", description: "OpenAI 图像生成模型" },
-    { id: "gpt-image-1.5", name: "GPT Image 1.5", description: "OpenAI 图像生成模型" },
+    { id: "gpt-image-1.5", name: "GPT Image 1.5", description: "OpenAI 图像生成模型（仅支持标准尺寸）" },
 ];
 const BACKGROUND_IMAGE_CONCURRENCY = 2;
 const IMAGE_REGEN_RETRY_DELAYS_MS = [1500, 3500];
@@ -1892,7 +1894,7 @@ export function InjectConfigModal({
                                                 <option key={item.id} value={item.id}>{item.name}</option>
                                             ))}
                                         </select>
-                                        <p className="text-xs text-slate-400">仅在 OpenAI 兼容接口生图时生效。当前默认推荐 `doubao-seedream-5-0-260128`。</p>
+                                        <p className="text-xs text-slate-400">仅在 OpenAI 兼容接口生图时生效。当前默认推荐 `gpt-image-2.5-flare`。</p>
                                     </div>
                                 )}
 
